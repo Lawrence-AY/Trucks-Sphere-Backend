@@ -1,23 +1,16 @@
-const admin = require('firebase-admin');
+const admin = require('../../config/firebase');
 const { getAuth } = require('firebase-admin/auth');
-
-// Initialize Firebase Admin SDK
-const serviceAccount = require('../../config/firebase.js');
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`,
-  });
-}
-
-const auth = getAuth();
 
 /**
  * Verify Firebase ID token from Authorization header
  */
 async function verifyToken(req, res, next) {
   try {
+    if (!admin.apps.length) {
+      return res.status(503).json({ error: 'Legacy Firebase authentication is not configured' });
+    }
+
+    const auth = getAuth();
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'No token provided' });
