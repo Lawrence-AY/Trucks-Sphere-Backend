@@ -1,60 +1,22 @@
-const admin = require('firebase-admin');
-const { getAuth } = require('firebase-admin/auth');
+// middleware/auth.js
+const { auth } = require('../../config/firebase');
 
-// Initialize Firebase Admin SDK
-const serviceAccount = require('../../config/firebase.js');
+const authenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: No token provided' });
+  }
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`,
-  });
-}
-
-const auth = getAuth();
-
-/**
- * Verify Firebase ID token from Authorization header
- */
-async function verifyToken(req, res, next) {
+  const idToken = authHeader.split('Bearer ')[1];
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const idToken = authHeader.split('Bearer ')[1];
     const decodedToken = await auth.verifyIdToken(idToken);
-
-    req.user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email || '',
-      name: decodedToken.name || decodedToken.email?.split('@')[0] || 'User',
-      role: decodedToken.role || 'management',
-      phone: decodedToken.phone_number || '',
-    };
-
+    req.user = decodedToken; // attach user info to request
     next();
   } catch (error) {
-    console.error('Auth error:', error.message);
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    console.error('Authentication error:', error);
+    res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
-}
+};
 
-/**
- * Role-based access middleware
- * @param  {...string} roles - Allowed roles
- */
-function requireRole(...roles) {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: `Access denied. Required role: ${roles.join(', ')}` });
-    }
-    next();
-  };
-}
-
-module.exports = { verifyToken, requireRole };
+const verifyToken = authenticate;
+module.exports = { authenticate, verifyToken };
