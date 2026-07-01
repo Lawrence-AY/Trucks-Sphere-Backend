@@ -1,19 +1,13 @@
-// Firebase Admin SDK configuration
+// config/firebase.js
 const admin = require('firebase-admin');
-const fs = require('fs');
-const path = require('path');
+// Load the service account JSON file – adjust filename if needed
+const serviceAccount = require('./truck-d18ad-firebase-adminsdk-fbsvc-2ef616d98d.json');
 
-const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-  || path.join(__dirname, 'truck-d18ad-firebase-adminsdk-fbsvc-2ef616d98d.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
-if (!admin.apps.length && fs.existsSync(serviceAccountPath)) {
-  const serviceAccount = require(serviceAccountPath);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: serviceAccount.project_id || process.env.FIREBASE_PROJECT_ID || 'truck-d18ad',
-  });
-} else if (!admin.apps.length) {
-  console.warn('Firebase service account not found. Legacy Firebase endpoints are disabled until credentials are provided.');
-}
+const db = admin.firestore();
+const auth = admin.auth();
 
-module.exports = admin;
+module.exports = { admin, db, auth };

@@ -7,8 +7,7 @@
  *   node backend/scripts/seed-checkpoints.js
  */
 
-const admin = require('../config/firebase');
-const db = admin.firestore();
+const { db } = require('../config/firebase');
 
 const checkpointTypes = [
   'weigh_in',

@@ -1,33 +1,51 @@
-const admin = require('firebase-admin');
 const { getAuth } = require('firebase-admin/auth');
-const authService = require('./service');
 
 exports.register = async (req, res, next) => {
   try {
     const { email, password, name, role } = req.body;
-    const user = await authService.createUser(email, password, name, role);
-    res.status(201).json({ message: 'User created', user });
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'Email, password, and name required' });
+    }
+    const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor'];
+    if (!VALID_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role: ${role}` });
+    }
+    const userRecord = await getAuth().createUser({
+      email,
+      password,
+      displayName: name,
+    });
+    await getAuth().setCustomUserClaims(userRecord.uid, { role });
+    res.status(201).json({
+      message: 'User created',
+      user: {
+        uid: userRecord.uid,
+        email: userRecord.email,
+        name: userRecord.displayName,
+        role,
+      },
+    });
   } catch (err) {
+    console.error('Register error:', err);
+    if (err.code === 'auth/email-already-exists') {
+      return res.status(409).json({ error: 'User with this email already exists' });
+    }
     next(err);
   }
 };
 
-/**
- * Login: Accept email + password, verify against Firebase Auth,
- * then return user profile with role from custom claims or Firestore.
- */
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
     }
 
-    // Use Firebase Admin SDK to verify credentials
-    // Note: Firebase Admin SDK doesn't have signInWithEmailAndPassword.
-    // Instead, we use the Firebase Auth REST API.
+    // Convert username to email: if already an email, use as-is; otherwise append @truck.com
+    const email = username.includes('@') ? username : `${username}@truck.com`;
+
     const firebaseApiKey = process.env.FIREBASE_API_KEY || 'AIzaSyATEU61bk0_DNuEBui15djMTvlGmSv_5fc';
-    
+
     const response = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
       {
@@ -40,47 +58,28 @@ exports.login = async (req, res, next) => {
     const data = await response.json();
 
     if (!response.ok) {
-      const errorMsg = data.error?.message === 'EMAIL_NOT_FOUND' || data.error?.message === 'INVALID_PASSWORD'
-        ? 'Invalid email or password'
-        : data.error?.message || 'Authentication failed';
+      const firebaseError = data.error?.message || '';
+      const isAuthError = ['EMAIL_NOT_FOUND', 'INVALID_PASSWORD', 'INVALID_LOGIN_CREDENTIALS', 'INVALID_EMAIL', 'USER_DISABLED'].includes(firebaseError);
+      const errorMsg = isAuthError ? 'Invalid username or password' : (firebaseError || 'Authentication failed');
       return res.status(401).json({ error: errorMsg });
     }
 
-    // Get user details from Firebase Admin
     const userRecord = await getAuth().getUser(data.localId);
     const role = userRecord.customClaims?.role || 'management';
 
-    const user = {
-      uid: userRecord.uid,
-      email: userRecord.email,
-      displayName: userRecord.displayName || email.split('@')[0],
-      role,
-      phone: userRecord.phoneNumber || '',
-    };
-
     res.json({
-      user,
+      user: {
+        uid: userRecord.uid,
+        email: userRecord.email,
+        displayName: userRecord.displayName || email.split('@')[0],
+        role,
+        phone: userRecord.phoneNumber || '',
+      },
       token: data.idToken,
       refreshToken: data.refreshToken,
     });
   } catch (err) {
-    // Fallback for when Firebase is not configured
-    if (err.code === 'app/no-app' || err.message?.includes('credential')) {
-      const { MOCK_USERS } = require('./service');
-      const match = MOCK_USERS[email?.toLowerCase()];
-      if (!match || password?.length < 4) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-      return res.json({
-        user: {
-          uid: `mock_${email}`,
-          email: email.toLowerCase(),
-          displayName: match.displayName,
-          role: match.role,
-        },
-        token: `mock_token_${Date.now()}`,
-      });
-    }
+    console.error('Login error:', err);
     next(err);
   }
 };

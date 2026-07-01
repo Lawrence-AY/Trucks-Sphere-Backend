@@ -1,20 +1,30 @@
-const admin = require('../../../config/firebase');
-const db = admin.firestore();
+const { db } = require('../../../config/firebase');
 const collectionRef = db.collection('deliveryOrders');
 
 const delivery_ordersService = {
   async findAll(query = {}) {
     const { search, status, jobId, purchaseOrderId, page = 1, limit = 50 } = query;
     try {
-      let ref = collectionRef.orderBy('createdAt', 'desc');
-      if (status) ref = ref.where('status', '==', status);
-      if (jobId) ref = ref.where('jobId', '==', jobId);
-      if (purchaseOrderId) ref = ref.where('purchaseOrderId', '==', purchaseOrderId);
-      const snapshot = await ref.get();
+      // Fetch all documents sorted by createdAt (simple query, no composite index needed)
+      // Post-filter for jobId/purchaseOrderId to avoid compound index requirements
+      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
       let results = [];
       snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (search && !jobId) {
+      // Post-filter by status
+      if (status) {
+        results = results.filter(item => item.status === status);
+      }
+      // Post-filter by jobId
+      if (jobId) {
+        results = results.filter(item => item.jobId === jobId);
+      }
+      // Post-filter by purchaseOrderId
+      if (purchaseOrderId) {
+        results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
+      }
+      // Text search
+      if (search) {
         const s = search.toLowerCase();
         results = results.filter(item =>
           (item.jobId || '').toLowerCase().includes(s) ||

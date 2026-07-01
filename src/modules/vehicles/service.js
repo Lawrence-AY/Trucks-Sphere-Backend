@@ -1,5 +1,4 @@
-const admin = require('../../../config/firebase');
-const db = admin.firestore();
+const { db } = require('../../../config/firebase');
 const collectionRef = db.collection('vehicles');
 
 const vehiclesService = {
