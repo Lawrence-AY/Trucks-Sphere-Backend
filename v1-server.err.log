@@ -1,0 +1,12 @@
+Firebase service account not found. Legacy Firebase endpoints are disabled until credentials are provided.
+[Error] 401: Authentication token required Error: Authentication token required
+    at authenticate (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\src\middleware\v1AuthMiddleware.js:11:13)
+    at Layer.handle [as handle_request] (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\index.js:280:10)
+    at router.handle (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\index.js:175:3)
+    at router (C:\Users\Omnibook_1\Desktop\Trucksphere\Trucks-Sphere-Backend\node_modules\express\lib\router\index.js:47:12)
