@@ -5,7 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "seed-firestore": "node scripts/seed-firebase.js",
+    "seed-auth": "node scripts/seed-auth-users.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

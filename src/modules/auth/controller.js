@@ -36,10 +36,13 @@ exports.register = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
     }
+
+    // Convert username to email: if already an email, use as-is; otherwise append @truck.com
+    const email = username.includes('@') ? username : `${username}@truck.com`;
 
     const firebaseApiKey = process.env.FIREBASE_API_KEY || 'AIzaSyATEU61bk0_DNuEBui15djMTvlGmSv_5fc';
 
@@ -57,7 +60,7 @@ exports.login = async (req, res, next) => {
     if (!response.ok) {
       const firebaseError = data.error?.message || '';
       const isAuthError = ['EMAIL_NOT_FOUND', 'INVALID_PASSWORD', 'INVALID_LOGIN_CREDENTIALS', 'INVALID_EMAIL', 'USER_DISABLED'].includes(firebaseError);
-      const errorMsg = isAuthError ? 'Invalid email or password' : (firebaseError || 'Authentication failed');
+      const errorMsg = isAuthError ? 'Invalid username or password' : (firebaseError || 'Authentication failed');
       return res.status(401).json({ error: errorMsg });
     }
 
