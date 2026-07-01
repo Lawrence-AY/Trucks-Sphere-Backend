@@ -1,0 +1,5 @@
+TruckSphere API server running on port 3100
+Environment: development
+Health check: http://localhost:3100/api/health
+V1 API: http://localhost:3100/api/v1
+[0mGET /api/v1/delivery-orders [33m401[0m 3.805 ms - 1581[0m
