@@ -5,15 +5,23 @@ const weighbridgeService = {
   async findAll(query = {}) {
     const { search, type, jobId, deliveryOrderId, page = 1, limit = 50 } = query;
     try {
-      let ref = collectionRef.orderBy('timestamp', 'desc');
-      if (type) ref = ref.where('type', '==', type);
-      if (jobId) ref = ref.where('jobId', '==', jobId);
-      if (deliveryOrderId) ref = ref.where('deliveryOrderId', '==', deliveryOrderId);
-      const snapshot = await ref.get();
+      // Fetch all records sorted by timestamp — then post-filter
+      // to avoid Firestore composite index requirements
+      const snapshot = await collectionRef.orderBy('timestamp', 'desc').get();
       let results = [];
       snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (search && !jobId) {
+      // Post-filter
+      if (type) {
+        results = results.filter(item => item.type === type);
+      }
+      if (jobId) {
+        results = results.filter(item => item.jobId === jobId);
+      }
+      if (deliveryOrderId) {
+        results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
+      }
+      if (search) {
         const s = search.toLowerCase();
         results = results.filter(item =>
           (item.jobId || '').toLowerCase().includes(s) ||

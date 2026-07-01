@@ -6,13 +6,14 @@ const checkpointsService = {
   async findAll(query = {}) {
     const { jobId, deliveryOrderId, type, page = 1, limit = 50 } = query;
     try {
-      let ref = collectionRef.orderBy('timestamp', 'desc');
-      if (jobId) ref = ref.where('jobId', '==', jobId);
-      if (deliveryOrderId) ref = ref.where('deliveryOrderId', '==', deliveryOrderId);
-      if (type) ref = ref.where('type', '==', type);
-      const snapshot = await ref.get();
+      // Post-filter approach to avoid Firestore composite index requirements
+      const snapshot = await collectionRef.orderBy('timestamp', 'desc').get();
       let results = [];
       snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
+
+      if (jobId) results = results.filter(item => item.jobId === jobId);
+      if (deliveryOrderId) results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
+      if (type) results = results.filter(item => item.type === type);
 
       const start = (page - 1) * limit;
       return {
@@ -82,84 +83,58 @@ const checkpointsService = {
     }
   },
 
-  /**
-   * Get the full journey for a job ID with all checkpoints sorted by timestamp
-   * GET /api/checkpoints/journey/:jobId
-   */
   async getJourneyByJobId(jobId) {
     try {
-      const snapshot = await collectionRef
-        .where('jobId', '==', jobId)
-        .orderBy('timestamp', 'asc')
-        .get();
-
+      // Simple query + post-filter to avoid composite index
+      const snapshot = await collectionRef.orderBy('timestamp', 'asc').get();
       const checkpoints = [];
-      snapshot.forEach(doc => checkpoints.push({ id: doc.id, ...doc.data() }));
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.jobId === jobId) {
+          checkpoints.push({ id: doc.id, ...data });
+        }
+      });
 
-      // Also fetch the delivery order to get additional info
-      const doSnapshot = await deliveryOrdersRef
-        .where('jobId', '==', jobId)
-        .limit(1)
-        .get();
-
+      // Also fetch the delivery order
+      const doSnapshot = await deliveryOrdersRef.orderBy('createdAt', 'desc').get();
       let deliveryOrder = null;
-      if (!doSnapshot.empty) {
-        const doc = doSnapshot.docs[0];
-        deliveryOrder = { id: doc.id, ...doc.data() };
-      }
+      doSnapshot.forEach(doc => {
+        if (doc.data().jobId === jobId && !deliveryOrder) {
+          deliveryOrder = { id: doc.id, ...doc.data() };
+        }
+      });
 
-      return {
-        jobId,
-        deliveryOrder,
-        checkpoints,
-        total: checkpoints.length,
-      };
+      return { jobId, deliveryOrder, checkpoints, total: checkpoints.length };
     } catch (error) {
       console.error('checkpointsService.getJourneyByJobId error:', error);
       throw error;
     }
   },
 
-  /**
-   * Returns all active deliveries with their latest checkpoint status
-   * GET /api/checkpoints/active
-   */
   async getActiveDeliveries() {
     try {
-      // Get non-delivered/non-cancelled delivery orders
-      const doSnapshot = await deliveryOrdersRef
-        .where('status', 'in', ['assigned', 'at_quarry', 'in_transit', 'active'])
-        .orderBy('updatedAt', 'desc')
-        .get();
-
+      const doSnapshot = await deliveryOrdersRef.orderBy('updatedAt', 'desc').get();
       const deliveries = [];
       doSnapshot.forEach(doc => {
-        deliveries.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        if (['assigned', 'at_quarry', 'in_transit', 'active'].includes(data.status)) {
+          deliveries.push({ id: doc.id, ...data });
+        }
       });
 
-      // For each active delivery, fetch the latest checkpoint
       const result = [];
       for (const delivery of deliveries) {
-        const cpSnapshot = await collectionRef
-          .where('deliveryOrderId', '==', delivery.id)
-          .orderBy('timestamp', 'desc')
-          .limit(1)
-          .get();
-
+        const cpSnapshot = await collectionRef.orderBy('timestamp', 'desc').get();
         let latestCheckpoint = null;
-        if (!cpSnapshot.empty) {
-          const doc = cpSnapshot.docs[0];
-          latestCheckpoint = { id: doc.id, ...doc.data() };
-        }
-
-        // Get all checkpoints for this delivery
-        const allCpSnapshot = await collectionRef
-          .where('deliveryOrderId', '==', delivery.id)
-          .orderBy('timestamp', 'asc')
-          .get();
-
-        const allCheckpoints = [];
-        allCpSnapshot.forEach(doc => allCheckpoints.push({ id: doc.id, ...doc.data() }));
+        let allCheckpoints = [];
+        cpSnapshot.forEach(doc => {
+          const data = doc.data();
+          if (data.deliveryOrderId === delivery.id) {
+            allCheckpoints.push({ id: doc.id, ...data });
+            if (!latestCheckpoint) latestCheckpoint = { id: doc.id, ...data };
+          }
+        });
+        allCheckpoints.reverse(); // back to asc order
 
         result.push({
           ...delivery,
@@ -169,10 +144,7 @@ const checkpointsService = {
         });
       }
 
-      return {
-        data: result,
-        total: result.length,
-      };
+      return { data: result, total: result.length };
     } catch (error) {
       console.error('checkpointsService.getActiveDeliveries error:', error);
       throw error;

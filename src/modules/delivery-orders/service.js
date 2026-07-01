@@ -1,4 +1,5 @@
 const { db } = require('../../../config/firebase');
+const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('deliveryOrders');
 
 const delivery_ordersService = {
@@ -57,16 +58,29 @@ const delivery_ordersService = {
     }
   },
 
+  /**
+   * Create a Delivery Order (Job card).
+   * Delivery Note format: DN-POMAT###-D###-J###
+   * Receipt Note: RN### (generated separately at site)
+   */
   async create(data) {
     try {
-      const docRef = collectionRef.doc(data.id || undefined);
+      const jobId = await getNextId('job');
+      const poNumber = data.poNumber || '';
+      const driverId = data.driverId || 'D000';
+      const deliveryNote = `DN-${poNumber}-${driverId}-${jobId}`;
+      const docRef = collectionRef.doc(jobId);
       const item = {
         ...data,
+        id: jobId,
+        jobId,
+        deliveryNote,
+        status: data.status || 'assigned',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: docRef.id, ...item };
+      return { id: jobId, ...item };
     } catch (error) {
       console.error('delivery_ordersService.create error:', error);
       throw error;

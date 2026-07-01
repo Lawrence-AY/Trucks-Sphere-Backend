@@ -1,13 +1,13 @@
 const { db } = require('../../../config/firebase');
+const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('purchaseOrders');
 
 const purchase_ordersService = {
   async findAll(query = {}) {
     const { search, status, page = 1, limit = 50 } = query;
     try {
-      let ref = collectionRef.orderBy('createdAt', 'desc');
-      if (status) ref = ref.where('status', '==', status);
-      const snapshot = await ref.get();
+      // Post-filter to avoid composite index errors
+      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
       let results = [];
       snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
@@ -44,16 +44,24 @@ const purchase_ordersService = {
     }
   },
 
+  /**
+   * Create a Purchase Order with simple POMAT### number.
+   * Quarry, site, driver, job, and pricing will be added later on delivery/reciet notes.
+   */
   async create(data) {
     try {
-      const docRef = collectionRef.doc(data.id || undefined);
+      const poNumber = await getNextId('purchase_order');
+      const docRef = collectionRef.doc(poNumber);
       const item = {
         ...data,
+        id: poNumber,
+        poNumber,
+        status: data.status || 'pending',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: docRef.id, ...item };
+      return { id: poNumber, ...item };
     } catch (error) {
       console.error('purchase_ordersService.create error:', error);
       throw error;

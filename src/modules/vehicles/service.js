@@ -1,16 +1,16 @@
 const { db } = require('../../../config/firebase');
+const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('vehicles');
 
 const vehiclesService = {
   async findAll(query = {}) {
     const { search, status, page = 1, limit = 50 } = query;
     try {
-      let ref = collectionRef.orderBy('createdAt', 'desc');
-      if (status) ref = ref.where('status', '==', status);
-      const snapshot = await ref.get();
+      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
       let results = [];
       snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
+      if (status) results = results.filter(item => item.status === status);
       if (search) {
         const s = search.toLowerCase();
         results = results.filter(item =>
@@ -46,14 +46,17 @@ const vehiclesService = {
 
   async create(data) {
     try {
-      const docRef = collectionRef.doc(data.id || undefined);
+      const truckId = await getNextId('truck');
+      const docRef = collectionRef.doc(truckId);
       const item = {
         ...data,
+        id: truckId,
+        status: data.status || 'active',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: docRef.id, ...item };
+      return { id: truckId, ...item };
     } catch (error) {
       console.error('vehiclesService.create error:', error);
       throw error;

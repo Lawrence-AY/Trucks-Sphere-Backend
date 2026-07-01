@@ -78,8 +78,11 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error('Unhandled error:', err.message, err.stack);
+  res.status(500).json({ 
+    error: 'Internal server error', 
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+  });
 });
 
 module.exports = app;

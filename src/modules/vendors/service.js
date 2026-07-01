@@ -1,20 +1,22 @@
 const { db } = require('../../../config/firebase');
+const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('vendors');
 
 const vendorsService = {
   async findAll(query = {}) {
     const { search, status, page = 1, limit = 50 } = query;
     try {
-      let ref = collectionRef.orderBy('createdAt', 'desc');
-      if (status) ref = ref.where('status', '==', status);
-      const snapshot = await ref.get();
+      // Post-filter approach — no composite index needed
+      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
       let results = [];
       snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
+      if (status) results = results.filter(item => item.status === status);
       if (search) {
         const s = search.toLowerCase();
         results = results.filter(item =>
-          JSON.stringify(item).toLowerCase().includes(s)
+          (item.name || '').toLowerCase().includes(s) ||
+          (item.id || '').toLowerCase().includes(s)
         );
       }
 
@@ -44,14 +46,18 @@ const vendorsService = {
 
   async create(data) {
     try {
-      const docRef = collectionRef.doc(data.id || undefined);
+      const vendorId = await getNextId('vendor');
+      const docRef = collectionRef.doc(vendorId);
       const item = {
         ...data,
+        id: vendorId,
+        status: data.status || 'active',
+        fleetSize: data.fleetSize || 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: docRef.id, ...item };
+      return { id: vendorId, ...item };
     } catch (error) {
       console.error('vendorsService.create error:', error);
       throw error;

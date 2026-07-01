@@ -1,4 +1,5 @@
 const { db } = require('../../../config/firebase');
+const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('drivers');
 
 const driversService = {
@@ -46,14 +47,19 @@ const driversService = {
 
   async create(data) {
     try {
-      const docRef = collectionRef.doc(data.id || undefined);
+      const driverId = await getNextId('driver');
+      const docRef = collectionRef.doc(driverId);
       const item = {
         ...data,
+        id: driverId,
+        status: data.status || 'active',
+        totalTrips: data.totalTrips || 0,
+        rating: data.rating || 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: docRef.id, ...item };
+      return { id: driverId, ...item };
     } catch (error) {
       console.error('driversService.create error:', error);
       throw error;
