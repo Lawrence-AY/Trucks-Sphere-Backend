@@ -1,7 +1,7 @@
 // config/firebase.js
 const admin = require('firebase-admin');
 // Load the service account JSON file – adjust filename if needed
-const serviceAccount = require('./truck-d18ad-firebase-adminsdk-fbsvc-2ef616d98d.json');
+const serviceAccount = require('./truck2sphere-57b00-firebase-adminsdk-fbsvc-b38391ce11.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),

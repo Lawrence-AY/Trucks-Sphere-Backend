@@ -17,7 +17,9 @@ exports.findById = async (req, res, next) => {
 
 exports.findByJobId = async (req, res, next) => {
   try {
-    const { jobId } = req.params;
+    // Wildcard route: jobId is captured in req.params[0] (Express 4)
+    // Strip leading slash if present
+    const jobId = (req.params[0] || '').replace(/^\/+/, '');
     const items = await delivery_ordersService.findAll({ jobId });
     res.json(items);
   } catch (err) { next(err); }
@@ -25,7 +27,7 @@ exports.findByJobId = async (req, res, next) => {
 
 exports.findByPurchaseOrderId = async (req, res, next) => {
   try {
-    const { purchaseOrderId } = req.params;
+    const purchaseOrderId = (req.params[0] || '').replace(/^\/+/, '');
     const items = await delivery_ordersService.findAll({ purchaseOrderId });
     res.json(items);
   } catch (err) { next(err); }
