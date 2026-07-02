@@ -65,22 +65,21 @@ const delivery_ordersService = {
    */
   async create(data) {
     try {
-      const jobId = await getNextId('job');
-      const poNumber = data.poNumber || '';
-      const driverId = data.driverId || 'D000';
-      const deliveryNote = `DN-${poNumber}-${driverId}-${jobId}`;
-      const docRef = collectionRef.doc(jobId);
+      // Use client-provided jobId if present, otherwise auto-generate
+      const jobId = data.jobId || await getNextId('job');
+      // Firestore doc IDs cannot contain /, so sanitize for the doc ID only
+      const docId = jobId.replace(/\//g, '-');
+      const docRef = collectionRef.doc(docId);
       const item = {
         ...data,
-        id: jobId,
+        id: docId,
         jobId,
-        deliveryNote,
         status: data.status || 'assigned',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: jobId, ...item };
+      return { id: docId, ...item };
     } catch (error) {
       console.error('delivery_ordersService.create error:', error);
       throw error;

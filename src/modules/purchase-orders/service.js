@@ -50,18 +50,21 @@ const purchase_ordersService = {
    */
   async create(data) {
     try {
-      const poNumber = await getNextId('purchase_order');
-      const docRef = collectionRef.doc(poNumber);
+      // Use client-provided poNumber if present, otherwise auto-generate
+      const poNumber = data.poNumber || await getNextId('purchase_order');
+      // Firestore doc IDs cannot contain /, so sanitize for the doc ID only
+      const docId = poNumber.replace(/\//g, '-');
+      const docRef = collectionRef.doc(docId);
       const item = {
         ...data,
-        id: poNumber,
+        id: docId,
         poNumber,
         status: data.status || 'pending',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: poNumber, ...item };
+      return { id: docId, ...item };
     } catch (error) {
       console.error('purchase_ordersService.create error:', error);
       throw error;
