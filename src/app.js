@@ -20,6 +20,9 @@ const weighbridgeRoutes = require('./modules/weighbridge/routes');
 const quarryRoutes = require('./modules/quarry/routes');
 const siteRoutes = require('./modules/site/routes');
 const checkpointsRoutes = require('./modules/checkpoints/routes');
+const fuelRoutes = require('./modules/fuel/routes');
+const uploadsRoutes = require('./modules/uploads/routes');
+const { getNextId } = require('./utils/counterService');
 
 const app = express();
 
@@ -28,6 +31,17 @@ app.use(helmet());           // Security headers
 app.use(cors());             // Enable CORS
 app.use(express.json());     // Parse JSON bodies
 app.use(morgan('combined')); // Logging
+
+// Counter API for sequential IDs
+app.get('/api/counter/:entityType', async (req, res) => {
+  try {
+    const { entityType } = req.params;
+    const nextId = await getNextId(entityType);
+    res.json({ id: nextId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -70,6 +84,8 @@ app.use('/api/weighbridge', weighbridgeRoutes);
 app.use('/api/quarries', quarryRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/checkpoints', checkpointsRoutes);
+app.use('/api/fuel', fuelRoutes);
+app.use('/api/uploads', uploadsRoutes);
 
 // 404 handler for unmatched routes
 app.use((req, res) => {

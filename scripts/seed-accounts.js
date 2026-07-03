@@ -121,6 +121,9 @@ const AUTH_USERS = [
   { email: 'site3@truck.com',      password: '123456', displayName: 'Nancy Site Op3',    role: 'operator_site',    firestoreId: 'u_sop3',  siteId: 's3' },
   { email: 'site4@truck.com',      password: '123456', displayName: 'Evans Site Op4',    role: 'operator_site',    firestoreId: 'u_sop4',  siteId: 's4' },
 
+  // --- fuel operator ---
+  { email: 'fuel@truck.com',       password: '123456', displayName: 'Mike Fuel Operator', role: 'operator_fuel',  firestoreId: 'u_fuel'  },
+
   // --- vendor accounts (one per vendor) ---
   { email: 'vendor1@truck.com',    password: '123456', displayName: 'Vendor Mwangi',     role: 'vendor',          firestoreId: 'u_v1',    vendorId: 'v1' },
   { email: 'vendor2@truck.com',    password: '123456', displayName: 'Vendor Kamau',      role: 'vendor',          firestoreId: 'u_v2',    vendorId: 'v2' },
@@ -312,7 +315,7 @@ async function main() {
   console.log('  ⛰️  Quarries:    3');
   console.log('  🏗️  Sites:       4');
   console.log('  🧱 Materials:   7');
-  console.log('  👤 Auth users:  14  (2 admin, 3 quarry ops, 4 site ops, 6 vendors)');
+  console.log('  👤 Auth users:  15  (2 admin, 3 quarry ops, 4 site ops, 1 fuel op, 6 vendors)');
   console.log('');
 
   const uidMap = await seedAuthUsers();
@@ -339,6 +342,8 @@ async function main() {
   console.log('    Username: site2        Email: site2@truck.com      (Westlands Tower)');
   console.log('    Username: site3        Email: site3@truck.com      (Kilimani Heights)');
   console.log('    Username: site4        Email: site4@truck.com      (Eastlands Estate Phase 3)');
+  console.log('  FUEL OPERATOR:');
+  console.log('    Username: fuel         Email: fuel@truck.com');
   console.log('  VENDORS:');
   console.log('    Username: vendor1      Email: vendor1@truck.com    (Mwangi Heavy Transport Ltd)');
   console.log('    Username: vendor2      Email: vendor2@truck.com    (Kamau & Sons Trucking)');

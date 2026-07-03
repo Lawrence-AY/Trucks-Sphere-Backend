@@ -6,7 +6,7 @@ exports.register = async (req, res, next) => {
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name required' });
     }
-    const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor'];
+    const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel'];
     if (!VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `Invalid role: ${role}` });
     }
@@ -91,7 +91,7 @@ exports.getProfile = async (req, res) => {
 exports.updateRole = async (req, res, next) => {
   try {
     const { uid, role } = req.body;
-    if (!['management', 'operator_quarry', 'operator_site', 'vendor'].includes(role)) {
+    if (!['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
     await getAuth().setCustomUserClaims(uid, { role });

@@ -16,6 +16,7 @@ const USERS = [
   { email: 'quarry@truck.com',   password: '123456', displayName: 'Peter Quarry',  role: 'operator_quarry' },
   { email: 'site@truck.com',     password: '123456', displayName: 'Anna Site',     role: 'operator_site' },
   { email: 'vendor@truck.com',   password: '123456', displayName: 'John Vendor',   role: 'vendor' },
+  { email: 'fuel@truck.com',     password: '123456', displayName: 'Mike Fuel',    role: 'operator_fuel' },
 ];
 
 async function seedAuthUsers() {

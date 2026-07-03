@@ -25,6 +25,7 @@ const PREFIX_MAP = {
   receipt_note: 'RN',
   delivery_note: 'DN',
   purchase_order: 'POMAT',
+  fuel: 'FUEL',
 };
 
 /**
