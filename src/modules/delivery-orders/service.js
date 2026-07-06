@@ -1,0 +1,113 @@
+const { db } = require('../../../config/firebase');
+const { getNextId } = require('../../utils/counterService');
+const collectionRef = db.collection('deliveryOrders');
+
+const delivery_ordersService = {
+  async findAll(query = {}) {
+    const { search, status, jobId, purchaseOrderId, page = 1, limit = 50 } = query;
+    try {
+      // Fetch all documents sorted by createdAt (simple query, no composite index needed)
+      // Post-filter for jobId/purchaseOrderId to avoid compound index requirements
+      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
+      let results = [];
+      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
+
+      // Post-filter by status
+      if (status) {
+        results = results.filter(item => item.status === status);
+      }
+      // Post-filter by jobId
+      if (jobId) {
+        results = results.filter(item => item.jobId === jobId);
+      }
+      // Post-filter by purchaseOrderId
+      if (purchaseOrderId) {
+        results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
+      }
+      // Text search
+      if (search) {
+        const s = search.toLowerCase();
+        results = results.filter(item =>
+          (item.jobId || '').toLowerCase().includes(s) ||
+          (item.driverName || '').toLowerCase().includes(s) ||
+          (item.plateNumber || '').toLowerCase().includes(s)
+        );
+      }
+
+      const start = (page - 1) * limit;
+      return {
+        data: results.slice(start, start + parseInt(limit)),
+        total: results.length,
+        page: parseInt(page),
+        totalPages: Math.ceil(results.length / limit),
+      };
+    } catch (error) {
+      console.error('delivery_ordersService.findAll error:', error);
+      throw error;
+    }
+  },
+
+  async findById(id) {
+    try {
+      const doc = await collectionRef.doc(id).get();
+      if (!doc.exists) return null;
+      return { id: doc.id, ...doc.data() };
+    } catch (error) {
+      console.error('delivery_ordersService.findById error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Create a Delivery Order (Job card).
+   * Delivery Note format: DN-POMAT###-D###-J###
+   * Receipt Note: RN### (generated separately at site)
+   */
+  async create(data) {
+    try {
+      // Use client-provided jobId if present, otherwise auto-generate
+      const jobId = data.jobId || await getNextId('job');
+      // Firestore doc IDs cannot contain /, so sanitize for the doc ID only
+      const docId = jobId.replace(/\//g, '-');
+      const docRef = collectionRef.doc(docId);
+      const item = {
+        ...data,
+        id: docId,
+        jobId,
+        status: data.status || 'assigned',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await docRef.set(item);
+      return { id: docId, ...item };
+    } catch (error) {
+      console.error('delivery_ordersService.create error:', error);
+      throw error;
+    }
+  },
+
+  async update(id, data) {
+    try {
+      const docRef = collectionRef.doc(id);
+      const doc = await docRef.get();
+      if (!doc.exists) return null;
+      const updates = { ...data, updatedAt: new Date().toISOString() };
+      await docRef.update(updates);
+      return { id, ...doc.data(), ...updates };
+    } catch (error) {
+      console.error('delivery_ordersService.update error:', error);
+      throw error;
+    }
+  },
+
+  async delete(id) {
+    try {
+      await collectionRef.doc(id).delete();
+    } catch (error) {
+      console.error('delivery_ordersService.delete error:', error);
+      throw error;
+    }
+  },
+};
+
+module.exports = delivery_ordersService;
