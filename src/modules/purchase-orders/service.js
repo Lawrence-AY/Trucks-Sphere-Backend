@@ -4,7 +4,7 @@ const collectionRef = db.collection('purchaseOrders');
 
 const purchase_ordersService = {
   async findAll(query = {}) {
-    const { search, status, page = 1, limit = 50 } = query;
+    const { search, status, vendorId, page = 1, limit = 50 } = query;
     try {
       // Post-filter to avoid composite index errors
       const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
@@ -18,6 +18,9 @@ const purchase_ordersService = {
           (item.vendorName || '').toLowerCase().includes(s) ||
           (item.materialName || '').toLowerCase().includes(s)
         );
+      }
+      if (vendorId) {
+        results = results.filter(item => item.vendorId === vendorId);
       }
 
       const start = (page - 1) * limit;

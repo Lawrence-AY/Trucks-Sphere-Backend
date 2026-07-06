@@ -1,4 +1,5 @@
 const { getAuth } = require('firebase-admin/auth');
+const { db } = require('../../../config/firebase');
 
 exports.register = async (req, res, next) => {
   try {
@@ -34,6 +35,64 @@ exports.register = async (req, res, next) => {
   }
 };
 
+/**
+ * Resolve vendorId / quarryId / siteId from Firestore for role-based users
+ */
+async function resolveEntityIds(email, role) {
+  const ids = {};
+  try {
+    // First, try to resolve from the users collection (seeded with vendorId/quarryId/siteId)
+    const usersSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+    let userDoc = null;
+    if (!usersSnap.empty) {
+      userDoc = usersSnap.docs[0].data();
+    }
+
+    if (role === 'vendor') {
+      // Try users collection first
+      if (userDoc && userDoc.vendorId) {
+        ids.vendorId = userDoc.vendorId;
+      } else {
+        // Fallback: look up vendor by email in vendors collection
+        const vendorsSnap = await db.collection('vendors').where('email', '==', email).limit(1).get();
+        if (!vendorsSnap.empty) {
+          ids.vendorId = vendorsSnap.docs[0].id;
+        }
+      }
+    } else if (role === 'operator_quarry') {
+      if (userDoc && userDoc.quarryId) {
+        ids.quarryId = userDoc.quarryId;
+      } else {
+        const quarriesSnap = await db.collection('quarries').where('email', '==', email).limit(1).get();
+        if (!quarriesSnap.empty) {
+          ids.quarryId = quarriesSnap.docs[0].id;
+        }
+      }
+    } else if (role === 'operator_site') {
+      if (userDoc && userDoc.siteId) {
+        ids.siteId = userDoc.siteId;
+      } else {
+        const sitesSnap = await db.collection('sites').where('email', '==', email).limit(1).get();
+        if (!sitesSnap.empty) {
+          ids.siteId = sitesSnap.docs[0].id;
+        }
+      }
+    } else if (role === 'operator_fuel') {
+      // Resolve fuel station/operator ID from users collection
+      if (userDoc && userDoc.fuelStationId) {
+        ids.fuelStationId = userDoc.fuelStationId;
+      }
+      // Also set a generic operatorId for fuel records
+      if (userDoc && userDoc.id) {
+        ids.fuelOperatorId = userDoc.id;
+      }
+    }
+  } catch (err) {
+    console.warn('resolveEntityIds: Failed to resolve entity for', email, role, err.message);
+  }
+  return ids;
+}
+
 exports.login = async (req, res, next) => {
   try {
     const { username, password } = req.body;
@@ -67,6 +126,9 @@ exports.login = async (req, res, next) => {
     const userRecord = await getAuth().getUser(data.localId);
     const role = userRecord.customClaims?.role || 'management';
 
+    // Resolve vendorId / quarryId / siteId based on role + email
+    const entityIds = await resolveEntityIds(email, role);
+
     res.json({
       user: {
         uid: userRecord.uid,
@@ -74,6 +136,7 @@ exports.login = async (req, res, next) => {
         displayName: userRecord.displayName || email.split('@')[0],
         role,
         phone: userRecord.phoneNumber || '',
+        ...entityIds,
       },
       token: data.idToken,
       refreshToken: data.refreshToken,
@@ -85,7 +148,27 @@ exports.login = async (req, res, next) => {
 };
 
 exports.getProfile = async (req, res) => {
-  res.json({ user: req.user });
+  try {
+    const { uid, email, role } = req.user;
+    const userRecord = await getAuth().getUser(uid);
+    const entityIds = await resolveEntityIds(email, role);
+    res.json({
+      user: {
+        uid: userRecord.uid,
+        email: userRecord.email,
+        displayName: userRecord.displayName || email?.split('@')[0] || '',
+        role,
+        phone: userRecord.phoneNumber || '',
+        ...entityIds,
+      },
+    });
+  } catch (err) {
+    console.error('getProfile error:', err);
+    // Fallback with minimal data
+    const { uid, email, role } = req.user;
+    const entityIds = await resolveEntityIds(email, role);
+    res.json({ user: { uid, email, displayName: email?.split('@')[0] || '', role, phone: '', ...entityIds } });
+  }
 };
 
 exports.updateRole = async (req, res, next) => {

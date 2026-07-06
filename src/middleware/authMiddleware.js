@@ -14,7 +14,16 @@ const authenticate = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Authentication error:', error);
-    res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    const errorCode = error?.code || '';
+    const errorMessage = error?.message || 'Unauthorized: Invalid token';
+    res.status(401).json({
+      error: errorMessage,
+      errorInfo: {
+        code: errorCode,
+        message: errorMessage,
+      },
+      codePrefix: 'auth',
+    });
   }
 };
 

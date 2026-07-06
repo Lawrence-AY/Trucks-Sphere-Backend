@@ -1,8 +1,30 @@
 const delivery_ordersService = require('./service');
+const { db } = require('../../../config/firebase');
+
+async function getUserEntity(email) {
+  const userSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+  if (!userSnap.empty) return userSnap.docs[0].data();
+  return null;
+}
 
 exports.findAll = async (req, res, next) => {
   try {
-    const items = await delivery_ordersService.findAll(req.query);
+    const { role, email } = req.user;
+    let scopedQuery = { ...req.query };
+
+    // Scope delivery orders based on user role
+    const userEntity = await getUserEntity(email);
+
+    if (role === 'vendor' && userEntity?.vendorId) {
+      scopedQuery.vendorId = userEntity.vendorId;
+    } else if (role === 'operator_quarry' && userEntity?.quarryId) {
+      scopedQuery.quarryId = userEntity.quarryId;
+    } else if (role === 'operator_site' && userEntity?.siteId) {
+      scopedQuery.siteId = userEntity.siteId;
+    }
+    // operator_fuel and management see all
+
+    const items = await delivery_ordersService.findAll(scopedQuery);
     res.json(items);
   } catch (err) { next(err); }
 };
@@ -18,7 +40,6 @@ exports.findById = async (req, res, next) => {
 exports.findByJobId = async (req, res, next) => {
   try {
     // Wildcard route: jobId is captured in req.params[0] (Express 4)
-    // Strip leading slash if present
     const jobId = (req.params[0] || '').replace(/^\/+/, '');
     const items = await delivery_ordersService.findAll({ jobId });
     res.json(items);

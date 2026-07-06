@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('./controller');
+const { verifyToken } = require('../../middleware/authMiddleware');
+
+router.use(verifyToken);
 
 router.get('/', controller.findAll);
 router.get('/:id', controller.findById);

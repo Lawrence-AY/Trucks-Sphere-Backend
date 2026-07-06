@@ -32,19 +32,19 @@ const MATERIALS = [
 // QUARRIES
 // ============================================================
 const QUARRIES = [
-  { id: 'q1', name: 'Mombasa Road Quarry',     contact: '+254700111001', status: 'active', location: { address: 'Mombasa Road, Machakos',    latitude: -1.4567, longitude: 36.9782 } },
-  { id: 'q2', name: 'Kisumu Aggregate Quarry', contact: '+254700111002', status: 'active', location: { address: 'Kisumu Industrial Area',     latitude: -0.0917, longitude: 34.7680 } },
-  { id: 'q3', name: 'Ngong Stone Quarry',       contact: '+254700111003', status: 'active', location: { address: 'Ngong Road, Kajiado',       latitude: -1.3965, longitude: 36.7456 } },
+  { id: 'q1', name: 'Mombasa Road Quarry',     contact: '+254700111001', status: 'active', email: 'quarry1@truck.com', location: { address: 'Mombasa Road, Machakos',    latitude: -1.4567, longitude: 36.9782 } },
+  { id: 'q2', name: 'Kisumu Aggregate Quarry', contact: '+254700111002', status: 'active', email: 'quarry2@truck.com', location: { address: 'Kisumu Industrial Area',     latitude: -0.0917, longitude: 34.7680 } },
+  { id: 'q3', name: 'Ngong Stone Quarry',       contact: '+254700111003', status: 'active', email: 'quarry3@truck.com', location: { address: 'Ngong Road, Kajiado',       latitude: -1.3965, longitude: 36.7456 } },
 ];
 
 // ============================================================
 // SITES  (construction sites where materials are delivered)
 // ============================================================
 const SITES = [
-  { id: 's1', name: 'Tatu City Phase 2',      contact: '+254711001001', status: 'active', location: { address: 'Ruiru, Kiambu',           latitude: -1.1556, longitude: 36.8956 } },
-  { id: 's2', name: 'Westlands Tower',         contact: '+254711001002', status: 'active', location: { address: 'Westlands, Nairobi',      latitude: -1.2617, longitude: 36.8073 } },
-  { id: 's3', name: 'Kilimani Heights',        contact: '+254711001003', status: 'active', location: { address: 'Kilimani, Nairobi',        latitude: -1.2751, longitude: 36.8053 } },
-  { id: 's4', name: 'Eastlands Estate Phase 3',contact: '+254711001004', status: 'active', location: { address: 'Eastlands, Nairobi',       latitude: -1.3016, longitude: 36.8616 } },
+  { id: 's1', name: 'Tatu City Phase 2',      contact: '+254711001001', status: 'active', email: 'site1@truck.com', location: { address: 'Ruiru, Kiambu',           latitude: -1.1556, longitude: 36.8956 } },
+  { id: 's2', name: 'Westlands Tower',         contact: '+254711001002', status: 'active', email: 'site2@truck.com', location: { address: 'Westlands, Nairobi',      latitude: -1.2617, longitude: 36.8073 } },
+  { id: 's3', name: 'Kilimani Heights',        contact: '+254711001003', status: 'active', email: 'site3@truck.com', location: { address: 'Kilimani, Nairobi',        latitude: -1.2751, longitude: 36.8053 } },
+  { id: 's4', name: 'Eastlands Estate Phase 3',contact: '+254711001004', status: 'active', email: 'site4@truck.com', location: { address: 'Eastlands, Nairobi',       latitude: -1.3016, longitude: 36.8616 } },
 ];
 
 // ============================================================

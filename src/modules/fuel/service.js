@@ -2,19 +2,40 @@ const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('fuelRecords');
 
+/**
+ * Normalize vendor ID to consistent format e.g. "v1" → "V001", "1" → "V001"
+ */
+function normalizeVendorId(raw) {
+  if (!raw) return '';
+  let str = String(raw).trim();
+  // Match pattern: optional V/v prefix followed by digits
+  const match = str.match(/^([Vv]?)(\d+)$/);
+  if (match) {
+    const num = parseInt(match[2], 10);
+    return `V${String(num).padStart(3, '0')}`;
+  }
+  return str.toUpperCase();
+}
+
 const fuelService = {
   async findAll(query = {}) {
-    const { search, vendorId, jobId, plateNumber, dateFrom, dateTo, page = 1, limit = 50 } = query;
+    const { search, vendorId, jobId, plateNumber, dateFrom, dateTo, dispensedByEmail, page = 1, limit = 50 } = query;
+    const normalizedVendorId = normalizeVendorId(vendorId);
     try {
       const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
       let results = [];
       snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (vendorId) results = results.filter(item => item.vendorId === vendorId);
+      if (normalizedVendorId) {
+        results = results.filter(item => normalizeVendorId(item.vendorId) === normalizedVendorId);
+      }
       if (jobId) results = results.filter(item => item.jobId === jobId);
       if (plateNumber) results = results.filter(item => item.plateNumber === plateNumber);
       if (dateFrom) results = results.filter(item => new Date(item.createdAt) >= new Date(dateFrom));
       if (dateTo) results = results.filter(item => new Date(item.createdAt) <= new Date(dateTo));
+      if (dispensedByEmail) {
+        results = results.filter(item => item.dispensedBy === dispensedByEmail);
+      }
       if (search) {
         const s = search.toLowerCase();
         results = results.filter(item =>
@@ -53,9 +74,12 @@ const fuelService = {
     try {
       const fuelId = await getNextId('fuel');
       const docRef = collectionRef.doc(fuelId);
+      // Normalize vendorId to consistent V### format
+      const normalizedVendorId = normalizeVendorId(data.vendorId);
       const item = {
         ...data,
         id: fuelId,
+        vendorId: normalizedVendorId || data.vendorId,
         status: 'completed',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

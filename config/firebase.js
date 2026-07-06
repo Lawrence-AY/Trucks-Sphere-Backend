@@ -1,9 +1,26 @@
 // config/firebase.js
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
 const admin = require('firebase-admin');
-// Load the service account JSON file – adjust filename if needed
- const serviceAccount = require('./truck2sphere-57b00-firebase-adminsdk-fbsvc-b38391ce11.json');
-//const serviceAccount = require('./truck-d18ad-firebase-adminsdk-fbsvc-2ef616d98d.json');
-//const serviceAccount = require('./jobs-app-36698-firebase-adminsdk-eg4oi-2894943154.json');
+
+// Load service account from environment variables
+const serviceAccount = {
+  type: process.env.FIREBASE_TYPE,
+  project_id: process.env.FIREBASE_PROJECT_ID,
+  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+  private_key: process.env.FIREBASE_PRIVATE_KEY
+    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+    : undefined,
+  client_email: process.env.FIREBASE_CLIENT_EMAIL,
+  client_id: process.env.FIREBASE_CLIENT_ID,
+  auth_uri: process.env.FIREBASE_AUTH_URI,
+  token_uri: process.env.FIREBASE_TOKEN_URI,
+  auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
+  client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL,
+  universe_domain: process.env.FIREBASE_UNIVERSE_DOMAIN,
+};
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });

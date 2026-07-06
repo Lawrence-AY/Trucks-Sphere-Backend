@@ -4,7 +4,7 @@ const collectionRef = db.collection('deliveryOrders');
 
 const delivery_ordersService = {
   async findAll(query = {}) {
-    const { search, status, jobId, purchaseOrderId, page = 1, limit = 50 } = query;
+    const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, page = 1, limit = 50 } = query;
     try {
       // Fetch all documents sorted by createdAt (simple query, no composite index needed)
       // Post-filter for jobId/purchaseOrderId to avoid compound index requirements
@@ -23,6 +23,18 @@ const delivery_ordersService = {
       // Post-filter by purchaseOrderId
       if (purchaseOrderId) {
         results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
+      }
+      // Post-filter by vendorId (for vendor-scoped views)
+      if (vendorId) {
+        results = results.filter(item => item.vendorId === vendorId);
+      }
+      // Post-filter by quarryId (for quarry operator views)
+      if (quarryId) {
+        results = results.filter(item => item.quarryId === quarryId);
+      }
+      // Post-filter by siteId (for site operator views)
+      if (siteId) {
+        results = results.filter(item => item.siteId === siteId);
       }
       // Text search
       if (search) {
@@ -91,9 +103,47 @@ const delivery_ordersService = {
       const docRef = collectionRef.doc(id);
       const doc = await docRef.get();
       if (!doc.exists) return null;
+      const existing = doc.data();
       const updates = { ...data, updatedAt: new Date().toISOString() };
       await docRef.update(updates);
-      return { id, ...doc.data(), ...updates };
+
+      // When delivery is marked as delivered/completed, deduct quantity from purchase order
+      const newStatus = data.status;
+      const wasCompleted = ['delivered', 'completed'].includes(existing.status);
+      const isNowCompleted = ['delivered', 'completed'].includes(newStatus);
+      
+      if (!wasCompleted && isNowCompleted) {
+        const purchaseOrderId = existing.purchaseOrderId;
+        const deliveredQty = Number(data.quantityDelivered || data.netWeight || existing.quantityDelivered || existing.netWeight || existing.quantity || 0);
+        
+        if (purchaseOrderId && deliveredQty > 0) {
+          try {
+            const poRef = db.collection('purchaseOrders').doc(purchaseOrderId);
+            const poDoc = await poRef.get();
+            if (poDoc.exists) {
+              const po = poDoc.data();
+              const currentDelivered = Number(po.deliveredQuantity || 0);
+              const orderedQty = Number(po.quantity || 0);
+              const newDelivered = currentDelivered + deliveredQty;
+              const remainingQty = Math.max(0, orderedQty - newDelivered);
+              const poStatus = remainingQty <= 0 ? 'fulfilled' : (newDelivered > 0 ? 'partially_fulfilled' : po.status);
+              
+              await poRef.update({
+                deliveredQuantity: newDelivered,
+                remainingQuantity: remainingQty,
+                status: poStatus,
+                updatedAt: new Date().toISOString(),
+              });
+              console.log(`[DeliveryOrder] Updated PO ${purchaseOrderId}: delivered=${newDelivered}, remaining=${remainingQty}, status=${poStatus}`);
+            }
+          } catch (poError) {
+            console.error('[DeliveryOrder] Failed to update purchase order:', poError);
+            // Don't fail the delivery update — PO update is secondary
+          }
+        }
+      }
+
+      return { id, ...existing, ...updates };
     } catch (error) {
       console.error('delivery_ordersService.update error:', error);
       throw error;
