@@ -7,6 +7,10 @@ const morgan = require('morgan');
 // Import Firebase config (must be initialized before any routes that use it)
 const { db, admin } = require('../config/firebase');
 
+// Initialize real-time snapshot cache (eliminates repeated Firestore reads)
+const snapshotStore = require('./utils/snapshotStore');
+snapshotStore.init();
+
 // Import routes
 const truckRoutes = require('../routes/trucks');
 const authRoutes = require('./modules/auth/routes');

@@ -1,73 +1,97 @@
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
+const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('deliveryOrders');
+const purchaseOrdersCollection = db.collection('purchaseOrders');
+
+const COLLECTION_NAME = 'deliveryOrders';
+
+/**
+ * Enrich a delivery order with quarry/site context from its purchase order.
+ * Uses the snapshot cache for purchaseOrders instead of a Firestore read.
+ */
+function enrichWithPurchaseOrderContext(item) {
+  if (!item?.purchaseOrderId) return item;
+  if (item.quarryId && item.siteId) return item;
+
+  const po = snapshotStore.getById('purchaseOrders', item.purchaseOrderId);
+  if (!po) return item;
+
+  return {
+    ...item,
+    quarryId: item.quarryId || po.quarryId || '',
+    quarryName: item.quarryName || po.quarryName || '',
+    siteId: item.siteId || po.siteId || '',
+    siteName: item.siteName || po.siteName || '',
+  };
+}
 
 const delivery_ordersService = {
-  async findAll(query = {}) {
+  /**
+   * findAll now reads from the in-memory snapshot cache.
+   * The cache is kept up-to-date via Firestore onSnapshot — no Firestore reads
+   * needed on every request.
+   */
+  findAll(query = {}) {
     const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, page = 1, limit = 50 } = query;
-    try {
-      // Fetch all documents sorted by createdAt (simple query, no composite index needed)
-      // Post-filter for jobId/purchaseOrderId to avoid compound index requirements
-      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      // Post-filter by status
-      if (status) {
-        results = results.filter(item => item.status === status);
-      }
-      // Post-filter by jobId
-      if (jobId) {
-        results = results.filter(item => item.jobId === jobId);
-      }
-      // Post-filter by purchaseOrderId
-      if (purchaseOrderId) {
-        results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
-      }
-      // Post-filter by vendorId (for vendor-scoped views)
-      if (vendorId) {
-        results = results.filter(item => item.vendorId === vendorId);
-      }
-      // Post-filter by quarryId (for quarry operator views)
-      if (quarryId) {
-        results = results.filter(item => item.quarryId === quarryId);
-      }
-      // Post-filter by siteId (for site operator views)
-      if (siteId) {
-        results = results.filter(item => item.siteId === siteId);
-      }
-      // Text search
-      if (search) {
-        const s = search.toLowerCase();
-        results = results.filter(item =>
-          (item.jobId || '').toLowerCase().includes(s) ||
-          (item.driverName || '').toLowerCase().includes(s) ||
-          (item.plateNumber || '').toLowerCase().includes(s)
-        );
-      }
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      const start = (page - 1) * limit;
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / limit),
-      };
-    } catch (error) {
-      console.error('delivery_ordersService.findAll error:', error);
-      throw error;
+    // Enrich with PO context from the cached purchaseOrders collection
+    results = results.map(enrichWithPurchaseOrderContext);
+
+    // Sort by createdAt descending
+    results = [...results].sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
+
+    // Post-filter by status
+    if (status) {
+      results = results.filter(item => item.status === status);
     }
+    // Post-filter by jobId
+    if (jobId) {
+      results = results.filter(item => item.jobId === jobId);
+    }
+    // Post-filter by purchaseOrderId
+    if (purchaseOrderId) {
+      results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
+    }
+    // Post-filter by vendorId (for vendor-scoped views)
+    if (vendorId) {
+      results = results.filter(item => item.vendorId === vendorId);
+    }
+    // Post-filter by quarryId (for quarry operator views)
+    if (quarryId) {
+      results = results.filter(item => item.quarryId === quarryId);
+    }
+    // Post-filter by siteId (for site operator views)
+    if (siteId) {
+      results = results.filter(item => item.siteId === siteId);
+    }
+    // Text search
+    if (search) {
+      const s = search.toLowerCase();
+      results = results.filter(item =>
+        (item.jobId || '').toLowerCase().includes(s) ||
+        (item.driverName || '').toLowerCase().includes(s) ||
+        (item.plateNumber || '').toLowerCase().includes(s)
+      );
+    }
+
+    const start = (page - 1) * limit;
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / limit),
+    };
   },
 
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('delivery_ordersService.findById error:', error);
-      throw error;
-    }
+  findById(id) {
+    return snapshotStore.getById(COLLECTION_NAME, id) || null;
   },
 
   /**
@@ -81,16 +105,26 @@ const delivery_ordersService = {
       const jobId = data.jobId || await getNextId('job');
       // Firestore doc IDs cannot contain /, so sanitize for the doc ID only
       const docId = jobId.replace(/\//g, '-');
+      // Use snapshot cache for PO context
+      const purchaseOrderContext = data.purchaseOrderId
+        ? snapshotStore.getById('purchaseOrders', data.purchaseOrderId)
+        : null;
+
       const docRef = collectionRef.doc(docId);
       const item = {
         ...data,
         id: docId,
         jobId,
+        quarryId: data.quarryId || purchaseOrderContext?.quarryId || '',
+        quarryName: data.quarryName || purchaseOrderContext?.quarryName || '',
+        siteId: data.siteId || purchaseOrderContext?.siteId || '',
+        siteName: data.siteName || purchaseOrderContext?.siteName || '',
         status: data.status || 'assigned',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
+      // Cache is updated via onSnapshot
       return { id: docId, ...item };
     } catch (error) {
       console.error('delivery_ordersService.create error:', error);

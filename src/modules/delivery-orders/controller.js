@@ -7,6 +7,27 @@ async function getUserEntity(email) {
   return null;
 }
 
+function withRoleDefaults(payload, user, userEntity) {
+  const nextPayload = { ...payload };
+  const email = user?.email || user?.user_email || '';
+
+  if (!email && !userEntity) return nextPayload;
+
+  if (user?.role === 'operator_quarry' && userEntity?.quarryId && !nextPayload.quarryId) {
+    nextPayload.quarryId = userEntity.quarryId;
+  }
+
+  if (user?.role === 'operator_site' && userEntity?.siteId && !nextPayload.siteId) {
+    nextPayload.siteId = userEntity.siteId;
+  }
+
+  if (user?.role === 'vendor' && userEntity?.vendorId && !nextPayload.vendorId) {
+    nextPayload.vendorId = userEntity.vendorId;
+  }
+
+  return nextPayload;
+}
+
 exports.findAll = async (req, res, next) => {
   try {
     const { role, email } = req.user;
@@ -56,7 +77,9 @@ exports.findByPurchaseOrderId = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
-    const item = await delivery_ordersService.create(req.body);
+    const userEntity = await getUserEntity(req.user?.email || req.user?.user_email || '');
+    const payload = withRoleDefaults(req.body, req.user, userEntity);
+    const item = await delivery_ordersService.create(payload);
     res.status(201).json(item);
   } catch (err) { next(err); }
 };

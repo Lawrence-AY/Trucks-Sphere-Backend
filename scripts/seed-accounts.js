@@ -41,10 +41,7 @@ const QUARRIES = [
 // SITES  (construction sites where materials are delivered)
 // ============================================================
 const SITES = [
-  { id: 's1', name: 'Tatu City Phase 2',      contact: '+254711001001', status: 'active', email: 'site1@truck.com', location: { address: 'Ruiru, Kiambu',           latitude: -1.1556, longitude: 36.8956 } },
-  { id: 's2', name: 'Westlands Tower',         contact: '+254711001002', status: 'active', email: 'site2@truck.com', location: { address: 'Westlands, Nairobi',      latitude: -1.2617, longitude: 36.8073 } },
-  { id: 's3', name: 'Kilimani Heights',        contact: '+254711001003', status: 'active', email: 'site3@truck.com', location: { address: 'Kilimani, Nairobi',        latitude: -1.2751, longitude: 36.8053 } },
-  { id: 's4', name: 'Eastlands Estate Phase 3',contact: '+254711001004', status: 'active', email: 'site4@truck.com', location: { address: 'Eastlands, Nairobi',       latitude: -1.3016, longitude: 36.8616 } },
+  { id: 's1', name: 'Site 1', contact: '+254711001001', status: 'active', email: 'site@truck.com', location: { address: 'Ruiru, Kiambu', latitude: -1.1556, longitude: 36.8956 } },
 ];
 
 // ============================================================
@@ -115,11 +112,8 @@ const AUTH_USERS = [
   { email: 'quarry2@truck.com',    password: '123456', displayName: 'Ruth Op Quarry2',   role: 'operator_quarry',  firestoreId: 'u_qop2', quarryId: 'q2' },
   { email: 'quarry3@truck.com',    password: '123456', displayName: 'Ben Op Quarry3',    role: 'operator_quarry',  firestoreId: 'u_qop3', quarryId: 'q3' },
 
-  // --- site operators (one per site) ---
-  { email: 'site1@truck.com',      password: '123456', displayName: 'Anna Site Op1',     role: 'operator_site',    firestoreId: 'u_sop1',  siteId: 's1' },
-  { email: 'site2@truck.com',      password: '123456', displayName: 'Tom Site Op2',      role: 'operator_site',    firestoreId: 'u_sop2',  siteId: 's2' },
-  { email: 'site3@truck.com',      password: '123456', displayName: 'Nancy Site Op3',    role: 'operator_site',    firestoreId: 'u_sop3',  siteId: 's3' },
-  { email: 'site4@truck.com',      password: '123456', displayName: 'Evans Site Op4',    role: 'operator_site',    firestoreId: 'u_sop4',  siteId: 's4' },
+  // --- site operator ---
+  { email: 'site@truck.com',       password: '123456', displayName: 'Anna Site Op',      role: 'operator_site',    firestoreId: 'u_sop1',  siteId: 's1' },
 
   // --- fuel operator ---
   { email: 'fuel@truck.com',       password: '123456', displayName: 'Mike Fuel Operator', role: 'operator_fuel',  firestoreId: 'u_fuel'  },
@@ -313,9 +307,9 @@ async function main() {
   console.log('  🚛 Trucks:      18');
   console.log('  👨‍✈️  Drivers:     18');
   console.log('  ⛰️  Quarries:    3');
-  console.log('  🏗️  Sites:       4');
+  console.log('  🏗️  Sites:       1');
   console.log('  🧱 Materials:   7');
-  console.log('  👤 Auth users:  15  (2 admin, 3 quarry ops, 4 site ops, 1 fuel op, 6 vendors)');
+  console.log('  👤 Auth users:  13  (2 admin, 3 quarry ops, 1 site op, 1 fuel op, 6 vendors)');
   console.log('');
 
   const uidMap = await seedAuthUsers();
@@ -337,11 +331,8 @@ async function main() {
   console.log('    Username: quarry1      Email: quarry1@truck.com    (Mombasa Road Quarry)');
   console.log('    Username: quarry2      Email: quarry2@truck.com    (Kisumu Aggregate Quarry)');
   console.log('    Username: quarry3      Email: quarry3@truck.com    (Ngong Stone Quarry)');
-  console.log('  SITE OPERATORS:');
-  console.log('    Username: site1        Email: site1@truck.com      (Tatu City Phase 2)');
-  console.log('    Username: site2        Email: site2@truck.com      (Westlands Tower)');
-  console.log('    Username: site3        Email: site3@truck.com      (Kilimani Heights)');
-  console.log('    Username: site4        Email: site4@truck.com      (Eastlands Estate Phase 3)');
+  console.log('  SITE OPERATOR:');
+  console.log('    Username: site         Email: site@truck.com      (Site 1)');
   console.log('  FUEL OPERATOR:');
   console.log('    Username: fuel         Email: fuel@truck.com');
   console.log('  VENDORS:');

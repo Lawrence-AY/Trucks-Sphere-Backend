@@ -37,10 +37,13 @@ exports.findById = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
-    const { email } = req.user;
+    const { email, name, displayName } = req.user;
+    const actorEmail = email || req.body.dispensedByEmail || '';
     const payload = {
       ...req.body,
-      dispensedBy: req.body.dispensedBy || email, // Track who dispensed
+      dispensedBy: req.body.dispensedBy || actorEmail,
+      dispensedByEmail: req.body.dispensedByEmail || actorEmail,
+      dispensedByName: req.body.dispensedByName || req.body.dispensedBy || displayName || name || actorEmail,
     };
     const item = await fuelService.create(payload);
     res.status(201).json(item);
