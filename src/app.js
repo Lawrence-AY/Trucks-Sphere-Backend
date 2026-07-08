@@ -25,6 +25,7 @@ const quarryRoutes = require('./modules/quarry/routes');
 const siteRoutes = require('./modules/site/routes');
 const checkpointsRoutes = require('./modules/checkpoints/routes');
 const fuelRoutes = require('./modules/fuel/routes');
+const fuelAuthorizationRoutes = require('./modules/fuel-authorization/routes');
 const uploadsRoutes = require('./modules/uploads/routes');
 const { getNextId } = require('./utils/counterService');
 
@@ -89,6 +90,7 @@ app.use('/api/quarries', quarryRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/checkpoints', checkpointsRoutes);
 app.use('/api/fuel', fuelRoutes);
+app.use('/api/fuel-authorization', fuelAuthorizationRoutes);
 app.use('/api/uploads', uploadsRoutes);
 
 // 404 handler for unmatched routes
