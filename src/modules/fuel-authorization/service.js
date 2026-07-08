@@ -29,7 +29,7 @@ const authCollectionRef = db.collection('fuelAuthorizations');
  * @param {string} params.requestedByEmail - Operator email
  * @param {number} params.fuelAmount - Requested fuel amount in litres
  * @param {string} params.jobId - Optional: linked Job ID
- * @returns {Promise<{ id: string; otp: string; expiredAt: string }>}
+ * @returns {Promise<{ id: string; expiresAt: string }>}
  */
 async function createAuthorization(params) {
   const {
@@ -90,7 +90,6 @@ async function createAuthorization(params) {
 
   return {
     id: authId,
-    otp,
     expiresAt,
   };
 }
