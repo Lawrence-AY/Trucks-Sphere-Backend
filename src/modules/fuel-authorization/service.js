@@ -81,7 +81,7 @@ async function createAuthorization(params) {
 
   // Send OTP via SMS to vendor
   if (vendorPhone) {
-    const message = `TruckSphere: Fuel authorization OTP is ${otp}. Driver: ${driverName || driverId}, Truck: ${plateNumber || vehicleId}. Valid for 10 min.`;
+    const message = `TruckSphere: Fuel Authorization PIN is ${otp}. Driver: ${driverName || driverId}, Truck: ${plateNumber || vehicleId}. Valid for 10 min.`;
     const smsResult = await sendSMS(vendorPhone, message);
     console.log('[FuelAuth] SMS send result:', smsResult);
   } else {
@@ -120,12 +120,12 @@ async function verifyOTP(authId, otp, authorize) {
   // Check expiry
   if (new Date(data.expiresAt) < new Date()) {
     await docRef.update({ status: 'expired', updatedAt: new Date().toISOString() });
-    throw new Error('OTP has expired. Please request a new authorization.');
+    throw new Error('Authorization PIN has expired. Please request a new authorization.');
   }
 
   // Verify OTP
   if (String(data.otp) !== String(otp)) {
-    throw new Error('Invalid OTP. Please check and try again.');
+    throw new Error('Invalid Authorization PIN. Please check and try again.');
   }
 
   const now = new Date().toISOString();

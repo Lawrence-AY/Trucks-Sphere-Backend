@@ -31,11 +31,22 @@ const { getNextId } = require('./utils/counterService');
 
 const app = express();
 
+// Disable ETag/304 caching — this is a real-time data API, cached responses are stale
+app.set('etag', false);
+
 // Middleware
 app.use(helmet());           // Security headers
 app.use(cors());             // Enable CORS
 app.use(express.json());     // Parse JSON bodies
 app.use(morgan('combined')); // Logging
+
+// Force no-cache on all API responses — prevents 304/empty body from stale cached data
+app.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 
 // Counter API for sequential IDs
 app.get('/api/counter/:entityType', async (req, res) => {

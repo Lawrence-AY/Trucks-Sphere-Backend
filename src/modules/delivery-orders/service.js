@@ -28,70 +28,91 @@ function enrichWithPurchaseOrderContext(item) {
 
 const delivery_ordersService = {
   /**
-   * findAll now reads from the in-memory snapshot cache.
-   * The cache is kept up-to-date via Firestore onSnapshot — no Firestore reads
-   * needed on every request.
+   * findAll queries Firestore directly for real-time accuracy.
+   * This ensures scheduled/incoming trips that were recently weighed out
+   * appear immediately — no stale cached data.
    */
-  findAll(query = {}) {
+  async findAll(query = {}) {
     const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, page = 1, limit = 50 } = query;
 
-    let results = snapshotStore.getAll(COLLECTION_NAME);
+    try {
+      // Query Firestore directly — no orderBy to avoid requiring a composite index
+      const snapshot = await collectionRef.get();
+      let results = [];
+      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-    // Enrich with PO context from the cached purchaseOrders collection
-    results = results.map(enrichWithPurchaseOrderContext);
+      // Sort by createdAt descending (in-memory, no index needed)
+      results.sort((a, b) => {
+        const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return db - da;
+      });
 
-    // Sort by createdAt descending
-    results = [...results].sort((a, b) => {
-      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return db - da;
-    });
+      // Enrich with PO context from the snapshot cache (purchaseOrders rarely change)
+      results = results.map(enrichWithPurchaseOrderContext);
 
-    // Post-filter by status
-    if (status) {
-      results = results.filter(item => item.status === status);
-    }
-    // Post-filter by jobId
-    if (jobId) {
-      results = results.filter(item => item.jobId === jobId);
-    }
-    // Post-filter by purchaseOrderId
-    if (purchaseOrderId) {
-      results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
-    }
-    // Post-filter by vendorId (for vendor-scoped views)
-    if (vendorId) {
-      results = results.filter(item => item.vendorId === vendorId);
-    }
-    // Post-filter by quarryId (for quarry operator views)
-    if (quarryId) {
-      results = results.filter(item => item.quarryId === quarryId);
-    }
-    // Post-filter by siteId (for site operator views)
-    if (siteId) {
-      results = results.filter(item => item.siteId === siteId);
-    }
-    // Text search
-    if (search) {
-      const s = search.toLowerCase();
-      results = results.filter(item =>
-        (item.jobId || '').toLowerCase().includes(s) ||
-        (item.driverName || '').toLowerCase().includes(s) ||
-        (item.plateNumber || '').toLowerCase().includes(s)
-      );
-    }
+      // Post-filter by status
+      if (status) {
+        results = results.filter(item => item.status === status);
+      }
+      // Post-filter by jobId
+      if (jobId) {
+        results = results.filter(item => item.jobId === jobId);
+      }
+      // Post-filter by purchaseOrderId
+      if (purchaseOrderId) {
+        results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
+      }
+      // Post-filter by vendorId (for vendor-scoped views)
+      if (vendorId) {
+        results = results.filter(item => item.vendorId === vendorId);
+      }
+      // Post-filter by quarryId (for quarry operator views)
+      // Include items where quarryId is empty/null — unassigned deliveries are visible to all operators
+      if (quarryId) {
+        results = results.filter(item => !item.quarryId || item.quarryId === quarryId);
+      }
+      // Post-filter by siteId (for site operator views)
+      // Include items where siteId is empty/null — unassigned deliveries are visible to all operators
+      if (siteId) {
+        results = results.filter(item => !item.siteId || item.siteId === siteId);
+      }
+      // Text search
+      if (search) {
+        const s = search.toLowerCase();
+        results = results.filter(item =>
+          (item.jobId || '').toLowerCase().includes(s) ||
+          (item.driverName || '').toLowerCase().includes(s) ||
+          (item.plateNumber || '').toLowerCase().includes(s)
+        );
+      }
 
-    const start = (page - 1) * limit;
-    return {
-      data: results.slice(start, start + parseInt(limit)),
-      total: results.length,
-      page: parseInt(page),
-      totalPages: Math.ceil(results.length / limit),
-    };
+      const start = (page - 1) * limit;
+      return {
+        data: results.slice(start, start + parseInt(limit)),
+        total: results.length,
+        page: parseInt(page),
+        totalPages: Math.ceil(results.length / limit),
+      };
+    } catch (error) {
+      console.error('delivery_ordersService.findAll error:', error);
+      throw error;
+    }
   },
 
-  findById(id) {
-    return snapshotStore.getById(COLLECTION_NAME, id) || null;
+  /**
+   * findById queries Firestore directly for the latest data.
+   */
+  async findById(id) {
+    try {
+      const doc = await collectionRef.doc(id).get();
+      if (!doc.exists) return null;
+      const item = { id: doc.id, ...doc.data() };
+      return enrichWithPurchaseOrderContext(item);
+    } catch (error) {
+      console.error('delivery_ordersService.findById error:', error);
+      throw error;
+    }
   },
 
   /**

@@ -29,7 +29,7 @@ exports.verifyAuthorization = async (req, res, next) => {
   try {
     const { authId, otp, authorize } = req.body;
     if (!authId) return res.status(400).json({ error: 'authId is required' });
-    if (!otp) return res.status(400).json({ error: 'OTP is required' });
+    if (!otp) return res.status(400).json({ error: 'Pin is required' });
     if (authorize === undefined) return res.status(400).json({ error: 'authorize (boolean) is required' });
 
     const result = await fuelAuthService.verifyOTP(authId, otp, authorize);
