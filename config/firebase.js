@@ -27,6 +27,7 @@ const serviceAccount = {
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
+    storageBucket: process.env.STORAGE_BUCKET || 'trucksphere.firebasestorage.app',
   });
 }
 

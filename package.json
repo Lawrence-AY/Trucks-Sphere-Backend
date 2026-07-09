@@ -18,7 +18,8 @@
     "firebase-admin": "^12.7.0",
     "git-filter-repo": "^0.0.30",
     "helmet": "^8.0.0",
-    "morgan": "^1.10.0"
+    "morgan": "^1.10.0",
+    "multer": "^2.2.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.7"

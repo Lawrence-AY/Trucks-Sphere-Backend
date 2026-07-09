@@ -3,17 +3,21 @@
  * Uses HostPinnacle Bulk SMS API to send OTP messages.
  *
  * API: https://smsportal.hostpinnacle.co.ke/SMSApi/send
+ *
+ * Configuration is loaded from environment variables (see .env):
+ *   SMS_BASE_URL, SMS_USERID, SMS_PASSWORD, SMS_SENDERID,
+ *   SMS_MSG_TYPE, SMS_DUPLICATE_CHECK, SMS_OUTPUT
  */
 const axios = require('axios');
 
 const SMS_CONFIG = {
-  baseUrl: 'https://smsportal.hostpinnacle.co.ke/SMSApi/send',
-  userid: 'flow',
-  password: 'a8xXaDh9',
-  senderid: 'SIMRION',
-  msgType: 'text',
-  duplicatecheck: 'true',
-  output: 'json',
+  baseUrl: process.env.SMS_BASE_URL,
+  userid: process.env.SMS_USERID,
+  password: process.env.SMS_PASSWORD,
+  senderid: process.env.SMS_SENDERID,
+  msgType: process.env.SMS_MSG_TYPE,
+  duplicatecheck: process.env.SMS_DUPLICATE_CHECK,
+  output: process.env.SMS_OUTPUT,
 };
 
 /**
