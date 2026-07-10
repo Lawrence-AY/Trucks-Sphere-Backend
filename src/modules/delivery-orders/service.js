@@ -205,6 +205,27 @@ const delivery_ordersService = {
     }
   },
 
+  async receiveLot(deliveryOrderId, storageLot) {
+    try {
+      const docRef = collectionRef.doc(deliveryOrderId);
+      const doc = await docRef.get();
+      if (!doc.exists) return null;
+
+      const now = new Date().toISOString();
+      await docRef.update({
+        storageLot,
+        storageLotAssignedAt: now,
+        updatedAt: now,
+      });
+
+      const updated = await docRef.get();
+      return { id: docRef.id, ...updated.data() };
+    } catch (error) {
+      console.error('delivery_ordersService.receiveLot error:', error);
+      throw error;
+    }
+  },
+
   async delete(id) {
     try {
       await collectionRef.doc(id).delete();
