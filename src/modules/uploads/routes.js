@@ -2,6 +2,15 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./controller');
 const uploadController = require('./uploadController');
+const { verifyToken } = require('../../middleware/authMiddleware');
+const { multerErrorHandler } = require('./uploadMiddleware');
+
+// All upload routes require authentication
+router.use(verifyToken);
+
+// Multer error handler — catches file size, type, and field-name errors
+// before they fall through to the generic 500 handler
+router.use(multerErrorHandler);
 
 // CRUD for uploads collection (legacy)
 router.get('/', controller.findAll);
@@ -14,5 +23,11 @@ router.delete('/:id', controller.delete);
 router.post('/driver-photo/:driverId', uploadController.uploadDriverPhoto);
 router.post('/delivery-note/:deliveryOrderId', uploadController.uploadDeliveryNote);
 router.post('/receipt-note/:weighRecordId', uploadController.uploadReceiptNote);
+
+// Wildcard route for driver-photo-weigh-out to handle jobIds with slashes
+// (e.g., POMAT006/V003/D033/T033/J0001). Express would normally split on /
+// and :jobId would only capture the first segment, causing a 404.
+// The 0-9 wildcard captures the remaining path as req.params[0].
+router.post('/driver-photo-weigh-out/(*)', uploadController.uploadDriverPhotoWeighOut);
 
 module.exports = router;

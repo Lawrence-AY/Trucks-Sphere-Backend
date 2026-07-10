@@ -110,11 +110,14 @@ app.use((req, res) => {
 });
 
 // Global error handler
+// Always includes the error message so the client can surface it to the user.
+// In development, the full stack trace is also included.
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message, err.stack);
-  res.status(500).json({ 
-    error: 'Internal server error', 
-    details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({ 
+    error: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 });
 
