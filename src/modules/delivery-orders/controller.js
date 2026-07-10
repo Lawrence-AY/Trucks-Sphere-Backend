@@ -92,6 +92,31 @@ exports.update = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.receiveLot = async (req, res, next) => {
+  try {
+    const { deliveryOrderId, storageLot } = req.body;
+
+    if (!deliveryOrderId || !storageLot) {
+      return res.status(400).json({
+        error: 'Both deliveryOrderId and storageLot are required.',
+      });
+    }
+
+    if (typeof storageLot !== 'string' || storageLot.trim().length === 0) {
+      return res.status(400).json({
+        error: 'storageLot must be a non-empty string.',
+      });
+    }
+
+    const updated = await delivery_ordersService.receiveLot(deliveryOrderId, storageLot.trim());
+    if (!updated) {
+      return res.status(404).json({ error: 'Delivery order not found.' });
+    }
+
+    res.json(updated);
+  } catch (err) { next(err); }
+};
+
 exports.delete = async (req, res, next) => {
   try {
     await delivery_ordersService.delete(req.params.id);
