@@ -1,56 +1,59 @@
 const { db } = require('../../../config/firebase');
+const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('weighRecords');
 
+const COLLECTION_NAME = 'weighments';
+
 const weighbridgeService = {
-  async findAll(query = {}) {
+  /**
+   * findAll reads from the in-memory snapshot cache.
+   * Eliminates Firestore reads — data is kept in sync via onSnapshot.
+   */
+  findAll(query = {}) {
     const { search, type, jobId, deliveryOrderId, page = 1, limit = 50 } = query;
-    try {
-      // Fetch all records sorted by timestamp — then post-filter
-      // to avoid Firestore composite index requirements
-      const snapshot = await collectionRef.orderBy('timestamp', 'desc').get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      // Post-filter
-      if (type) {
-        results = results.filter(item => item.type === type);
-      }
-      if (jobId) {
-        results = results.filter(item => item.jobId === jobId);
-      }
-      if (deliveryOrderId) {
-        results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
-      }
-      if (search) {
-        const s = search.toLowerCase();
-        results = results.filter(item =>
-          (item.jobId || '').toLowerCase().includes(s) ||
-          (item.location || '').toLowerCase().includes(s)
-        );
-      }
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      const start = (page - 1) * limit;
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / limit),
-      };
-    } catch (error) {
-      console.error('weighbridgeService.findAll error:', error);
-      throw error;
+    // Sort by timestamp descending
+    results = [...results].sort((a, b) => {
+      const da = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const db = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return db - da;
+    });
+
+    // Post-filter
+    if (type) {
+      results = results.filter(item => item.type === type);
     }
+    if (jobId) {
+      results = results.filter(item => item.jobId === jobId);
+    }
+    if (deliveryOrderId) {
+      results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
+    }
+    if (search) {
+      const s = search.toLowerCase();
+      results = results.filter(item =>
+        (item.jobId || '').toLowerCase().includes(s) ||
+        (item.location || '').toLowerCase().includes(s)
+      );
+    }
+
+    const start = (page - 1) * parseInt(limit);
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / parseInt(limit)),
+    };
   },
 
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('weighbridgeService.findById error:', error);
-      throw error;
-    }
+  /**
+   * findById reads from the in-memory snapshot cache.
+   */
+  findById(id) {
+    const doc = snapshotStore.getById(COLLECTION_NAME, id);
+    return doc || null;
   },
 
   async create(data) {

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "redis": "call scripts\\start-redis.bat",
     "seed-firestore": "node scripts/seed-firebase.js",
     "seed-auth": "node scripts/seed-auth-users.js",
     "seed-accounts": "node scripts/seed-accounts.js"
@@ -18,6 +19,7 @@
     "firebase-admin": "^12.7.0",
     "git-filter-repo": "^0.0.30",
     "helmet": "^8.0.0",
+    "ioredis": "^5.11.1",
     "morgan": "^1.10.0",
     "multer": "^2.2.0"
   },

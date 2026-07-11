@@ -1,40 +1,38 @@
 const { db } = require('../../../config/firebase');
+const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('uploads');
 
+const COLLECTION_NAME = 'uploads';
+
 const uploadsService = {
-  async findAll(query = {}) {
+  findAll(query = {}) {
     const { deliveryOrderId, type, jobId, page = 1, limit = 50 } = query;
-    try {
-      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (deliveryOrderId) results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
-      if (jobId) results = results.filter(item => item.jobId === jobId);
-      if (type) results = results.filter(item => item.type === type);
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      const start = (page - 1) * parseInt(limit);
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / parseInt(limit)),
-      };
-    } catch (error) {
-      console.error('uploadsService.findAll error:', error);
-      throw error;
-    }
+    // Sort by createdAt descending
+    results = [...results].sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
+
+    if (deliveryOrderId) results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
+    if (jobId) results = results.filter(item => item.jobId === jobId);
+    if (type) results = results.filter(item => item.type === type);
+
+    const start = (page - 1) * parseInt(limit);
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / parseInt(limit)),
+    };
   },
 
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('uploadsService.findById error:', error);
-      throw error;
-    }
+  findById(id) {
+    const doc = snapshotStore.getById(COLLECTION_NAME, id);
+    return doc || null;
   },
 
   async create(data) {

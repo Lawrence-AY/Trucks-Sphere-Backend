@@ -1,48 +1,43 @@
 const { db } = require('../../../config/firebase');
+const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('materials');
 
+const COLLECTION_NAME = 'materials';
+
 const materialsService = {
-  async findAll(query = {}) {
+  findAll(query = {}) {
     const { search, status, category, page = 1, limit = 50 } = query;
-    try {
-      let ref = collectionRef.orderBy('name', 'asc');
-      if (category) ref = ref.where('category', '==', category);
-      if (status === 'active') ref = ref.where('active', '==', true);
-      if (status === 'inactive') ref = ref.where('active', '==', false);
-      const snapshot = await ref.get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (search) {
-        const s = search.toLowerCase();
-        results = results.filter(item =>
-          (item.name || '').toLowerCase().includes(s) ||
-          (item.description || '').toLowerCase().includes(s)
-        );
-      }
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      const start = (page - 1) * limit;
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / limit),
-      };
-    } catch (error) {
-      console.error('materialsService.findAll error:', error);
-      throw error;
+    // Sort by name ascending
+    results = [...results].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '')
+    );
+
+    if (category) results = results.filter(item => item.category === category);
+    if (status === 'active') results = results.filter(item => item.active === true);
+    if (status === 'inactive') results = results.filter(item => item.active === false);
+    if (search) {
+      const s = search.toLowerCase();
+      results = results.filter(item =>
+        (item.name || '').toLowerCase().includes(s) ||
+        (item.description || '').toLowerCase().includes(s)
+      );
     }
+
+    const start = (page - 1) * limit;
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / limit),
+    };
   },
 
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('materialsService.findById error:', error);
-      throw error;
-    }
+  findById(id) {
+    const doc = snapshotStore.getById(COLLECTION_NAME, id);
+    return doc || null;
   },
 
   async create(data) {

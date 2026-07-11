@@ -7,9 +7,18 @@ const morgan = require('morgan');
 // Import Firebase config (must be initialized before any routes that use it)
 const { db, admin } = require('../config/firebase');
 
+// Import Redis config
+const redis = require('../config/redis');
+
 // Initialize real-time snapshot cache (eliminates repeated Firestore reads)
 const snapshotStore = require('./utils/snapshotStore');
-snapshotStore.init();
+
+// Start Redis connection in background, then init snapshot store
+// SnapshotStore will warm from Redis if available, then start Firestore listeners
+const initPromise = (async () => {
+  await redis.init();
+  await snapshotStore.init();
+})();
 
 // Import routes
 const truckRoutes = require('../routes/trucks');
@@ -31,8 +40,8 @@ const { getNextId } = require('./utils/counterService');
 
 const app = express();
 
-// Disable ETag/304 caching — this is a real-time data API, cached responses are stale
-app.set('etag', false);
+// Enable ETag for smart 304 responses — saves bandwidth for unchanged data
+app.set('etag', 'weak');
 
 // Middleware
 app.use(helmet());           // Security headers
@@ -40,15 +49,120 @@ app.use(cors());             // Enable CORS
 app.use(express.json());     // Parse JSON bodies
 app.use(morgan('combined')); // Logging
 
-// Force no-cache on all API responses — prevents 304/empty body from stale cached data
+// ─── Client-side caching headers (stale-while-revalidate compatible) ───
 app.use((_req, res, next) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
+  // Allow clients to cache API responses for 30 seconds
+  // stale-while-revalidate allows serving stale while re-fetching in background
+  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
   next();
 });
 
-// Counter API for sequential IDs
+// ─── Collection-to-cache-name mapping for ETag middleware ───
+const COLLECTION_ETAG_MAP = {
+  '/api/vendors': 'vendors',
+  '/api/drivers': 'drivers',
+  '/api/vehicles': 'vehicles',
+  '/api/materials': 'materials',
+  '/api/purchase-orders': 'purchaseOrders',
+  '/api/delivery-orders': 'deliveryOrders',
+  '/api/weighbridge': 'weighments',
+  '/api/quarries': 'quarries',
+  '/api/sites': 'sites',
+  '/api/checkpoints': 'checkpoints',
+  '/api/fuel': 'fuelRecords',
+  '/api/uploads': 'uploads',
+};
+
+/**
+ * ETag middleware — returns 304 Not Modified when data hasn't changed.
+ * Client sends If-None-Match header with previous ETag.
+ * If the snapshot hash matches, the server responds with 304 (no body).
+ */
+app.use((req, res, next) => {
+  // Only process GET requests on API routes
+  if (req.method !== 'GET') return next();
+
+  const basePath = Object.keys(COLLECTION_ETAG_MAP).find(prefix =>
+    req.path.startsWith(prefix)
+  );
+  if (!basePath) return next();
+
+  const cacheName = COLLECTION_ETAG_MAP[basePath];
+  const currentETag = snapshotStore.getHash(cacheName);
+  const clientETag = req.get('If-None-Match');
+
+  // Always set ETag on the response
+  if (currentETag) {
+    res.set('ETag', `W/"${currentETag}"`);
+    res.set('Last-Modified', new Date(snapshotStore.getTimestamp(cacheName)).toUTCString());
+  }
+
+  // If client's ETag matches, return 304 Not Modified
+  if (clientETag && currentETag && clientETag === `W/"${currentETag}"`) {
+    return res.status(304).end();
+  }
+
+  next();
+});
+
+// ─── Server-Sent Events (SSE) endpoint for real-time collection updates ───
+const sseClients = new Map(); // clientId → { res, collections: Set<string> }
+
+app.get('/api/sync/stream', (req, res) => {
+  const clientId = req.query.clientId || `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  // Send initial handshake
+  res.write(`data: ${JSON.stringify({ type: 'connected', clientId })}\n\n`);
+
+  // Register client
+  sseClients.set(clientId, { res, collections: new Set() });
+
+  // Heartbeat every 30 seconds to keep connection alive
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: heartbeat ${Date.now()}\n\n`);
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 30000);
+
+  // Handle client unsubscribe
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.delete(clientId);
+  });
+});
+
+/**
+ * Notify SSE clients that a collection has been updated.
+ * Called externally when a write occurs (e.g., after create/update/delete).
+ */
+function notifySSEClients(collectionName, data) {
+  sseClients.forEach(({ res }, clientId) => {
+    try {
+      res.write(`event: ${collectionName}\ndata: ${JSON.stringify({
+        collection: collectionName,
+        timestamp: Date.now(),
+        hash: snapshotStore.getHash(collectionName),
+        ...(data && { data }),
+      })}\n\n`);
+    } catch {
+      sseClients.delete(clientId);
+    }
+  });
+}
+
+// Make notifySSEClients available on the app for routes to use
+app.set('notifySSEClients', notifySSEClients);
+
+// ─── Counter API for sequential IDs ───
 app.get('/api/counter/:entityType', async (req, res) => {
   try {
     const { entityType } = req.params;

@@ -28,91 +28,74 @@ function enrichWithPurchaseOrderContext(item) {
 
 const delivery_ordersService = {
   /**
-   * findAll queries Firestore directly for real-time accuracy.
-   * This ensures scheduled/incoming trips that were recently weighed out
-   * appear immediately — no stale cached data.
+   * findAll reads from the in-memory snapshot cache.
+   * Eliminates Firestore reads — data is kept in sync via onSnapshot.
    */
-  async findAll(query = {}) {
+  findAll(query = {}) {
     const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, page = 1, limit = 50 } = query;
 
-    try {
-      // Query Firestore directly — no orderBy to avoid requiring a composite index
-      const snapshot = await collectionRef.get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      // Sort by createdAt descending (in-memory, no index needed)
-      results.sort((a, b) => {
-        const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return db - da;
-      });
+    // Sort by createdAt descending
+    results = [...results].sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
 
-      // Enrich with PO context from the snapshot cache (purchaseOrders rarely change)
-      results = results.map(enrichWithPurchaseOrderContext);
+    // Enrich with PO context from the snapshot cache (purchaseOrders rarely change)
+    results = results.map(enrichWithPurchaseOrderContext);
 
-      // Post-filter by status
-      if (status) {
-        results = results.filter(item => item.status === status);
-      }
-      // Post-filter by jobId
-      if (jobId) {
-        results = results.filter(item => item.jobId === jobId);
-      }
-      // Post-filter by purchaseOrderId
-      if (purchaseOrderId) {
-        results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
-      }
-      // Post-filter by vendorId (for vendor-scoped views)
-      if (vendorId) {
-        results = results.filter(item => item.vendorId === vendorId);
-      }
-      // Post-filter by quarryId (for quarry operator views)
-      // Include items where quarryId is empty/null — unassigned deliveries are visible to all operators
-      if (quarryId) {
-        results = results.filter(item => !item.quarryId || item.quarryId === quarryId);
-      }
-      // Post-filter by siteId (for site operator views)
-      // Include items where siteId is empty/null — unassigned deliveries are visible to all operators
-      if (siteId) {
-        results = results.filter(item => !item.siteId || item.siteId === siteId);
-      }
-      // Text search
-      if (search) {
-        const s = search.toLowerCase();
-        results = results.filter(item =>
-          (item.jobId || '').toLowerCase().includes(s) ||
-          (item.driverName || '').toLowerCase().includes(s) ||
-          (item.plateNumber || '').toLowerCase().includes(s)
-        );
-      }
-
-      const start = (page - 1) * limit;
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / limit),
-      };
-    } catch (error) {
-      console.error('delivery_ordersService.findAll error:', error);
-      throw error;
+    // Post-filter by status
+    if (status) {
+      results = results.filter(item => item.status === status);
     }
+    // Post-filter by jobId
+    if (jobId) {
+      results = results.filter(item => item.jobId === jobId);
+    }
+    // Post-filter by purchaseOrderId
+    if (purchaseOrderId) {
+      results = results.filter(item => item.purchaseOrderId === purchaseOrderId);
+    }
+    // Post-filter by vendorId
+    if (vendorId) {
+      results = results.filter(item => item.vendorId === vendorId);
+    }
+    // Post-filter by quarryId
+    if (quarryId) {
+      results = results.filter(item => !item.quarryId || item.quarryId === quarryId);
+    }
+    // Post-filter by siteId
+    if (siteId) {
+      results = results.filter(item => !item.siteId || item.siteId === siteId);
+    }
+    // Text search
+    if (search) {
+      const s = search.toLowerCase();
+      results = results.filter(item =>
+        (item.jobId || '').toLowerCase().includes(s) ||
+        (item.driverName || '').toLowerCase().includes(s) ||
+        (item.plateNumber || '').toLowerCase().includes(s)
+      );
+    }
+
+    const start = (page - 1) * parseInt(limit);
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / parseInt(limit)),
+    };
   },
 
   /**
-   * findById queries Firestore directly for the latest data.
+   * findById reads from the in-memory snapshot cache.
    */
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      const item = { id: doc.id, ...doc.data() };
-      return enrichWithPurchaseOrderContext(item);
-    } catch (error) {
-      console.error('delivery_ordersService.findById error:', error);
-      throw error;
-    }
+  findById(id) {
+    const doc = snapshotStore.getById(COLLECTION_NAME, id);
+    if (!doc) return null;
+    return enrichWithPurchaseOrderContext(doc);
   },
 
   /**
@@ -162,7 +145,7 @@ const delivery_ordersService = {
       const updates = { ...data, updatedAt: new Date().toISOString() };
       await docRef.update(updates);
 
-      // When delivery is marked as delivered/completed, deduct quantity from purchase order
+      // When delivery is marked as delivered/completed, tag it as awaiting quality control check
       const newStatus = data.status;
       const wasCompleted = ['delivered', 'completed'].includes(existing.status);
       const isNowCompleted = ['delivered', 'completed'].includes(newStatus);
@@ -177,23 +160,17 @@ const delivery_ordersService = {
             const poDoc = await poRef.get();
             if (poDoc.exists) {
               const po = poDoc.data();
-              const currentDelivered = Number(po.deliveredQuantity || 0);
-              const orderedQty = Number(po.quantity || 0);
-              const newDelivered = currentDelivered + deliveredQty;
-              const remainingQty = Math.max(0, orderedQty - newDelivered);
-              const poStatus = remainingQty <= 0 ? 'fulfilled' : (newDelivered > 0 ? 'partially_fulfilled' : po.status);
+              const pendingQC = Number(po.pendingQualityControl || 0);
+              const newPendingQC = pendingQC + deliveredQty;
               
               await poRef.update({
-                deliveredQuantity: newDelivered,
-                remainingQuantity: remainingQty,
-                status: poStatus,
+                pendingQualityControl: newPendingQC,
                 updatedAt: new Date().toISOString(),
               });
-              console.log(`[DeliveryOrder] Updated PO ${purchaseOrderId}: delivered=${newDelivered}, remaining=${remainingQty}, status=${poStatus}`);
+              console.log(`[DeliveryOrder] PO ${purchaseOrderId}: ${deliveredQty} tonnes awaiting quality control check (pendingQC=${newPendingQC})`);
             }
           } catch (poError) {
-            console.error('[DeliveryOrder] Failed to update purchase order:', poError);
-            // Don't fail the delivery update — PO update is secondary
+            console.error('[DeliveryOrder] Failed to update purchase order QC status:', poError);
           }
         }
       }

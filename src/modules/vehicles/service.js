@@ -1,47 +1,44 @@
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
+const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('vehicles');
 
+const COLLECTION_NAME = 'vehicles';
+
 const vehiclesService = {
-  async findAll(query = {}) {
+  findAll(query = {}) {
     const { search, status, page = 1, limit = 50 } = query;
-    try {
-      const snapshot = await collectionRef.orderBy('createdAt', 'desc').get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (status) results = results.filter(item => item.status === status);
-      if (search) {
-        const s = search.toLowerCase();
-        results = results.filter(item =>
-          (item.plateNumber || '').toLowerCase().includes(s) ||
-          (item.model || '').toLowerCase().includes(s) ||
-          (item.make || '').toLowerCase().includes(s)
-        );
-      }
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      const start = (page - 1) * limit;
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / limit),
-      };
-    } catch (error) {
-      console.error('vehiclesService.findAll error:', error);
-      throw error;
+    results = [...results].sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
+
+    if (status) results = results.filter(item => item.status === status);
+    if (search) {
+      const s = search.toLowerCase();
+      results = results.filter(item =>
+        (item.plateNumber || '').toLowerCase().includes(s) ||
+        (item.model || '').toLowerCase().includes(s) ||
+        (item.make || '').toLowerCase().includes(s)
+      );
     }
+
+    const start = (page - 1) * limit;
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / limit),
+    };
   },
 
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('vehiclesService.findById error:', error);
-      throw error;
-    }
+  findById(id) {
+    const doc = snapshotStore.getById(COLLECTION_NAME, id);
+    return doc || null;
   },
 
   async create(data) {

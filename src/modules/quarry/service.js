@@ -1,46 +1,40 @@
 const { db } = require('../../../config/firebase');
+const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('quarries');
 
+const COLLECTION_NAME = 'quarries';
+
 const quarryService = {
-  async findAll(query = {}) {
+  findAll(query = {}) {
     const { search, status, page = 1, limit = 50 } = query;
-    try {
-      let ref = collectionRef.orderBy('name', 'asc');
-      if (status) ref = ref.where('status', '==', status);
-      const snapshot = await ref.get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (search) {
-        const s = search.toLowerCase();
-        results = results.filter(item =>
-          (item.name || '').toLowerCase().includes(s) ||
-          (item.location?.address || '').toLowerCase().includes(s)
-        );
-      }
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      const start = (page - 1) * limit;
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / limit),
-      };
-    } catch (error) {
-      console.error('quarryService.findAll error:', error);
-      throw error;
+    results = [...results].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '')
+    );
+
+    if (status) results = results.filter(item => item.status === status);
+    if (search) {
+      const s = search.toLowerCase();
+      results = results.filter(item =>
+        (item.name || '').toLowerCase().includes(s) ||
+        (item.location?.address || '').toLowerCase().includes(s)
+      );
     }
+
+    const start = (page - 1) * limit;
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / limit),
+    };
   },
 
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('quarryService.findById error:', error);
-      throw error;
-    }
+  findById(id) {
+    const doc = snapshotStore.getById(COLLECTION_NAME, id);
+    return doc || null;
   },
 
   async create(data) {

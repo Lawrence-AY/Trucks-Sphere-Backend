@@ -1,42 +1,41 @@
 const { db } = require('../../../config/firebase');
+const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('checkpoints');
-const deliveryOrdersRef = db.collection('deliveryOrders');
+
+const COLLECTION_NAME = 'checkpoints';
 
 const checkpointsService = {
-  async findAll(query = {}) {
+  /**
+   * findAll reads from the in-memory snapshot cache.
+   */
+  findAll(query = {}) {
     const { jobId, deliveryOrderId, type, page = 1, limit = 50 } = query;
-    try {
-      // Post-filter approach to avoid Firestore composite index requirements
-      const snapshot = await collectionRef.orderBy('timestamp', 'desc').get();
-      let results = [];
-      snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
 
-      if (jobId) results = results.filter(item => item.jobId === jobId);
-      if (deliveryOrderId) results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
-      if (type) results = results.filter(item => item.type === type);
+    let results = snapshotStore.getAll(COLLECTION_NAME);
 
-      const start = (page - 1) * limit;
-      return {
-        data: results.slice(start, start + parseInt(limit)),
-        total: results.length,
-        page: parseInt(page),
-        totalPages: Math.ceil(results.length / limit),
-      };
-    } catch (error) {
-      console.error('checkpointsService.findAll error:', error);
-      throw error;
-    }
+    // Sort by timestamp descending
+    results = [...results].sort((a, b) => {
+      const da = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const db = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return db - da;
+    });
+
+    if (jobId) results = results.filter(item => item.jobId === jobId);
+    if (deliveryOrderId) results = results.filter(item => item.deliveryOrderId === deliveryOrderId);
+    if (type) results = results.filter(item => item.type === type);
+
+    const start = (page - 1) * limit;
+    return {
+      data: results.slice(start, start + parseInt(limit)),
+      total: results.length,
+      page: parseInt(page),
+      totalPages: Math.ceil(results.length / limit),
+    };
   },
 
-  async findById(id) {
-    try {
-      const doc = await collectionRef.doc(id).get();
-      if (!doc.exists) return null;
-      return { id: doc.id, ...doc.data() };
-    } catch (error) {
-      console.error('checkpointsService.findById error:', error);
-      throw error;
-    }
+  findById(id) {
+    const doc = snapshotStore.getById(COLLECTION_NAME, id);
+    return doc || null;
   },
 
   async create(data) {
@@ -83,72 +82,64 @@ const checkpointsService = {
     }
   },
 
-  async getJourneyByJobId(jobId) {
-    try {
-      // Simple query + post-filter to avoid composite index
-      const snapshot = await collectionRef.orderBy('timestamp', 'asc').get();
-      const checkpoints = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        if (data.jobId === jobId) {
-          checkpoints.push({ id: doc.id, ...data });
-        }
+  /**
+   * Get journey details by jobId.
+   * Uses snapshot caches for both checkpoints and deliveryOrders.
+   */
+  getJourneyByJobId(jobId) {
+    const checkpoints = snapshotStore.getAll(COLLECTION_NAME)
+      .filter(cp => cp.jobId === jobId)
+      .sort((a, b) => {
+        const da = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const db = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return da - db;
       });
 
-      // Also fetch the delivery order
-      const doSnapshot = await deliveryOrdersRef.orderBy('createdAt', 'desc').get();
-      let deliveryOrder = null;
-      doSnapshot.forEach(doc => {
-        if (doc.data().jobId === jobId && !deliveryOrder) {
-          deliveryOrder = { id: doc.id, ...doc.data() };
-        }
+    const deliveryOrders = snapshotStore.getAll('deliveryOrders')
+      .filter(doDoc => doDoc.jobId === jobId)
+      .sort((a, b) => {
+        const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return db - da;
       });
 
-      return { jobId, deliveryOrder, checkpoints, total: checkpoints.length };
-    } catch (error) {
-      console.error('checkpointsService.getJourneyByJobId error:', error);
-      throw error;
-    }
+    return {
+      jobId,
+      deliveryOrder: deliveryOrders[0] || null,
+      checkpoints,
+      total: checkpoints.length,
+    };
   },
 
-  async getActiveDeliveries() {
-    try {
-      const doSnapshot = await deliveryOrdersRef.orderBy('updatedAt', 'desc').get();
-      const deliveries = [];
-      doSnapshot.forEach(doc => {
-        const data = doc.data();
-        if (['assigned', 'at_quarry', 'in_transit', 'active'].includes(data.status)) {
-          deliveries.push({ id: doc.id, ...data });
-        }
+  /**
+   * Get active deliveries with their latest checkpoints.
+   * Uses snapshot caches for efficiency.
+   */
+  getActiveDeliveries() {
+    const deliveryOrders = snapshotStore.getAll('deliveryOrders')
+      .filter(d => ['assigned', 'at_quarry', 'in_transit', 'active'].includes(d.status));
+
+    const allCheckpoints = snapshotStore.getAll(COLLECTION_NAME);
+
+    const result = [];
+    for (const delivery of deliveryOrders) {
+      const deliveryCheckpoints = allCheckpoints
+        .filter(cp => cp.deliveryOrderId === delivery.id)
+        .sort((a, b) => {
+          const da = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const db = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return db - da;
+        });
+
+      result.push({
+        ...delivery,
+        latestCheckpoint: deliveryCheckpoints[0] || null,
+        checkpoints: [...deliveryCheckpoints].reverse(), // asc order
+        checkpointCount: deliveryCheckpoints.length,
       });
-
-      const result = [];
-      for (const delivery of deliveries) {
-        const cpSnapshot = await collectionRef.orderBy('timestamp', 'desc').get();
-        let latestCheckpoint = null;
-        let allCheckpoints = [];
-        cpSnapshot.forEach(doc => {
-          const data = doc.data();
-          if (data.deliveryOrderId === delivery.id) {
-            allCheckpoints.push({ id: doc.id, ...data });
-            if (!latestCheckpoint) latestCheckpoint = { id: doc.id, ...data };
-          }
-        });
-        allCheckpoints.reverse(); // back to asc order
-
-        result.push({
-          ...delivery,
-          latestCheckpoint,
-          checkpoints: allCheckpoints,
-          checkpointCount: allCheckpoints.length,
-        });
-      }
-
-      return { data: result, total: result.length };
-    } catch (error) {
-      console.error('checkpointsService.getActiveDeliveries error:', error);
-      throw error;
     }
+
+    return { data: result, total: result.length };
   },
 };
 
