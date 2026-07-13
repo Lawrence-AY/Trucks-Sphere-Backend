@@ -136,6 +136,7 @@
 | `driverName` | `string` | Denormalized |
 | `plateNumber` | `string` | |
 | `materialName` | `string` | |
+| `materialSource` | `string \| null` | Quarry/material source for unscheduled site intake |
 | `quarryId` | `string` | Origin FK |
 | `quarryName` | `string` | Denormalized |
 | `siteId` | `string` | Destination FK |
