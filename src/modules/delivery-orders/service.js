@@ -6,6 +6,12 @@ const purchaseOrdersCollection = db.collection('purchaseOrders');
 
 const COLLECTION_NAME = 'deliveryOrders';
 
+function normalizeMaterialSource(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 /**
  * Enrich a delivery order with quarry/site context from its purchase order.
  * Uses the snapshot cache for purchaseOrders instead of a Firestore read.
@@ -119,6 +125,7 @@ const delivery_ordersService = {
         ...data,
         id: docId,
         jobId,
+        materialSource: normalizeMaterialSource(data.materialSource),
         quarryId: data.quarryId || purchaseOrderContext?.quarryId || '',
         quarryName: data.quarryName || purchaseOrderContext?.quarryName || '',
         siteId: data.siteId || purchaseOrderContext?.siteId || '',
@@ -143,6 +150,9 @@ const delivery_ordersService = {
       if (!doc.exists) return null;
       const existing = doc.data();
       const updates = { ...data, updatedAt: new Date().toISOString() };
+      if (Object.prototype.hasOwnProperty.call(data, 'materialSource')) {
+        updates.materialSource = normalizeMaterialSource(data.materialSource);
+      }
       await docRef.update(updates);
 
       // When delivery is marked as delivered/completed, tag it as awaiting quality control check
