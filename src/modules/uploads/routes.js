@@ -29,5 +29,6 @@ router.post('/receipt-note/:weighRecordId', uploadController.uploadReceiptNote);
 // and :jobId would only capture the first segment, causing a 404.
 // The 0-9 wildcard captures the remaining path as req.params[0].
 router.post('/driver-photo-weigh-out/(*)', uploadController.uploadDriverPhotoWeighOut);
+router.post('/fuel-pump-photo/(*)', uploadController.uploadFuelPumpPhoto);
 
 module.exports = router;
