@@ -22,6 +22,11 @@
  *   - weighments
  *   - checkpoints
  *   - uploads
+ *   - customers
+ *   - fuelStations
+ *   - users
+ *   - roles
+ *   - auditLogs
  */
 const { db } = require('../../config/firebase');
 const cacheService = require('./cacheService');
@@ -119,6 +124,11 @@ async function init() {
     { name: 'weighments', ref: db.collection('weighbridgeRecords') },
     { name: 'checkpoints', ref: db.collection('checkpoints') },
     { name: 'uploads', ref: db.collection('uploads') },
+    { name: 'customers', ref: db.collection('customers') },
+    { name: 'fuelStations', ref: db.collection('fuelStations') },
+    { name: 'users', ref: db.collection('users') },
+    { name: 'roles', ref: db.collection('roles') },
+    { name: 'auditLogs', ref: db.collection('auditLogs') },
   ];
 
   // Phase 1: Warm from Redis (parallel)
