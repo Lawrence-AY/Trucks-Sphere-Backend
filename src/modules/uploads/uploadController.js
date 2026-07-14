@@ -9,6 +9,7 @@
  *   - Deliverynotes/    → delivery note images    → Firestore: deliveryOrders/{id}.photoURL
  *   - Receipt note/     → receipt note images     → Firestore: weighRecords/{id}.photoURL
  *   - Deliveries/       → driver photos at weigh-out → Firestore: deliveryOrders/{id}.driverPhotoURL
+ *   - Fuel pump/        → fuel pump photos        → Firestore: deliveryOrders/{id}.pumpPhotoURL
  */
 const { db } = require('../../../config/firebase');
 const { uploadFile, deleteFile } = require('../../utils/cloudStorage');
@@ -253,6 +254,93 @@ exports.uploadDriverPhotoWeighOut = [
     } catch (err) {
       console.error('[uploadDriverPhotoWeighOut] ERROR:', err.message);
       console.error('[uploadDriverPhotoWeighOut] Stack:', err.stack);
+      next(err);
+    }
+  },
+];
+
+/**
+ * POST /api/uploads/fuel-pump-photo/(*)
+ *
+ * Upload a fuel pump photo for a delivery job.
+ * Uses wildcard (*) route to handle jobIds containing forward slashes.
+ *
+ * Storage folder: "Fuel pump/"
+ * Firestore field: deliveryOrders/{deliveryOrderId}.pumpPhotoURL
+ */
+exports.uploadFuelPumpPhoto = [
+  upload.single('file'),
+  async (req, res, next) => {
+    try {
+      console.log('[uploadFuelPumpPhoto] Request received');
+      console.log('[uploadFuelPumpPhoto] req.params:', JSON.stringify(req.params));
+      console.log('[uploadFuelPumpPhoto] req.file:', req.file ? `Present (${req.file.originalname}, ${req.file.size} bytes, ${req.file.mimetype})` : 'MISSING');
+
+      if (!req.file) {
+        console.error('[uploadFuelPumpPhoto] No file in request');
+        return res.status(400).json({ error: 'No file provided' });
+      }
+
+      // req.params[0] captures the entire remaining path from the (*) wildcard
+      const jobId = req.params[0];
+      console.log('[uploadFuelPumpPhoto] Extracted jobId:', jobId);
+
+      if (!jobId) {
+        console.error('[uploadFuelPumpPhoto] Missing jobId in request path');
+        return res.status(400).json({ error: 'Missing jobId in request path' });
+      }
+
+      // Find the delivery order by jobId
+      console.log('[uploadFuelPumpPhoto] Querying deliveryOrders by jobId:', jobId);
+      const ordersSnap = await db.collection('deliveryOrders')
+        .where('jobId', '==', jobId)
+        .limit(1)
+        .get();
+
+      if (ordersSnap.empty) {
+        console.error('[uploadFuelPumpPhoto] Delivery order not found for jobId:', jobId);
+        return res.status(404).json({ error: `Delivery order with jobId ${jobId} not found` });
+      }
+
+      const orderDoc = ordersSnap.docs[0];
+      const orderId = orderDoc.id;
+      console.log('[uploadFuelPumpPhoto] Found delivery order:', orderId);
+
+      // Delete old pump photo if exists
+      const existingPhoto = orderDoc.data().pumpPhotoURL;
+      if (existingPhoto) {
+        console.log('[uploadFuelPumpPhoto] Deleting old photo:', existingPhoto);
+        const oldPath = extractStoragePath(existingPhoto);
+        if (oldPath) await deleteFile(oldPath);
+      }
+
+      // Determine file extension from original or mimetype
+      const ext = getExtension(req.file.originalname, req.file.mimetype);
+      // Use jobId as the filename
+      const fileName = `fuel-pump-${jobId}${ext}`;
+      console.log('[uploadFuelPumpPhoto] Uploading as:', fileName, 'to Fuel pump/');
+
+      // Upload to "Fuel pump/" folder
+      const { url } = await uploadFileWithName(
+        req.file.buffer,
+        fileName,
+        'Fuel pump'
+      );
+
+      console.log('[uploadFuelPumpPhoto] Uploaded to Firebase Storage, URL:', url);
+
+      // Update Firestore delivery order record with pumpPhotoURL
+      await db.collection('deliveryOrders').doc(orderId).update({
+        pumpPhotoURL: url,
+        updatedAt: new Date().toISOString(),
+      });
+
+      console.log('[uploadFuelPumpPhoto] Firestore updated for order:', orderId);
+
+      res.json({ success: true, photoURL: url, jobId, deliveryOrderId: orderId });
+    } catch (err) {
+      console.error('[uploadFuelPumpPhoto] ERROR:', err.message);
+      console.error('[uploadFuelPumpPhoto] Stack:', err.stack);
       next(err);
     }
   },

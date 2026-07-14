@@ -36,6 +36,7 @@ const checkpointsRoutes = require('./modules/checkpoints/routes');
 const fuelRoutes = require('./modules/fuel/routes');
 const fuelAuthorizationRoutes = require('./modules/fuel-authorization/routes');
 const uploadsRoutes = require('./modules/uploads/routes');
+const trackingRoutes = require('./modules/tracking/routes');
 const { getNextId } = require('./utils/counterService');
 
 const app = express();
@@ -217,6 +218,7 @@ app.use('/api/checkpoints', checkpointsRoutes);
 app.use('/api/fuel', fuelRoutes);
 app.use('/api/fuel-authorization', fuelAuthorizationRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/track', trackingRoutes);
 
 // 404 handler for unmatched routes
 app.use((req, res) => {
