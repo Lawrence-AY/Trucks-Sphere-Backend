@@ -1,5 +1,6 @@
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
+const { generateTrackingId } = require('../../utils/trackingUtils');
 const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('deliveryOrders');
 const purchaseOrdersCollection = db.collection('purchaseOrders');
@@ -155,8 +156,23 @@ const delivery_ordersService = {
       }
       await docRef.update(updates);
 
-      // When delivery is marked as delivered/completed, tag it as awaiting quality control check
+      // ─── Tracking ID Lifecycle ───
       const newStatus = data.status;
+      // When a job transitions to 'loaded' (quarry weigh-out complete),
+      // auto-generate a tracking ID so the public tracking link goes live.
+      if (newStatus === 'loaded' && !existing.trackingId) {
+        try {
+          const trackingId = generateTrackingId();
+          await docRef.update({ trackingId });
+          updates.trackingId = trackingId;
+          console.log(`[DeliveryOrder] Tracking ID generated for ${id}: ${trackingId}`);
+        } catch (trackErr) {
+          console.error('[DeliveryOrder] Failed to generate tracking ID:', trackErr);
+          // Non-fatal — the job card still works without tracking
+        }
+      }
+
+      // When delivery is marked as delivered/completed, tag it as awaiting quality control check
       const wasCompleted = ['delivered', 'completed'].includes(existing.status);
       const isNowCompleted = ['delivered', 'completed'].includes(newStatus);
       

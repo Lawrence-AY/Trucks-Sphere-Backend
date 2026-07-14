@@ -44,6 +44,7 @@ const auditLogsRoutes = require('./modules/audit-logs/routes');
 const usersRoutes = require('./modules/users/routes');
 const rolesRoutes = require('./modules/roles/routes');
 const masterDataRoutes = require('./modules/master-data/routes');
+const trackingRoutes = require('./modules/tracking/routes');
 const { getNextId } = require('./utils/counterService');
 
 const app = express();
@@ -238,6 +239,7 @@ app.use('/api/audit-logs', auditLogsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/master-data', masterDataRoutes);
+app.use('/api/track', trackingRoutes);
 
 // 404 handler for unmatched routes
 app.use((req, res) => {
