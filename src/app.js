@@ -240,6 +240,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/master-data', masterDataRoutes);
 app.use('/api/track', trackingRoutes);
+app.use('/api/admin/reports', reportsRoutes);
 
 // 404 handler for unmatched routes
 app.use((req, res) => {

@@ -20,4 +20,7 @@ router.get('/profile', verifyToken, authController.getProfile);
 // Update user role (admin only)
 router.put('/role', verifyToken, authController.updateRole);
 
+// Change password (authenticated user)
+router.post('/change-password', verifyToken, authController.changePassword);
+
 module.exports = router;
