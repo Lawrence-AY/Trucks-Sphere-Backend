@@ -45,7 +45,6 @@ const usersRoutes = require('./modules/users/routes');
 const rolesRoutes = require('./modules/roles/routes');
 const masterDataRoutes = require('./modules/master-data/routes');
 const trackingRoutes = require('./modules/tracking/routes');
-const reportsRoutes = require('./modules/reports/routes');
 const { getNextId } = require('./utils/counterService');
 
 const app = express();
