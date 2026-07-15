@@ -14,16 +14,51 @@ function createResourceService({
   defaultStatusField = 'status',
   defaultSortField = 'createdAt',
   defaultSortDirection = 'desc',
+  /** Field names used for role-based filtering. Set per-collection when configuring. */
+  roleFilterFieldMap = {
+    vendor: 'vendorId',
+    operator_quarry: 'quarryId',
+    operator_site: 'siteId',
+    operator_fuel: 'fuelStationId',
+  },
 }) {
   const collectionRef = db.collection(collectionName);
 
+  /**
+   * Apply role-based filtering so users only see their own data.
+   * - management / admin: see everything (no filter)
+   * - vendor: filter by vendorId
+   * - operator_quarry: filter by quarryId
+   * - operator_site: filter by siteId
+   * - operator_fuel: filter by fuelStationId
+   */
+  function applyRoleFilter(results, user) {
+    if (!user || !user.role) return results;
+    const role = user.role;
+
+    // Management sees everything
+    if (role === 'management' || role === 'admin') return results;
+
+    const filterField = roleFilterFieldMap[role];
+    if (!filterField) return results;
+
+    // Determine the filter value from the user object
+    const filterValue = user[filterField] || user.uid;
+    if (!filterValue) return results;
+
+    return results.filter((item) => item[filterField] === filterValue);
+  }
+
   return {
-    findAll(query = {}) {
+    findAll(query = {}, user = {}) {
       const { search, status, page = 1 } = query;
       const limit = normalizeLimit(query.limit);
       const pageNumber = Math.max(parseInt(page, 10) || 1, 1);
 
       let results = snapshotStore.getAll(cacheName);
+
+      // Apply role-based filtering first
+      results = applyRoleFilter(results, user);
 
       results = [...results].sort((a, b) => {
         const aValue = a[defaultSortField] || '';
@@ -61,6 +96,22 @@ function createResourceService({
     async create(data, user = {}) {
       const docRef = data.id ? collectionRef.doc(data.id) : collectionRef.doc();
       const now = new Date().toISOString();
+
+      // Resolve user display info for tracking
+      let createdByUsername = data.createdByUsername || null;
+      let createdByDisplayName = data.createdByDisplayName || null;
+      if (!createdByUsername || !createdByDisplayName) {
+        try {
+          const userProfile = snapshotStore.getById('users', user.uid);
+          if (userProfile) {
+            createdByUsername = createdByUsername || userProfile.username || null;
+            createdByDisplayName = createdByDisplayName || userProfile.displayName || userProfile.name || null;
+          }
+        } catch {
+          // Non-blocking
+        }
+      }
+
       const item = {
         ...data,
         id: docRef.id,
@@ -68,6 +119,8 @@ function createResourceService({
         createdAt: data.createdAt || now,
         updatedAt: now,
         createdBy: data.createdBy || user.uid || user.email || null,
+        createdByUsername: createdByUsername || user.email || null,
+        createdByDisplayName: createdByDisplayName || user.email || null,
         updatedBy: data.updatedBy || user.uid || user.email || null,
       };
 

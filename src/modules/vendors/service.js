@@ -25,7 +25,7 @@ const vendorsService = {
     if (search) {
       const s = search.toLowerCase();
       results = results.filter(item =>
-        (item.name || '').toLowerCase().includes(s) ||
+        (item.companyName || '').toLowerCase().includes(s) ||
         (item.id || '').toLowerCase().includes(s) ||
         (item.kraPin || '').toLowerCase().includes(s) ||
         (item.companyActCR12 || '').toLowerCase().includes(s)

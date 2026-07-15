@@ -17,6 +17,9 @@ router.post('/logout', (req, res) => {
 // Get current user profile (requires valid token in Authorization header)
 router.get('/profile', verifyToken, authController.getProfile);
 
+// Update user profile (display name, phone, etc.)
+router.put('/profile', verifyToken, authController.updateProfile);
+
 // Update user role (admin only)
 router.put('/role', verifyToken, authController.updateRole);
 

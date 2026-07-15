@@ -14,6 +14,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { db, auth } = require('../config/firebase');
+const { setCounter } = require('../src/utils/counterService');
 
 // ============================================================
 // MATERIALS — exactly the 7 materials specified
@@ -242,7 +243,9 @@ async function seedFirestore(uidMap) {
     matBatch.set(db.collection('materials').doc(m.id), { ...m, active: true, createdAt: now, updatedAt: now });
   }
   await matBatch.commit();
-  console.log(`  ✅ materials: ${MATERIALS.length} documents`);
+  // Sync the material counter so the next created material starts at MAT008
+  await setCounter('material', MATERIALS.length);
+  console.log(`  ✅ materials: ${MATERIALS.length} documents (counter set to ${MATERIALS.length})`);
 
   // ---------- quarries ----------
   const quarryBatch = db.batch();

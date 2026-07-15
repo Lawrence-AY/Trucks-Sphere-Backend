@@ -17,7 +17,7 @@ const COUNTER_COLLECTION = 'counters';
 const COUNTER_DOC = 'auto_ids';
 
 const PREFIX_MAP = {
-  vendor: 'V',
+  vendor: 'v',
   driver: 'D',
   truck: 'T',
   vehicle: 'T',
@@ -32,6 +32,9 @@ const PREFIX_MAP = {
 /**
  * Atomically increment and return the next ID for a given entity type.
  * Returns e.g. "V005", "D012", "J001", "POMAT003"
+ *
+ * Auto-detects existing collection max IDs to prevent overwriting
+ * seeded or manually-inserted documents.
  */
 async function getNextId(entityType) {
   const prefix = PREFIX_MAP[entityType];
@@ -40,6 +43,21 @@ async function getNextId(entityType) {
   const counterRef = db.collection(COUNTER_COLLECTION).doc(COUNTER_DOC);
   const fieldName = `${entityType}_counter`;
 
+  // Determine the Firestore collection name for this entity type
+  const collectionNameMap = {
+    vendor: 'vendors',
+    driver: 'drivers',
+    truck: 'vehicles',
+    vehicle: 'vehicles',
+    job: 'deliveryOrders',
+    receipt_note: 'receiptNotes',
+    delivery_note: 'deliveryNotes',
+    purchase_order: 'purchaseOrders',
+    fuel: 'fuelRecords',
+    material: 'materials',
+  };
+  const collectionName = collectionNameMap[entityType];
+
   let nextNumber;
   await db.runTransaction(async (transaction) => {
     const doc = await transaction.get(counterRef);
@@ -47,7 +65,35 @@ async function getNextId(entityType) {
     if (doc.exists && doc.data()[fieldName] != null) {
       current = doc.data()[fieldName];
     }
-    nextNumber = current + 1;
+
+    // Auto-detect max existing ID number from the collection
+    // Query with uppercase prefix to capture both V001 and v1 (U+0046 < U+0066)
+    const queryPrefix = prefix.toUpperCase();
+    let maxExistingNum = 0;
+    if (collectionName) {
+      try {
+        const snapshot = await transaction.get(
+          db.collection(collectionName)
+            .where('id', '>=', queryPrefix)
+            .where('id', '<=', queryPrefix + '\uf8ff')
+            .limit(100)
+        );
+        snapshot.forEach((existingDoc) => {
+          const existingId = existingDoc.data().id || existingDoc.id;
+          const match = existingId.match(new RegExp(`^${prefix}(\\d+)$`, 'i'));
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxExistingNum) maxExistingNum = num;
+          }
+        });
+      } catch (_) {
+        // If query fails (e.g., missing composite index), fall back to counter value
+      }
+    }
+
+    // Use whichever is higher: counter or existing max
+    const effectiveCurrent = Math.max(current, maxExistingNum);
+    nextNumber = effectiveCurrent + 1;
     transaction.set(counterRef, { [fieldName]: nextNumber }, { merge: true });
   });
 

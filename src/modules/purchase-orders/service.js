@@ -12,9 +12,9 @@ function normalizeVendorId(raw) {
   const match = str.match(/^([Vv]?)(\d+)$/);
   if (match) {
     const num = parseInt(match[2], 10);
-    return `V${String(num).padStart(3, '0')}`;
+    return `v${String(num).padStart(3, '0')}`;
   }
-  return str.toUpperCase();
+  return str;
 }
 
 /**
@@ -104,10 +104,27 @@ const purchase_ordersService = {
 
       const docId = poNumber.replace(/\//g, '-');
       const docRef = collectionRef.doc(docId);
+
+      // Check for duplicate — do NOT overwrite an existing PO
+      const existingSnap = await docRef.get();
+      if (existingSnap.exists) {
+        const existing = existingSnap.data();
+        const error = new Error(
+          `A purchase order already exists for this vendor and material combination.\n\n` +
+          `PO: ${existing.poNumber}\n` +
+          `Status: ${existing.status}\n` +
+          `Delivered: ${existing.quantityDelivered || 0}/${existing.quantity || 0} ${existing.unit || 'units'}\n\n` +
+          `Please use the existing order or contact management.`
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
       const item = {
         ...data,
         id: docId,
         poNumber,
+        companyName: data.companyName || data.vendorName || '',
         status: data.status || 'pending',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

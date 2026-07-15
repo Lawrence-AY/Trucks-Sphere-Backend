@@ -2,7 +2,7 @@ function createResourceController(service) {
   return {
     findAll: async (req, res, next) => {
       try {
-        const items = await service.findAll(req.query);
+        const items = await service.findAll(req.query, req.user);
         res.json(items);
       } catch (error) {
         next(error);

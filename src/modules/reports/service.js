@@ -9,6 +9,29 @@
 const snapshotStore = require('../../utils/snapshotStore');
 
 /**
+ * Format an ISO date string to East African Time (EAT = UTC+3).
+ * Returns a human-readable string like "15/Jul/2026, 14:30" or empty string if invalid.
+ */
+function formatEAT(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-KE', {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Africa/Nairobi',
+      hour12: false,
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
+/**
  * Apply timeframe filter to a date value.
  * @param {string} dateStr - ISO date string
  * @param {object} options
@@ -147,7 +170,7 @@ function buildMasterAudit(options = {}) {
       // PO details
       poQuantity: Number(po.quantity || 0),
       // Vendor
-      vendorName: d.vendorName || vendor.name || '',
+      vendorName: d.vendorName || vendor.companyName || '',
       // Driver
       driverName: d.driverName || driver.name || driver.fullName || '',
       driverLicense: driver.licenseNumber || '',
@@ -161,11 +184,18 @@ function buildMasterAudit(options = {}) {
       // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       quantityDelivered: Number(d.netWeight || d.quantityDelivered || 0),
-      // Lifecycle Timestamps
+      // Lifecycle Timestamps (raw ISO)
       quarryInTime: d.weighInAt || '',
       quarryOutTime: d.weighOutAt || '',
       siteInTime: d.siteWeighInAt || '',
       siteOutTime: d.siteWeighOutAt || '',
+      // Lifecycle Timestamps (EAT formatted — East African Time, UTC+3)
+      quarryInTimeEAT: formatEAT(d.weighInAt),
+      quarryOutTimeEAT: formatEAT(d.weighOutAt),
+      siteInTimeEAT: formatEAT(d.siteWeighInAt),
+      siteOutTimeEAT: formatEAT(d.siteWeighOutAt),
+      assignedTimeEAT: formatEAT(d.createdAt),
+      completedTimeEAT: formatEAT(d.completedAt || d.updatedAt),
       // Weights
       quarryWeighIn: Number(d.weighInWeight || 0),
       quarryWeighOut: Number(d.weighOutWeight || 0),
@@ -208,7 +238,7 @@ function buildDriverReport() {
     insurancePolicyNo: d.insurancePolicyNo || '',
     insuranceExpiry: d.insuranceExpiry || '',
     insuranceStatus: insuranceStatus(d.insuranceExpiry),
-    vendorName: vendors[d.vendorId]?.name || d.vendorName || '',
+    vendorName: vendors[d.vendorId]?.companyName || d.vendorName || '',
     phone: d.phone || '',
     status: d.status || '',
   }));
@@ -250,7 +280,7 @@ function buildFuelReport(options = {}) {
     litres: Number(r.litres || 0),
     attendantName: r.attendantName || r.dispensedBy || '',
     otp: r.otp || r.otpCode || '',
-    authorizingVendor: vendors[r.vendorId]?.name || r.vendorName || '',
+    authorizingVendor: vendors[r.vendorId]?.companyName || r.vendorName || '',
     jobId: r.jobId || '',
     fuelStation: r.fuelStation || r.location || '',
   }));
@@ -273,7 +303,7 @@ function buildTruckReport() {
     insurancePolicyNo: v.insurancePolicyNo || '',
     insuranceExpiry: v.insuranceExpiry || '',
     insuranceStatus: insuranceStatus(v.insuranceExpiry),
-    vendorName: vendors[v.vendorId]?.name || '',
+    vendorName: vendors[v.vendorId]?.companyName || '',
     status: v.status || '',
   }));
 }
@@ -293,7 +323,7 @@ function buildVendorReport(options = {}) {
     const totalTonnage = vendorDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
 
     return {
-      vendorName: v.name || '',
+      vendorName: v.companyName || '',
       activePOs: vendorPOs.filter((p) => ['approved', 'in_progress', 'pending'].includes(p.status)).length,
       fulfilledPOs: vendorPOs.filter((p) => p.status === 'completed' || p.status === 'delivered').length,
       totalPOs: vendorPOs.length,

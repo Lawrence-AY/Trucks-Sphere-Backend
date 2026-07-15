@@ -94,6 +94,7 @@ exports.register = async (req, res, next) => {
         generatedUsername,
         phone: req.body.phone || '',
         role,
+        phone: phone || '',
       },
     });
   } catch (err) {
@@ -317,13 +318,30 @@ exports.login = async (req, res, next) => {
     // Resolve vendorId / quarryId / siteId based on role + email
     const entityIds = await resolveEntityIds(email, role);
 
+    // Look up user profile from Firestore for username, phone
+    let firestoreProfile = {};
+    try {
+      const profileSnap = await db.collection('users').doc(userRecord.uid).get();
+      if (profileSnap.exists) {
+        const profile = profileSnap.data();
+        firestoreProfile = {
+          username: profile.username || null,
+          phone: profile.phone || userRecord.phoneNumber || '',
+          phoneNumber: profile.phoneNumber || userRecord.phoneNumber || '',
+        };
+      }
+    } catch {
+      // Non-blocking
+    }
+
     res.json({
       user: {
         uid: userRecord.uid,
         email: userRecord.email,
         displayName: userRecord.displayName || email.split('@')[0],
         role,
-        phone: userRecord.phoneNumber || '',
+        phone: firestoreProfile.phone || userRecord.phoneNumber || '',
+        username: firestoreProfile.username || null,
         ...entityIds,
       },
       token: data.idToken,
@@ -340,13 +358,30 @@ exports.getProfile = async (req, res) => {
     const { uid, email, role } = req.user;
     const userRecord = await getAuth().getUser(uid);
     const entityIds = await resolveEntityIds(email, role);
+
+    // Look up user profile from Firestore for username
+    let firestoreProfile = {};
+    try {
+      const profileSnap = await db.collection('users').doc(uid).get();
+      if (profileSnap.exists) {
+        const profile = profileSnap.data();
+        firestoreProfile = {
+          username: profile.username || null,
+          phone: profile.phone || userRecord.phoneNumber || '',
+        };
+      }
+    } catch {
+      // Non-blocking
+    }
+
     res.json({
       user: {
         uid: userRecord.uid,
         email: userRecord.email,
         displayName: userRecord.displayName || email?.split('@')[0] || '',
         role,
-        phone: userRecord.phoneNumber || '',
+        username: firestoreProfile.username || null,
+        phone: firestoreProfile.phone || userRecord.phoneNumber || '',
         ...entityIds,
       },
     });
@@ -356,6 +391,49 @@ exports.getProfile = async (req, res) => {
     const { uid, email, role } = req.user;
     const entityIds = await resolveEntityIds(email, role);
     res.json({ user: { uid, email, displayName: email?.split('@')[0] || '', role, phone: '', ...entityIds } });
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const { uid, email, role } = req.user;
+    const { displayName, phone, email: newEmail } = req.body;
+
+    const updates = {};
+    if (displayName) {
+      updates.displayName = displayName;
+      // Also update Firebase Auth display name
+      try {
+        await getAuth().updateUser(uid, { displayName });
+      } catch (authErr) {
+        console.warn('Failed to update Firebase Auth displayName:', authErr.message);
+      }
+    }
+    if (phone !== undefined) {
+      updates.phone = phone;
+    }
+    if (newEmail) {
+      updates.email = newEmail;
+    }
+    updates.updatedAt = new Date().toISOString();
+
+    await db.collection('users').doc(uid).set(updates, { merge: true });
+
+    const entityIds = await resolveEntityIds(email, role);
+    res.json({
+      user: {
+        uid,
+        email: newEmail || email,
+        displayName: displayName || req.user.displayName || email?.split('@')[0] || '',
+        role,
+        phone: phone || req.user.phone || '',
+        ...entityIds,
+      },
+      message: 'Profile updated successfully',
+    });
+  } catch (err) {
+    console.error('updateProfile error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 };
 

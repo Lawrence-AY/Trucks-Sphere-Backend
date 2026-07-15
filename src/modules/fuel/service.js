@@ -15,9 +15,9 @@ function normalizeVendorId(raw) {
   const match = str.match(/^([Vv]?)(\d+)$/);
   if (match) {
     const num = parseInt(match[2], 10);
-    return `V${String(num).padStart(3, '0')}`;
+    return `v${String(num).padStart(3, '0')}`;
   }
-  return str.toUpperCase();
+  return str;
 }
 
 const fuelService = {
@@ -83,6 +83,7 @@ const fuelService = {
         ...data,
         id: fuelId,
         vendorId: normalizedVendorId || data.vendorId,
+        companyName: data.companyName || data.vendorName || '',
         status: 'completed',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
