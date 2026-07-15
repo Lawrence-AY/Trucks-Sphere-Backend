@@ -1,21 +1,47 @@
 const { db } = require('../../../config/firebase');
-const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
+const vendorsService = require('../vendors/service');
 const collectionRef = db.collection('purchaseOrders');
+
+/**
+ * Normalize vendor ID to consistent format e.g. "v1" → "V001", "1" → "V001"
+ */
+function normalizeVendorId(raw) {
+  if (!raw) return '';
+  let str = String(raw).trim();
+  const match = str.match(/^([Vv]?)(\d+)$/);
+  if (match) {
+    const num = parseInt(match[2], 10);
+    return `V${String(num).padStart(3, '0')}`;
+  }
+  return str.toUpperCase();
+}
+
+/**
+ * Normalize material ID to consistent format e.g. "m1", "mat1" → "MAT001", "1" → "MAT001"
+ */
+function normalizeMaterialId(raw) {
+  if (!raw) return '';
+  let str = String(raw).trim();
+  const match = str.match(/^([Mm]?(?:at)?)(\d+)$/i);
+  if (match) {
+    const num = parseInt(match[2], 10);
+    return 'MAT' + String(num).padStart(3, '0');
+  }
+  return str.toUpperCase();
+}
 
 const COLLECTION_NAME = 'purchaseOrders';
 
 const purchase_ordersService = {
   /**
    * findAll reads from the in-memory snapshot cache.
-   * Avoids composite index requirements and eliminates Firestore reads per request.
    */
   findAll(query = {}) {
     const { search, status, vendorId, page = 1, limit = 50 } = query;
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
-    // Sort by createdAt descending
     results = [...results].sort((a, b) => {
       const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -48,14 +74,34 @@ const purchase_ordersService = {
   },
 
   /**
-   * Create a Purchase Order with simple POMAT### number.
-   * Quarry, site, driver, job, and pricing will be added later on delivery/receipt notes.
+   * Create a Purchase Order.
+   * PO number format: POMAT###/V### = POMAT{MaterialNumber}/{VendorNumber}
+   * Example: POMAT001/V001 (material MAT001, vendor V001)
    */
   async create(data) {
     try {
-      // Use client-provided poNumber if present, otherwise auto-generate
-      const poNumber = data.poNumber || await getNextId('purchase_order');
-      // Firestore doc IDs cannot contain /, so sanitize for the doc ID only
+      // Normalize material ID → MAT### number
+      const materialId = normalizeMaterialId(data.materialId);
+      const matNum = materialId ? materialId : 'MAT000';
+
+      // Normalize vendor ID → V### number
+      let vendorIdShort = '';
+      if (data.vendorId) {
+        try {
+          const vendor = await vendorsService.findById(data.vendorId);
+          const rawId = vendor?.id || vendor?.vendorId || '';
+          vendorIdShort = normalizeVendorId(rawId);
+        } catch (_) { /* ignore */ }
+      }
+      if (!vendorIdShort && data.vendorId) {
+        vendorIdShort = normalizeVendorId(data.vendorId);
+      }
+
+      // Build PO number: POMAT###/V###
+      const poNumber = vendorIdShort
+        ? `${matNum.replace('MAT', 'POMAT')}/${vendorIdShort}`
+        : matNum.replace('MAT', 'POMAT');
+
       const docId = poNumber.replace(/\//g, '-');
       const docRef = collectionRef.doc(docId);
       const item = {
@@ -84,6 +130,36 @@ const purchase_ordersService = {
       return { id, ...doc.data(), ...updates };
     } catch (error) {
       console.error('purchase_ordersService.update error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get the preview of the PO number based on vendor and material.
+   * Format: POMAT###/V### = POMAT{MaterialNumber}/{VendorNumber}
+   */
+  async previewNumber(vendorId, materialId) {
+    try {
+      const materialIdNorm = normalizeMaterialId(materialId);
+      const matNum = materialIdNorm ? materialIdNorm : 'MAT000';
+
+      let vendorShort = '';
+      if (vendorId) {
+        try {
+          const vendor = await vendorsService.findById(vendorId);
+          const rawId = vendor?.id || vendor?.vendorId || '';
+          vendorShort = normalizeVendorId(rawId);
+        } catch (_) { /* ignore */ }
+      }
+      if (!vendorShort && vendorId) {
+        vendorShort = normalizeVendorId(vendorId);
+      }
+
+      return vendorShort
+        ? `${matNum.replace('MAT', 'POMAT')}/${vendorShort}`
+        : matNum.replace('MAT', 'POMAT');
+    } catch (error) {
+      console.error('purchase_ordersService.previewNumber error:', error);
       throw error;
     }
   },

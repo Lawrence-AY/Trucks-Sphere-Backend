@@ -48,3 +48,35 @@ exports.getTrackingPage = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * GET /track/by-plate/:plateNumber
+ *
+ * Public endpoint to fetch tracking data by vehicle plate number.
+ */
+exports.getTrackingByPlate = async (req, res, next) => {
+  try {
+    const { plateNumber } = req.params;
+
+    if (!plateNumber || plateNumber.length < 3) {
+      return res.status(404).json({
+        error: 'No active delivery found for this vehicle plate.',
+        code: 'TRACKING_NOT_FOUND',
+      });
+    }
+
+    const order = trackingService.findByPlate(plateNumber);
+
+    if (!order) {
+      return res.status(404).json({
+        error: 'No active delivery found for this vehicle plate.',
+        code: 'TRACKING_NOT_FOUND',
+      });
+    }
+
+    const publicData = trackingService.sanitizeForPublic(order);
+    return res.json(publicData);
+  } catch (err) {
+    next(err);
+  }
+};

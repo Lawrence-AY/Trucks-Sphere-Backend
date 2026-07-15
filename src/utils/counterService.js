@@ -26,6 +26,7 @@ const PREFIX_MAP = {
   delivery_note: 'DN',
   purchase_order: 'POMAT',
   fuel: 'FUEL',
+  material: 'MAT',
 };
 
 /**
@@ -53,6 +54,26 @@ async function getNextId(entityType) {
   return `${prefix}${String(nextNumber).padStart(3, '0')}`;
 }
 
+/**
+ * Peek at the next counter value without incrementing it.
+ * Used for previews — does NOT burn a counter.
+ */
+async function peekNextId(entityType) {
+  const prefix = PREFIX_MAP[entityType];
+  if (!prefix) throw new Error(`Unknown entity type: ${entityType}`);
+
+  const counterRef = db.collection(COUNTER_COLLECTION).doc(COUNTER_DOC);
+  const fieldName = `${entityType}_counter`;
+
+  const doc = await counterRef.get();
+  let current = 0;
+  if (doc.exists && doc.data()[fieldName] != null) {
+    current = doc.data()[fieldName];
+  }
+  const next = current + 1;
+  return `${prefix}${String(next).padStart(3, '0')}`;
+}
+
 async function resetAllCounters() {
   const counterRef = db.collection(COUNTER_COLLECTION).doc(COUNTER_DOC);
   const resetData = {};
@@ -68,4 +89,4 @@ async function setCounter(entityType, value) {
   await counterRef.set({ [`${entityType}_counter`]: value }, { merge: true });
 }
 
-module.exports = { getNextId, resetAllCounters, setCounter, PREFIX_MAP };
+module.exports = { getNextId, peekNextId, resetAllCounters, setCounter, PREFIX_MAP };

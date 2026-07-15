@@ -1,5 +1,6 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
+const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('materials');
 
 const COLLECTION_NAME = 'materials';
@@ -42,14 +43,17 @@ const materialsService = {
 
   async create(data) {
     try {
-      const docRef = collectionRef.doc(data.id || undefined);
+      const materialId = await getNextId('material');
+      const docRef = collectionRef.doc(materialId);
       const item = {
         ...data,
+        id: materialId,
+        materialId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: docRef.id, ...item };
+      return { id: materialId, ...item };
     } catch (error) {
       console.error('materialsService.create error:', error);
       throw error;

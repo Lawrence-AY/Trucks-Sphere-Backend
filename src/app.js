@@ -36,6 +36,14 @@ const checkpointsRoutes = require('./modules/checkpoints/routes');
 const fuelRoutes = require('./modules/fuel/routes');
 const fuelAuthorizationRoutes = require('./modules/fuel-authorization/routes');
 const uploadsRoutes = require('./modules/uploads/routes');
+const customersRoutes = require('./modules/customers/routes');
+const fuelStationsRoutes = require('./modules/fuel-stations/routes');
+const reportsRoutes = require('./modules/reports/routes');
+const analyticsRoutes = require('./modules/analytics/routes');
+const auditLogsRoutes = require('./modules/audit-logs/routes');
+const usersRoutes = require('./modules/users/routes');
+const rolesRoutes = require('./modules/roles/routes');
+const masterDataRoutes = require('./modules/master-data/routes');
 const trackingRoutes = require('./modules/tracking/routes');
 const reportsRoutes = require('./modules/reports/routes');
 const { getNextId } = require('./utils/counterService');
@@ -73,6 +81,11 @@ const COLLECTION_ETAG_MAP = {
   '/api/checkpoints': 'checkpoints',
   '/api/fuel': 'fuelRecords',
   '/api/uploads': 'uploads',
+  '/api/customers': 'customers',
+  '/api/fuel-stations': 'fuelStations',
+  '/api/audit-logs': 'auditLogs',
+  '/api/users': 'users',
+  '/api/roles': 'roles',
 };
 
 /**
@@ -219,6 +232,14 @@ app.use('/api/checkpoints', checkpointsRoutes);
 app.use('/api/fuel', fuelRoutes);
 app.use('/api/fuel-authorization', fuelAuthorizationRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/customers', customersRoutes);
+app.use('/api/fuel-stations', fuelStationsRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/audit-logs', auditLogsRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/roles', rolesRoutes);
+app.use('/api/master-data', masterDataRoutes);
 app.use('/api/track', trackingRoutes);
 app.use('/api/admin/reports', reportsRoutes);
 

@@ -28,7 +28,10 @@ const driversService = {
       results = results.filter(item =>
         (item.name || '').toLowerCase().includes(s) ||
         (item.phone || '').includes(s) ||
-        (item.licenseNumber || '').toLowerCase().includes(s)
+        (item.licenseNumber || '').toLowerCase().includes(s) ||
+        (item.nationalId || '').includes(s) ||
+        (item.insuranceNumber || '').toLowerCase().includes(s) ||
+        (item.wibaProvider || '').toLowerCase().includes(s)
       );
     }
 
@@ -54,6 +57,20 @@ const driversService = {
         ...data,
         id: driverId,
         status: data.status || 'active',
+        nationalId: data.nationalId || '',
+        // WIBA (Worker Injury Benefit Act)
+        wibaProvider: data.wibaProvider || '',
+        wibaStartDate: data.wibaStartDate || '',
+        wibaEndDate: data.wibaEndDate || '',
+        // Insurance
+        insuranceSupplier: data.insuranceSupplier || '',
+        insuranceStartDate: data.insuranceStartDate || '',
+        insuranceCompany: data.insuranceCompany || '',
+        insuranceCommencingDate: data.insuranceCommencingDate || '',
+        insuranceExpiryDate: data.insuranceExpiryDate || '',
+        insuranceNumber: data.insuranceNumber || '',
+        // NTSA
+        ntsaInspectionExpiry: data.ntsaInspectionExpiry || '',
         totalTrips: data.totalTrips || 0,
         rating: data.rating || 0,
         createdAt: new Date().toISOString(),
