@@ -216,6 +216,14 @@ exports.exportCategoryCSV = async (req, res, next) => {
         rows = reportsService.buildPOReport(options);
         filename = `PurchaseOrders_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
+      case 'quarry-ops':
+        rows = reportsService.buildMasterAudit(options).filter(r => r.quarryInTime);
+        filename = `QuarryOps_${new Date().toISOString().slice(0, 10)}.csv`;
+        break;
+      case 'site-ops':
+        rows = reportsService.buildMasterAudit(options).filter(r => r.siteInTime);
+        filename = `SiteOps_${new Date().toISOString().slice(0, 10)}.csv`;
+        break;
       default:
         return res.status(400).json({ error: `Unknown category: ${category}` });
     }

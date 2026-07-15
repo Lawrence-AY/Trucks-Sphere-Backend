@@ -134,11 +134,18 @@ function buildMasterAudit(options = {}) {
     const jobFuel = allFuel.filter((f) => f.jobId === d.jobId);
     const totalFuelLitres = jobFuel.reduce((sum, f) => sum + (Number(f.litres) || 0), 0);
 
+    const quarryNet = Number(d.weighOutWeight || d.netWeight || 0) - Number(d.weighInWeight || 0);
+    const siteNet = Number(d.siteNetWeight || d.netWeight || 0);
+    const quarryTotal = Number(d.weighOutWeight || d.netWeight || 0);
+    const siteTotal = Number(d.siteWeighInWeight || 0);
+
     return {
       // Order
       jobId: d.jobId || '',
       poNumber: d.poNumber || po.poNumber || '',
       jobStatus: d.status || '',
+      // PO details
+      poQuantity: Number(po.quantity || 0),
       // Vendor
       vendorName: d.vendorName || vendor.name || '',
       // Driver
@@ -150,7 +157,8 @@ function buildMasterAudit(options = {}) {
       truckModel: vehicle.model || '',
       // Material
       materialName: d.materialName || material.name || '',
-      materialSource: d.materialSource || '',
+      materialSource: d.materialSource || d.weighOutLocation || (d.quarryName || ''),
+      // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       quantityDelivered: Number(d.netWeight || d.quantityDelivered || 0),
       // Lifecycle Timestamps
@@ -158,21 +166,27 @@ function buildMasterAudit(options = {}) {
       quarryOutTime: d.weighOutAt || '',
       siteInTime: d.siteWeighInAt || '',
       siteOutTime: d.siteWeighOutAt || '',
-      jobCreatedAt: d.createdAt || '',
       // Weights
       quarryWeighIn: Number(d.weighInWeight || 0),
       quarryWeighOut: Number(d.weighOutWeight || 0),
       netWeight: Number(d.netWeight || 0),
       siteWeighIn: Number(d.siteWeighInWeight || 0),
       siteWeighOut: Number(d.siteWeighOutWeight || 0),
+      quarryNet: quarryNet > 0 ? quarryNet : Number(d.netWeight || 0),
+      siteNet: siteNet > 0 ? siteNet : Number(d.netWeight || 0),
+      quarryTotal: quarryTotal > 0 ? quarryTotal : Number(d.quarryWeighOut || d.netWeight || 0),
+      siteTotal: siteTotal > 0 ? siteTotal : Number(d.siteWeighInWeight || 0),
       // Fuel
       totalFuelLitres,
-      fuelTransactions: jobFuel.length,
-      // Cycle Analysis
-      quarryCycleHours: cycleHours(d.weighInAt, d.weighOutAt),
-      transitHours: cycleHours(d.weighOutAt, d.siteWeighInAt),
-      totalCycleHours: cycleHours(d.createdAt, d.siteWeighOutAt || d.siteWeighInAt || d.updatedAt),
-      poToDeliveryDays: cycleDays(po.createdAt, d.siteWeighInAt || d.updatedAt),
+      fuelOTP: jobFuel.length > 0 ? (jobFuel[0].otp || jobFuel[0].authorizationCode || '') : '',
+      fuelAttendant: jobFuel.length > 0 ? (jobFuel[0].attendantName || jobFuel[0].dispensedBy || jobFuel[0].dispensedByName || '') : '',
+      // Lot & GRN
+      lotNumber: d.storageLot || d.lotNumber || '',
+      grnNumber: d.receiptNoteId || d.grnNumber || '',
+      // System accountability
+      operatorUsername: d.createdBy || d.operatorUsername || '',
+      creationLocation: d.weighInLocation || d.weighOutLocation || d.receivedLocation || '',
+      geolocation: d.weighOutGeoLocation ? `${d.weighOutGeoLocation.latitude},${d.weighOutGeoLocation.longitude}` : '',
       // Tracking
       trackingId: d.trackingId || '',
     };
