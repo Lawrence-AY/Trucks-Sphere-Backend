@@ -48,6 +48,15 @@ function findByTrackingId(trackingId) {
  * @returns {object} Sanitized public tracking data
  */
 function sanitizeForPublic(order) {
+  // Look up driver for nationalId
+  let driverNationalId = order.driverNationalId || null;
+  if (!driverNationalId && order.driverId) {
+    const driver = snapshotStore.getById('drivers', order.driverId);
+    if (driver) {
+      driverNationalId = driver.nationalId || null;
+    }
+  }
+
   return {
     trackingId: order.trackingId,
     jobId: order.jobId,
@@ -57,6 +66,7 @@ function sanitizeForPublic(order) {
     vendorName: order.vendorName,
     plateNumber: order.plateNumber,
     driverName: order.driverName,
+    driverNationalId,
     // Cargo
     materialName: order.materialName,
     materialId: order.materialId,
@@ -67,9 +77,13 @@ function sanitizeForPublic(order) {
     weighOutWeight: order.weighOutWeight,
     weighInWeight: order.weighInWeight,
     netWeight: order.netWeight,
+    weighOutLocation: order.weighOutLocation || null,
     weighOutAt: order.weighOutAt,
     weighOutPhotoURL: order.weighOutPhotoURL || null,
+    // Geo-location from weigh-out (includes address with city/town)
+    weighOutGeoLocation: order.weighOutGeoLocation || null,
     weighOutCoordinates: order.weighOutCoordinates || null,
+    weighInLocation: order.weighInLocation || null,
     // Dispatch verification photo (driver photo at weigh-out)
     driverPhotoURL: order.driverPhotoURL || null,
     // Timestamps
@@ -82,7 +96,33 @@ function sanitizeForPublic(order) {
   };
 }
 
+/**
+ * Look up an active delivery order by vehicle plate number.
+ * Only returns the order if it is in an active (in-transit) state.
+ */
+function findByPlate(plateNumber) {
+  if (!plateNumber) return null;
+
+  const allOrders = snapshotStore.getAll(COLLECTION_NAME);
+  const plate = plateNumber.trim().toUpperCase().replace(/\s+/g, '');
+
+  const order = allOrders.find((doc) => {
+    const docPlate = (doc.plateNumber || '').toUpperCase().replace(/\s+/g, '');
+    return docPlate === plate;
+  });
+
+  if (!order) return null;
+
+  const activeStatuses = ['loaded', 'dispatched', 'in_transit', 'en_route'];
+  if (!activeStatuses.includes(order.status)) {
+    return null;
+  }
+
+  return order;
+}
+
 module.exports = {
   findByTrackingId,
+  findByPlate,
   sanitizeForPublic,
 };

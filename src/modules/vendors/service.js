@@ -26,7 +26,9 @@ const vendorsService = {
       const s = search.toLowerCase();
       results = results.filter(item =>
         (item.name || '').toLowerCase().includes(s) ||
-        (item.id || '').toLowerCase().includes(s)
+        (item.id || '').toLowerCase().includes(s) ||
+        (item.kraPin || '').toLowerCase().includes(s) ||
+        (item.companyActCR12 || '').toLowerCase().includes(s)
       );
     }
 
@@ -53,6 +55,11 @@ const vendorsService = {
         id: vendorId,
         status: data.status || 'active',
         fleetSize: data.fleetSize || 0,
+        // Regulatory / Compliance
+        companyActCR12: data.companyActCR12 || '',
+        kraPin: data.kraPin || '',
+        businessPermit: data.businessPermit || '',
+        taxCompliance: data.taxCompliance || '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

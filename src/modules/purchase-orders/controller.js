@@ -49,6 +49,14 @@ exports.update = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.previewNumber = async (req, res, next) => {
+  try {
+    const { vendorId, materialId } = req.query;
+    const poNumber = await purchase_ordersService.previewNumber(vendorId, materialId);
+    res.json({ poNumber });
+  } catch (err) { next(err); }
+};
+
 exports.delete = async (req, res, next) => {
   try {
     await purchase_ordersService.delete(req.params.id);

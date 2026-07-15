@@ -11,4 +11,11 @@ router.post('/', siteController.create);
 router.put('/:id', siteController.update);
 router.delete('/:id', siteController.delete);
 
+// ─── Site Operator Geolocation ──────────────────────────────────
+// POST /api/sites/geolocation — site operator records their current GPS position
+router.post('/geolocation', siteController.recordGeolocation);
+
+// GET /api/sites/:id/geolocations — fetch geolocation history for a site
+router.get('/:id/geolocations', siteController.getGeolocations);
+
 module.exports = router;

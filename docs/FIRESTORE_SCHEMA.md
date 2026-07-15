@@ -47,10 +47,11 @@
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | `DRV001`, ... |
+| `id` | `string` | `D001`, ... |
 | `name` | `string` | |
 | `phone` | `string` | |
 | `licenseNumber` | `string` | |
+| `nationalId` | `string` | Kenya national ID number (8 digits) |
 | `status` | `string` | `active`, `inactive` |
 | `totalTrips` | `number` | |
 | `rating` | `number` | 0-5 |
@@ -66,7 +67,7 @@
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | `TRK001`, ... |
+| `id` | `string` | `T001`, ... |
 | `plateNumber` | `string` | |
 | `make` | `string` | |
 | `model` | `string` | |
@@ -101,7 +102,7 @@
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | `PO001`, ... |
+| `id` | `string` | `POMAT001`, ... |
 | `poNumber` | `string` | |
 | `vendorId` | `string` | FK |
 | `vendorName` | `string` | Denormalized |
@@ -226,6 +227,7 @@
 | `name` | `string` | |
 | `email` | `string` | |
 | `location` | `map` | `{ address, lat, lng }` |
+| `lastGeolocation` | `map` | `{ latitude, longitude, accuracy, recordedAt, recordedBy }` — latest operator GPS ping |
 | `status` | `string` | `active`, `inactive` |
 | `createdAt` | `timestamp` | |
 | `updatedAt` | `timestamp` | |
@@ -233,6 +235,33 @@
 **Indexes**: `email ASC`
 
 **Reads per request**: 0 (snapshotStore)
+
+---
+
+## Collection: `siteGeolocations` (NEW)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Auto-generated |
+| `siteId` | `string` | FK → `sites.id` |
+| `latitude` | `number` | GPS latitude |
+| `longitude` | `number` | GPS longitude |
+| `accuracy` | `number \| null` | GPS accuracy in meters |
+| `operatorEmail` | `string` | Operator who recorded the position |
+| `operatorName` | `string` | Display name |
+| `notes` | `string` | Optional notes |
+| `recordedBy` | `string` | |
+| `timestamp` | `timestamp` | When the position was captured |
+| `createdAt` | `timestamp` | |
+| `updatedAt` | `timestamp` | |
+
+**Indexes**: `siteId ASC + timestamp DESC`
+
+**Reads per request**: 0 (snapshotStore) for cached, 1-2 reads for direct queries
+
+**API Endpoints**:
+- `POST /api/sites/geolocation` — Record operator GPS position (requires auth)
+- `GET /api/sites/:id/geolocations` — Fetch geolocation history for a site (requires auth)
 
 ---
 
@@ -302,7 +331,7 @@
 | Operation | Before | After |
 |-----------|--------|-------|
 | GET /api/* (all collections) | 1 read per request per collection | **0** (snapshotStore) |
-| onSnapshot listeners (12 collections) | 0 | 12 reads every ~5min (when data changes) |
+| onSnapshot listeners (18 collections) | 0 | 18 reads every ~5min (when data changes) |
 | Auth login email lookup | 2-4 reads | 2-4 reads (unchanged) |
 | **100 users browsing for 1 hour** | **~12,000+ reads** | **~12 reads** |
 

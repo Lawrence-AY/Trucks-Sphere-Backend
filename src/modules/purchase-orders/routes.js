@@ -6,6 +6,7 @@ const { verifyToken } = require('../../middleware/authMiddleware');
 router.use(verifyToken);
 
 router.get('/', purchase_ordersController.findAll);
+router.get('/preview-number', purchase_ordersController.previewNumber);
 router.get('/:id', purchase_ordersController.findById);
 router.post('/', purchase_ordersController.create);
 router.put('/:id', purchase_ordersController.update);

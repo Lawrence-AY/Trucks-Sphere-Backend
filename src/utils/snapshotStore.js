@@ -27,6 +27,7 @@
  *   - users
  *   - roles
  *   - auditLogs
+ *   - siteGeolocations
  */
 const { db } = require('../../config/firebase');
 const cacheService = require('./cacheService');
@@ -129,6 +130,7 @@ async function init() {
     { name: 'users', ref: db.collection('users') },
     { name: 'roles', ref: db.collection('roles') },
     { name: 'auditLogs', ref: db.collection('auditLogs') },
+    { name: 'siteGeolocations', ref: db.collection('siteGeolocations') },
   ];
 
   // Phase 1: Warm from Redis (parallel)
