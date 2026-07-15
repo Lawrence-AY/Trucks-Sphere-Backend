@@ -41,15 +41,18 @@ async function generateUsername(firstName, lastName) {
 
 exports.register = async (req, res, next) => {
   try {
-    const { email, password, name, firstName, lastName, role } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    const { email, password, name, firstName, lastName, role, displayName: reqDisplayName } = req.body;
+    if (!password) {
+      return res.status(400).json({ error: 'Password required' });
     }
-    const displayName = name || (firstName && lastName ? `${firstName} ${lastName}` : email.split('@')[0]);
-    const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel'];
+    const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel', 'quarry_operator', 'site_operator', 'fuel_operator', 'weighbridge_operator', 'driver', 'viewer'];
     if (!VALID_ROLES.includes(role)) {
-      return res.status(400).json({ error: `Invalid role: ${role}` });
+      return res.status(400).json({ error: `Invalid role: "${role}". Valid roles: ${VALID_ROLES.join(', ')}` });
     }
+
+    // Auto-generate email if not provided
+    const displayName = reqDisplayName || name || (firstName && lastName ? `${firstName} ${lastName}` : email ? email.split('@')[0] : 'User');
+    const userEmail = email || `${displayName.toLowerCase().replace(/[^a-z0-9]/g, '')}@trucksphere.user`;
 
     // Auto-generate username from firstName + lastName
     const generatedUsername = await generateUsername(
@@ -59,18 +62,20 @@ exports.register = async (req, res, next) => {
 
     // Create Firebase Auth user
     const userRecord = await getAuth().createUser({
-      email,
+      email: userEmail,
       password,
       displayName,
     });
     await getAuth().setCustomUserClaims(userRecord.uid, { role });
 
-    // Store user profile in Firestore (including generated username)
+    // Store user profile in Firestore (including generated username, authUid maps to Firebase UID)
     const userDoc = {
       uid: userRecord.uid,
-      email,
+      authUid: userRecord.uid,      // Maps registration UID directly to authUid field
+      email: userEmail,
       displayName,
       generatedUsername,
+      phone: req.body.phone || '',
       firstName: firstName || displayName.split(' ')[0],
       lastName: lastName || displayName.split(' ').slice(1).join(' ') || '',
       role,
@@ -83,9 +88,11 @@ exports.register = async (req, res, next) => {
       message: 'User created',
       user: {
         uid: userRecord.uid,
+        authUid: userRecord.uid,
         email: userRecord.email,
         displayName: userRecord.displayName,
         generatedUsername,
+        phone: req.body.phone || '',
         role,
       },
     });
@@ -102,6 +109,7 @@ exports.register = async (req, res, next) => {
  * POST /api/auth/change-password
  * Allows authenticated users to change their password.
  * Requires current password verification.
+ * Immediately updates DB hashed password & invalidates existing sessions.
  */
 exports.changePassword = async (req, res, next) => {
   try {
@@ -136,10 +144,31 @@ exports.changePassword = async (req, res, next) => {
       return res.status(401).json({ error: 'Current password is incorrect.' });
     }
 
-    // Update password via Firebase Admin SDK
+    // Update password via Firebase Admin SDK (immediately updates hashed password in Auth DB)
     await getAuth().updateUser(uid, { password: newPassword });
 
-    res.json({ message: 'Password updated successfully.' });
+    // Invalidate all existing sessions by revoking refresh tokens
+    // This forces the user to re-login with the new password on next cycle
+    try {
+      await getAuth().revokeRefreshTokens(uid);
+      console.log(`[Auth] Refresh tokens revoked for user ${uid} after password change`);
+    } catch (revokeErr) {
+      console.warn(`[Auth] Failed to revoke refresh tokens for ${uid}:`, revokeErr.message);
+      // Non-fatal — password update still succeeded
+    }
+
+    // Also update the passwordChangedAt timestamp in Firestore user doc
+    try {
+      await db.collection('users').doc(uid).update({
+        passwordChangedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (dbErr) {
+      console.warn(`[Auth] Failed to update Firestore password timestamp for ${uid}:`, dbErr.message);
+      // Non-fatal
+    }
+
+    res.json({ message: 'Password updated successfully. Please log in again with your new password.' });
   } catch (err) {
     console.error('Change password error:', err);
     next(err);
@@ -211,8 +240,56 @@ exports.login = async (req, res, next) => {
       return res.status(400).json({ error: 'Username and password required' });
     }
 
-    // Convert username to email: if already an email, use as-is; otherwise append @truck.com
-    const email = username.includes('@') ? username : `${username}@truck.com`;
+    // Reject email-style logins — enforce username-only authentication
+    if (username.includes('@')) {
+      return res.status(400).json({ error: 'Please use your username (not email) to log in.' });
+    }
+
+    // Look up the user by generatedUsername in Firestore to resolve their email
+    const userSnap = await db.collection('users')
+      .where('generatedUsername', '==', username.toLowerCase())
+      .limit(1)
+      .get();
+
+    let email;
+    let userDocData = null;
+    let needsBackfill = false;
+
+    if (!userSnap.empty) {
+      // Fast path: user has generatedUsername field
+      userDocData = userSnap.docs[0].data();
+      email = userDocData.email;
+    } else {
+      // Backward-compatible fallback: legacy users without generatedUsername
+      // Try resolving via the old email convention (username@truck.com)
+      const fallbackEmail = `${username.toLowerCase()}@truck.com`;
+      try {
+        const legacySnap = await db.collection('users')
+          .where('email', '==', fallbackEmail)
+          .limit(1)
+          .get();
+
+        if (!legacySnap.empty) {
+          userDocData = legacySnap.docs[0].data();
+          email = fallbackEmail;
+          needsBackfill = true;
+          // Backfill generatedUsername for future fast-path logins
+          try {
+            await db.collection('users').doc(legacySnap.docs[0].id).update({
+              generatedUsername: username.toLowerCase(),
+            });
+            console.log(`[Auth] Backfilled generatedUsername for legacy user: ${username}`);
+          } catch (backfillErr) {
+            console.warn(`[Auth] Failed to backfill generatedUsername for ${username}:`, backfillErr.message);
+          }
+        } else {
+          return res.status(401).json({ error: 'Invalid username or password' });
+        }
+      } catch (legacyErr) {
+        console.warn('[Auth] Legacy user lookup failed:', legacyErr.message);
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+    }
 
     const firebaseApiKey = process.env.FIREBASE_API_KEY || 'AIzaSyATEU61bk0_DNuEBui15djMTvlGmSv_5fc';
 
