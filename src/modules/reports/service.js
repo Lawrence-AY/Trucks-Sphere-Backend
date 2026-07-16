@@ -155,7 +155,7 @@ function buildMasterAudit(options = {}) {
 
     // Fuel for this job
     const jobFuel = allFuel.filter((f) => f.jobId === d.jobId);
-    const totalFuelLitres = jobFuel.reduce((sum, f) => sum + (Number(f.litres) || 0), 0);
+    const totalFuelLitres = jobFuel.reduce((sum, f) => sum + (Number(f.litres || f.fuelAmount) || 0), 0);
 
     const quarryNet = Number(d.weighOutWeight || d.netWeight || 0) - Number(d.weighInWeight || 0);
     const siteNet = Number(d.siteNetWeight || d.netWeight || 0);
@@ -208,13 +208,13 @@ function buildMasterAudit(options = {}) {
       siteTotal: siteTotal > 0 ? siteTotal : Number(d.siteWeighInWeight || 0),
       // Fuel
       totalFuelLitres,
-      fuelOTP: jobFuel.length > 0 ? (jobFuel[0].otp || jobFuel[0].authorizationCode || '') : '',
-      fuelAttendant: jobFuel.length > 0 ? (jobFuel[0].attendantName || jobFuel[0].dispensedBy || jobFuel[0].dispensedByName || '') : '',
+      fuelOTP: jobFuel.length > 0 ? (jobFuel[0].otp || jobFuel[0].otpCode || jobFuel[0].authorizationCode || '') : '',
+      fuelAttendant: jobFuel.length > 0 ? (jobFuel[0].attendantName || jobFuel[0].dispensedBy || jobFuel[0].dispensedByName || jobFuel[0].attendant || '') : '',
       // Lot & GRN
       lotNumber: d.storageLot || d.lotNumber || '',
       grnNumber: d.receiptNoteId || d.grnNumber || '',
       // System accountability
-      operatorUsername: d.createdBy || d.operatorUsername || '',
+      quarryOperator: d.weighOutByName || d.weighOutBy || '',
       creationLocation: d.weighInLocation || d.weighOutLocation || d.receivedLocation || '',
       geolocation: d.weighOutGeoLocation ? `${d.weighOutGeoLocation.latitude},${d.weighOutGeoLocation.longitude}` : '',
       // Tracking
@@ -277,7 +277,7 @@ function buildFuelReport(options = {}) {
     transactionDate: r.createdAt || r.timestamp || '',
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
-    litres: Number(r.litres || 0),
+    litres: Number(r.litres || r.fuelAmount || 0),
     attendantName: r.attendantName || r.dispensedBy || '',
     otp: r.otp || r.otpCode || '',
     authorizingVendor: vendors[r.vendorId]?.companyName || r.vendorName || '',
@@ -377,7 +377,7 @@ function buildSummary(options = {}) {
   const pos = snapshotStore.getAll('purchaseOrders');
 
   const totalTonnage = deliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
-  const totalFuelLitres = fuelRecords.reduce((sum, r) => sum + (Number(r.litres) || 0), 0);
+  const totalFuelLitres = fuelRecords.reduce((sum, r) => sum + (Number(r.litres || r.fuelAmount) || 0), 0);
   const completedDeliveries = deliveries.filter((d) => ['completed', 'delivered', 'weighed_in'].includes(d.status));
   const inTransit = deliveries.filter((d) => ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(d.status));
   const openPOs = pos.filter((p) => ['approved', 'pending', 'in_progress'].includes(p.status));

@@ -58,6 +58,7 @@ const driversService = {
         id: driverId,
         status: data.status || 'active',
         nationalId: data.nationalId || '',
+        photoURL: data.photoURL || '',
         // WIBA (Worker Injury Benefit Act)
         wibaProvider: data.wibaProvider || '',
         wibaStartDate: data.wibaStartDate || '',

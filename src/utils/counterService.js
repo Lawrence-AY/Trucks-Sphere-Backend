@@ -17,7 +17,7 @@ const COUNTER_COLLECTION = 'counters';
 const COUNTER_DOC = 'auto_ids';
 
 const PREFIX_MAP = {
-  vendor: 'v',
+  vendor: 'V',
   driver: 'D',
   truck: 'T',
   vehicle: 'T',

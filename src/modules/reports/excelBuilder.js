@@ -93,7 +93,7 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Quarry Net (T)', 'Quarry Total (T)', 'Site In', 'Site Out', 'Site W.In (T)',
     'Site W.Out (T)', 'Site Net (T)', 'Site Total (T)', 'Fuel (L)',
     'Fuel Attendant', 'Fuel OTP', 'Lot/Storage #', 'GRN/Receipt #',
-    'Operator', 'Location', 'Geolocation', 'Tracking ID',
+    'Quarry Operator', 'Location', 'Geolocation', 'Tracking ID',
   ], data.masterAudit.map((r) => ({
     'Job ID': r.jobId,
     'PO Number': r.poNumber,
@@ -126,7 +126,7 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Fuel OTP': r.fuelOTP,
     'Lot/Storage #': r.lotNumber,
     'GRN/Receipt #': r.grnNumber,
-    'Operator': r.operatorUsername,
+    'Quarry Operator': r.quarryOperator,
     'Location': r.creationLocation,
     'Geolocation': r.geolocation,
     'Tracking ID': r.trackingId,
