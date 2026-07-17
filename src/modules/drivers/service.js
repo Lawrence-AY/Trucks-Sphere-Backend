@@ -20,7 +20,7 @@ const driversService = {
    * This avoids composite index requirements and eliminates Firestore reads.
    */
   findAll(query = {}) {
-    const { search, status, page = 1, limit = 50 } = query;
+    const { search, status, vendorId, page = 1, limit = 50 } = query;
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
@@ -32,6 +32,9 @@ const driversService = {
     });
 
     if (status) results = results.filter(item => item.status === status);
+    if (vendorId) {
+      results = results.filter(item => item.vendorId === vendorId);
+    }
     if (search) {
       const s = search.toLowerCase();
       results = results.filter(item =>

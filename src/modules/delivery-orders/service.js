@@ -199,13 +199,18 @@ const delivery_ordersService = {
   async _applyUpdate(docRef, id, existing, data) {
     try {
       const updates = { ...data, updatedAt: new Date().toISOString() };
+      // `weighed_in` was a legacy client-only status. A site arrival weigh-in
+      // is an active `site_in` job and must not be treated as completed.
+      if (updates.status === 'weighed_in') {
+        updates.status = 'site_in';
+      }
       if (Object.prototype.hasOwnProperty.call(data, 'materialSource')) {
         updates.materialSource = normalizeMaterialSource(data.materialSource);
       }
       await docRef.update(updates);
 
       // ─── Tracking ID Lifecycle ───
-      const newStatus = data.status;
+      const newStatus = updates.status;
       // When a job transitions to 'loaded' (quarry weigh-out complete),
       // auto-generate a tracking ID so the public tracking link goes live.
       if (newStatus === 'loaded' && !existing.trackingId) {

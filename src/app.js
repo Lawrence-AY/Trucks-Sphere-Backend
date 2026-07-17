@@ -69,7 +69,11 @@ app.use(helmet(helmetConfig));
 // 2. CORS — restrict to known origins in production
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? ['https://trucksphere.app', 'https://admin.trucksphere.app']
+    ? [
+        'https://trucksphere.app',
+        'https://admin.trucksphere.app',
+        'https://truck-app.expo.app',
+      ]
     : '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

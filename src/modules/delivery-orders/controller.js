@@ -44,13 +44,15 @@ exports.findAll = async (req, res, next) => {
     if (role === 'vendor' && userEntity?.vendorId) {
       scopedQuery.vendorId = userEntity.vendorId;
     } else if (role === 'operator_quarry') {
-      // Data isolation: each operator_quarry user only sees their own records.
-      // Filter by the creator's UID rather than quarryId, so two operators
-      // at the same quarry cannot see each other's jobs.
-      scopedQuery.createdByUid = uid;
+      // Entity-level filtering: filter by quarryId so operators at the same quarry see shared jobs
+      if (userEntity?.quarryId) {
+        scopedQuery.quarryId = userEntity.quarryId;
+      }
     } else if (role === 'operator_site') {
-      // Same data isolation for site operators
-      scopedQuery.createdByUid = uid;
+      // Entity-level filtering: filter by siteId so operators at the same site see shared jobs
+      if (userEntity?.siteId) {
+        scopedQuery.siteId = userEntity.siteId;
+      }
     }
     // operator_fuel and management see all
 
