@@ -92,8 +92,8 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Qty Delivered (T)', 'Quarry In', 'Quarry Out', 'Quarry W.In (T)', 'Quarry W.Out (T)',
     'Quarry Net (T)', 'Quarry Total (T)', 'Site In', 'Site Out', 'Site W.In (T)',
     'Site W.Out (T)', 'Site Net (T)', 'Site Total (T)', 'Fuel (L)',
-    'Fuel Attendant', 'Fuel OTP', 'Lot/Storage #', 'GRN/Receipt #',
-    'Quarry Operator', 'Location', 'Geolocation', 'Tracking ID',
+    'Fuel Attendant', 'Auth PIN', 'Lot/Storage #', 'GRN/Receipt #',
+    'Quarry Operator', 'Geolocation',
   ], data.masterAudit.map((r) => ({
     'Job ID': r.jobId,
     'PO Number': r.poNumber,
@@ -123,13 +123,11 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Site Total (T)': r.siteTotal,
     'Fuel (L)': r.totalFuelLitres,
     'Fuel Attendant': r.fuelAttendant,
-    'Fuel OTP': r.fuelOTP,
+    'Auth PIN': r.fuelOTP,
     'Lot/Storage #': r.lotNumber,
     'GRN/Receipt #': r.grnNumber,
     'Quarry Operator': r.quarryOperator,
-    'Location': r.creationLocation,
     'Geolocation': r.geolocation,
-    'Tracking ID': r.trackingId,
   })));
 
   // ─── Sheet 2: Drivers ───
@@ -164,17 +162,16 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
   // ─── Sheet 4: Fuel ───
   addSheet(wb, `Fuel${suffix}`, [
     'Date & Time', 'Driver', 'Plate', 'Litres', 'Attendant',
-    'OTP', 'Authorizing Vendor', 'Job ID', 'Station',
+    'Auth PIN', 'Authorizing Vendor', 'Job ID',
   ], data.fuel.map((r) => ({
     'Date & Time': r.transactionDate,
     'Driver': r.driverName,
     'Plate': r.plateNumber,
     'Litres': r.litres,
     'Attendant': r.attendantName,
-    'OTP': r.otp,
+    'Auth PIN': r.otp,
     'Authorizing Vendor': r.authorizingVendor,
     'Job ID': r.jobId,
-    'Station': r.fuelStation,
   })));
 
   // ─── Sheet 5: Trucks ───
@@ -199,16 +196,12 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
   // ─── Sheet 6: Vendors ───
   addSheet(wb, `Vendors${suffix}`, [
     'Vendor Name', 'Active POs', 'Fulfilled POs', 'Total POs',
-    'Material Types', 'Material Count', 'Total Delivered (T)', 'Delivery Count', 'Status',
+    'Status',
   ], data.vendors.map((r) => ({
     'Vendor Name': r.vendorName,
     'Active POs': r.activePOs,
     'Fulfilled POs': r.fulfilledPOs,
     'Total POs': r.totalPOs,
-    'Material Types': r.materialTypes,
-    'Material Count': r.materialCount,
-    'Total Delivered (T)': r.totalDelivered,
-    'Delivery Count': r.deliveryCount,
     'Status': r.status,
   })));
 

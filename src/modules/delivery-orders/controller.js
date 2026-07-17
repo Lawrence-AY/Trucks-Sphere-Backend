@@ -13,6 +13,11 @@ function withRoleDefaults(payload, user, userEntity) {
 
   if (!email && !userEntity) return nextPayload;
 
+  // Always stamp the creator's UID for data isolation
+  if (user?.uid && !nextPayload.createdByUid) {
+    nextPayload.createdByUid = user.uid;
+  }
+
   if (user?.role === 'operator_quarry' && userEntity?.quarryId && !nextPayload.quarryId) {
     nextPayload.quarryId = userEntity.quarryId;
   }
@@ -30,7 +35,7 @@ function withRoleDefaults(payload, user, userEntity) {
 
 exports.findAll = async (req, res, next) => {
   try {
-    const { role, email } = req.user;
+    const { role, email, uid } = req.user;
     let scopedQuery = { ...req.query };
 
     // Scope delivery orders based on user role
@@ -38,10 +43,14 @@ exports.findAll = async (req, res, next) => {
 
     if (role === 'vendor' && userEntity?.vendorId) {
       scopedQuery.vendorId = userEntity.vendorId;
-    } else if (role === 'operator_quarry' && userEntity?.quarryId) {
-      scopedQuery.quarryId = userEntity.quarryId;
-    } else if (role === 'operator_site' && userEntity?.siteId) {
-      scopedQuery.siteId = userEntity.siteId;
+    } else if (role === 'operator_quarry') {
+      // Data isolation: each operator_quarry user only sees their own records.
+      // Filter by the creator's UID rather than quarryId, so two operators
+      // at the same quarry cannot see each other's jobs.
+      scopedQuery.createdByUid = uid;
+    } else if (role === 'operator_site') {
+      // Same data isolation for site operators
+      scopedQuery.createdByUid = uid;
     }
     // operator_fuel and management see all
 

@@ -1,5 +1,9 @@
+/**
+ * trucks-Sphere-Backend src/delivery-orders/service.js
+ * **/
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
+const { generateJobIdForPO } = require('../../utils/jobIdService');
 const { generateTrackingId } = require('../../utils/trackingUtils');
 const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('deliveryOrders');
@@ -39,7 +43,7 @@ const delivery_ordersService = {
    * Eliminates Firestore reads — data is kept in sync via onSnapshot.
    */
   findAll(query = {}) {
-    const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, page = 1, limit = 50 } = query;
+    const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, createdByUid, page = 1, limit = 50 } = query;
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
@@ -77,6 +81,10 @@ const delivery_ordersService = {
     if (siteId) {
       results = results.filter(item => !item.siteId || item.siteId === siteId);
     }
+    // Post-filter by creator UID (data isolation for operator roles)
+    if (createdByUid) {
+      results = results.filter(item => item.createdByUid === createdByUid);
+    }
     // Text search
     if (search) {
       const s = search.toLowerCase();
@@ -107,13 +115,32 @@ const delivery_ordersService = {
 
   /**
    * Create a Delivery Order (Job card).
-   * Delivery Note format: DN-POMAT###-D###-J###
-   * Receipt Note: RN### (generated separately at site)
+   * Job ID format: POMAT###/V###/D###/T###/J####
+   * The J number is ALWAYS generated server-side via jobIdService
+   * to guarantee one sequential counter per Purchase Order shared
+   * across all quarries and sites.
    */
   async create(data) {
     try {
-      // Use client-provided jobId if present, otherwise auto-generate
-      const jobId = data.jobId || await getNextId('job');
+      // The client sends a "jobKey" (everything before the /J####), e.g. "POMAT003/V001/D004/T010"
+      // If they sent a full jobId, strip the J number — the backend owns the counter.
+      const jobKey = (data.jobKey || data.jobId || '')
+        .replace(/\/J\d+(-\w+)?$/, '')
+        .replace(/-\w+$/, '');
+
+      // Use the purchase order ID from payload or fall back to auto-detect
+      const purchaseOrderId = data.purchaseOrderId || '';
+
+      // Generate the jobId server-side (atomic Firestore counter per PO)
+      let jobId;
+      if (purchaseOrderId && jobKey) {
+        const result = await generateJobIdForPO(purchaseOrderId, jobKey);
+        jobId = result.jobId;
+      } else {
+        // Fallback for cases where purchaseOrderId is not available
+        jobId = data.jobId || await getNextId('job');
+      }
+
       // Firestore doc IDs cannot contain /, so sanitize for the doc ID only
       const docId = jobId.replace(/\//g, '-');
       // Use snapshot cache for PO context
@@ -144,12 +171,33 @@ const delivery_ordersService = {
     }
   },
 
+  /**
+   * update — Optimized for quarry workflow speed.
+   * Uses in-memory snapshot cache to avoid a Firestore read for the current state.
+   */
   async update(id, data) {
     try {
       const docRef = collectionRef.doc(id);
-      const doc = await docRef.get();
-      if (!doc.exists) return null;
-      const existing = doc.data();
+
+      // Use snapshot-cached existing document to avoid a Firestore read
+      const existing = snapshotStore.getById(COLLECTION_NAME, id);
+      if (!existing) {
+        // Fallback to Firestore read only if cache miss
+        const doc = await docRef.get();
+        if (!doc.exists) return null;
+        const fallbackExisting = doc.data();
+        return this._applyUpdate(docRef, id, fallbackExisting, data);
+      }
+
+      return this._applyUpdate(docRef, id, existing, data);
+    } catch (error) {
+      console.error('delivery_ordersService.update error:', error);
+      throw error;
+    }
+  },
+
+  async _applyUpdate(docRef, id, existing, data) {
+    try {
       const updates = { ...data, updatedAt: new Date().toISOString() };
       if (Object.prototype.hasOwnProperty.call(data, 'materialSource')) {
         updates.materialSource = normalizeMaterialSource(data.materialSource);
@@ -165,7 +213,8 @@ const delivery_ordersService = {
           const trackingId = generateTrackingId();
           await docRef.update({ trackingId });
           updates.trackingId = trackingId;
-          console.log(`[DeliveryOrder] Tracking ID generated for ${id}: ${trackingId}`);
+          const plate = existing.plateNumber || 'UNKNOWN';
+          console.log(`[DeliveryOrder] TRACKING STARTED — ID: ${trackingId} | Job: ${id} | Plate: ${plate} | Driver: ${existing.driverName || 'N/A'} | Status: loaded | WeighOut: ${existing.weighOutWeight || data.weighOutWeight} tonnes | Location: ${existing.weighOutLocation || 'N/A'}`);
         } catch (trackErr) {
           console.error('[DeliveryOrder] Failed to generate tracking ID:', trackErr);
           // Non-fatal — the job card still works without tracking
@@ -203,7 +252,7 @@ const delivery_ordersService = {
 
       return { id, ...existing, ...updates };
     } catch (error) {
-      console.error('delivery_ordersService.update error:', error);
+      console.error('delivery_ordersService._applyUpdate error:', error);
       throw error;
     }
   },

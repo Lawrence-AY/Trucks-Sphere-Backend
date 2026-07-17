@@ -103,21 +103,32 @@ function sanitizeForPublic(order) {
 function findByPlate(plateNumber) {
   if (!plateNumber) return null;
 
+  const activeStatuses = ['loaded', 'dispatched', 'in_transit', 'en_route'];
   const allOrders = snapshotStore.getAll(COLLECTION_NAME);
-  const plate = plateNumber.trim().toUpperCase().replace(/\s+/g, '');
 
-  const order = allOrders.find((doc) => {
+  // Normalize the input plate: trim, uppercase, collapse whitespace
+  const normalizedPlate = plateNumber.trim().toUpperCase().replace(/\s+/g, '');
+
+  // Filter to only active-status orders FIRST, then find by plate.
+  // Previously the code used .find() which returns the first matching
+  // plate regardless of status. If an older completed delivery had the
+  // same plate number, it would match first, fail the status check,
+  // and return null — never finding the active delivery.
+  const activeOrders = allOrders.filter((doc) =>
+    activeStatuses.includes(doc.status)
+  );
+
+  const order = activeOrders.find((doc) => {
     const docPlate = (doc.plateNumber || '').toUpperCase().replace(/\s+/g, '');
-    return docPlate === plate;
+    return docPlate === normalizedPlate;
   });
 
-  if (!order) return null;
-
-  const activeStatuses = ['loaded', 'dispatched', 'in_transit', 'en_route'];
-  if (!activeStatuses.includes(order.status)) {
+  if (!order) {
+    console.log(`[Tracking] findByPlate: No active delivery found for plate "${normalizedPlate}" (searched ${activeOrders.length} active orders out of ${allOrders.length} total)`);
     return null;
   }
 
+  console.log(`[Tracking] findByPlate: Found active delivery ${order.id} (status: ${order.status}) for plate "${normalizedPlate}"`);
   return order;
 }
 

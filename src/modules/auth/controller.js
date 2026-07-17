@@ -1,5 +1,7 @@
 const { getAuth } = require('firebase-admin/auth');
 const { db } = require('../../../config/firebase');
+const cryptoUtils = require('../../utils/cryptoUtils');
+const { logAudit } = require('../../middleware/auditMiddleware');
 
 /**
  * Generate a unique username from firstName + first 3 letters of lastName.
@@ -92,9 +94,8 @@ exports.register = async (req, res, next) => {
         email: userRecord.email,
         displayName: userRecord.displayName,
         generatedUsername,
-        phone: req.body.phone || '',
-        role,
-        phone: phone || '',
+      phone: req.body.phone || '',
+      role,
       },
     });
   } catch (err) {
@@ -334,6 +335,21 @@ exports.login = async (req, res, next) => {
       // Non-blocking
     }
 
+    // Encrypt the refresh token before sending to client
+    const encryptedRefreshToken = data.refreshToken
+      ? cryptoUtils.encrypt(data.refreshToken)
+      : '';
+
+    // Log successful login to audit
+    logAudit({
+      action: 'user.login',
+      entityType: 'user',
+      entityId: userRecord.uid,
+      severity: 'info',
+      metadata: { email: userRecord.email, role },
+      req,
+    }).catch(() => {});
+
     res.json({
       user: {
         uid: userRecord.uid,
@@ -345,7 +361,8 @@ exports.login = async (req, res, next) => {
         ...entityIds,
       },
       token: data.idToken,
-      refreshToken: data.refreshToken,
+      refreshToken: encryptedRefreshToken,
+      refreshTokenExpiresIn: data.expiresIn ? parseInt(data.expiresIn) * 1000 : 3600000,
     });
   } catch (err) {
     console.error('Login error:', err);

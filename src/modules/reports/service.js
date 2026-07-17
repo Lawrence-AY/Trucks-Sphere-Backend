@@ -217,8 +217,6 @@ function buildMasterAudit(options = {}) {
       quarryOperator: d.weighOutByName || d.weighOutBy || '',
       creationLocation: d.weighInLocation || d.weighOutLocation || d.receivedLocation || '',
       geolocation: d.weighOutGeoLocation ? `${d.weighOutGeoLocation.latitude},${d.weighOutGeoLocation.longitude}` : '',
-      // Tracking
-      trackingId: d.trackingId || '',
     };
   });
 }
@@ -279,10 +277,9 @@ function buildFuelReport(options = {}) {
     plateNumber: r.plateNumber || '',
     litres: Number(r.litres || r.fuelAmount || 0),
     attendantName: r.attendantName || r.dispensedBy || '',
-    otp: r.otp || r.otpCode || '',
+    otp: r.otp || r.otpCode || r.authorizationCode || '',
     authorizingVendor: vendors[r.vendorId]?.companyName || r.vendorName || '',
     jobId: r.jobId || '',
-    fuelStation: r.fuelStation || r.location || '',
   }));
 }
 
@@ -319,17 +316,12 @@ function buildVendorReport(options = {}) {
   return vendorDocs.map((v) => {
     const vendorDeliveries = deliveries.filter((d) => d.vendorId === v.id);
     const vendorPOs = pos.filter((p) => p.vendorId === v.id);
-    const materialTypes = [...new Set(vendorDeliveries.map((d) => d.materialName).filter(Boolean))];
-    const totalTonnage = vendorDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
 
     return {
       vendorName: v.companyName || '',
       activePOs: vendorPOs.filter((p) => ['approved', 'in_progress', 'pending'].includes(p.status)).length,
       fulfilledPOs: vendorPOs.filter((p) => p.status === 'completed' || p.status === 'delivered').length,
       totalPOs: vendorPOs.length,
-      materialTypes: materialTypes.join(', '),
-      materialCount: materialTypes.length,
-      totalDelivered: totalTonnage,
       deliveryCount: vendorDeliveries.length,
       status: v.status || '',
     };
@@ -341,24 +333,30 @@ function buildVendorReport(options = {}) {
  */
 function buildPOReport(options = {}) {
   const poDocs = snapshotStore.getAll('purchaseOrders');
-  const deliveries = getDeliveries(options);
+  // Use ALL deliveries for progress % calculation (not time-filtered)
+  const allDeliveries = snapshotStore.getAll('deliveryOrders');
+  // Use time-filtered deliveries for preview/displays within the selected period
+  const periodDeliveries = getDeliveries(options);
 
   return poDocs.map((po) => {
-    const poDeliveries = deliveries.filter((d) => d.purchaseOrderId === po.id);
-    const deliveredQty = poDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
+    const allPoDeliveries = allDeliveries.filter((d) => d.purchaseOrderId === po.id);
+    const totalDeliveredQty = allPoDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
     const targetQty = Number(po.quantity || 0);
-    const progress = targetQty > 0 ? Math.min(100, Math.round((deliveredQty / targetQty) * 100)) : 0;
+    const progress = targetQty > 0 ? Math.min(100, Math.round((totalDeliveredQty / targetQty) * 100)) : 0;
+
+    const periodPoDeliveries = periodDeliveries.filter((d) => d.purchaseOrderId === po.id);
+    const periodDeliveredQty = periodPoDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
 
     return {
       poNumber: po.poNumber || '',
       vendorName: po.vendorName || '',
       materialName: po.materialName || '',
       targetQuantity: targetQty,
-      deliveredQuantity: deliveredQty,
-      remainingQuantity: Math.max(0, targetQty - deliveredQty),
+      deliveredQuantity: totalDeliveredQty,
+      remainingQuantity: Math.max(0, targetQty - totalDeliveredQty),
       progressPercent: progress,
       status: po.status || '',
-      deliveryCount: poDeliveries.length,
+      deliveryCount: periodPoDeliveries.length,
       createdAt: po.createdAt || '',
     };
   });

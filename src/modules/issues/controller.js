@@ -1,0 +1,245 @@
+/**
+ * Issues Controller
+ *
+ * Handles CRUD for issues/tickets raised by operators, vendors, and management.
+ * Issues can be created, viewed, and resolved via the API.
+ */
+
+const { db } = require('../../../config/firebase');
+const snapshotStore = require('../../utils/snapshotStore');
+
+/**
+ * GET /api/issues
+ * List issues. Management sees all; operators/vendors see only their own.
+ */
+exports.findAll = async (req, res, next) => {
+  try {
+    const { uid, role } = req.user;
+    const { status } = req.query;
+
+    // Management/admin see all issues; others see only their own
+    const isManagement = role === 'admin' || role === 'management';
+    let query = db.collection('issues').orderBy('createdAt', 'desc');
+
+    if (status) {
+      query = query.where('status', '==', status);
+    }
+    if (!isManagement) {
+      query = query.where('submittedBy', '==', uid);
+    }
+
+    const snap = await query.get();
+    const issues = [];
+    snap.forEach((doc) => {
+      issues.push({ id: doc.id, ...doc.data() });
+    });
+
+    // Enrich with submitter names
+    const userMap = {};
+    try {
+      const userSnap = await db.collection('users').get();
+      userSnap.forEach((doc) => {
+        const d = doc.data();
+        userMap[doc.id] = d.displayName || d.name || '';
+      });
+    } catch {}
+
+    const enriched = issues.map((issue) => ({
+      ...issue,
+      submittedByName: userMap[issue.submittedBy] || issue.submittedByName || 'Unknown',
+      resolvedByName: userMap[issue.resolvedBy] || issue.resolvedByName || '',
+    }));
+
+    res.json(enriched);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/issues/:id
+ * Get a single issue by ID.
+ */
+exports.findById = async (req, res, next) => {
+  try {
+    const doc = await db.collection('issues').doc(req.params.id).get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Issue not found' });
+    }
+    res.json({ id: doc.id, ...doc.data() });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/issues
+ * Create a new issue. Sets submittedBy to the authenticated user.
+ */
+exports.create = async (req, res, next) => {
+  try {
+    const { uid, displayName, role } = req.user;
+    const { title, description, category, priority } = req.body;
+
+    if (!title || !description) {
+      return res.status(400).json({ error: 'Title and description are required.' });
+    }
+
+    const now = new Date().toISOString();
+    const issue = {
+      title: title.trim(),
+      description: description.trim(),
+      category: category || 'general',
+      status: 'open',
+      priority: priority || 'medium',
+      submittedBy: uid,
+      submittedByName: displayName || req.user.email || '',
+      createdAt: now,
+      updatedAt: now,
+      resolvedAt: null,
+      resolvedBy: null,
+      resolvedByName: null,
+      resolutionNotes: null,
+      notifiedUsers: [],
+    };
+
+    const docRef = await db.collection('issues').add(issue);
+    // Also save the ID in the doc for in-memory reads
+    await docRef.update({ id: docRef.id });
+
+    // Notify management of new issue
+    try {
+      const notifySSEClients = req.app.get('notifySSEClients');
+      if (notifySSEClients) {
+        notifySSEClients('issues', { action: 'created', issue: { id: docRef.id, title, submittedBy: uid } });
+      }
+    } catch {}
+
+    res.status(201).json({ id: docRef.id, ...issue });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PUT /api/issues/:id
+ * Update an issue (resolve, reassign, add notes).
+ */
+exports.update = async (req, res, next) => {
+  try {
+    const { uid, displayName, role } = req.user;
+    const { status, resolutionNotes, priority } = req.body;
+    const isManagement = role === 'admin' || role === 'management';
+
+    const docRef = db.collection('issues').doc(req.params.id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Issue not found' });
+    }
+
+    const issue = doc.data();
+    // Only the submitter or management can update
+    if (!isManagement && issue.submittedBy !== uid) {
+      return res.status(403).json({ error: 'You can only update your own issues.' });
+    }
+
+    const updates = { updatedAt: new Date().toISOString() };
+
+    if (status) updates.status = status;
+    if (priority) updates.priority = priority;
+    if (resolutionNotes !== undefined) updates.resolutionNotes = resolutionNotes;
+
+    // If resolving, set resolution metadata
+    if (status === 'resolved') {
+      updates.resolvedAt = new Date().toISOString();
+      updates.resolvedBy = uid;
+      updates.resolvedByName = displayName || '';
+    }
+
+    // If reopening, clear resolution metadata
+    if (status === 'open' && issue.status === 'resolved') {
+      updates.resolvedAt = null;
+      updates.resolvedBy = null;
+      updates.resolvedByName = null;
+      updates.resolutionNotes = null;
+    }
+
+    await docRef.update(updates);
+
+    // Notify SSE clients
+    try {
+      const notifySSEClients = req.app.get('notifySSEClients');
+      if (notifySSEClients) {
+        notifySSEClients('issues', { action: 'updated', issueId: req.params.id, status: status || issue.status });
+      }
+    } catch {}
+
+    res.json({ id: doc.id, ...issue, ...updates });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /api/issues/:id
+ * Delete an issue. Only the submitter or management can delete.
+ */
+exports.delete = async (req, res, next) => {
+  try {
+    const { uid, role } = req.user;
+    const isManagement = role === 'admin' || role === 'management';
+
+    const docRef = db.collection('issues').doc(req.params.id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Issue not found' });
+    }
+
+    const issue = doc.data();
+    if (!isManagement && issue.submittedBy !== uid) {
+      return res.status(403).json({ error: 'You can only delete your own issues.' });
+    }
+
+    await docRef.delete();
+    res.json({ message: 'Issue deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/issues/:id/notify
+ * Send a notification to the issue submitter when resolved.
+ */
+exports.notifySubmitter = async (req, res, next) => {
+  try {
+    const docRef = db.collection('issues').doc(req.params.id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Issue not found' });
+    }
+
+    const issue = doc.data();
+    // Create a notification for the submitter
+    await db.collection('notifications').add({
+      userId: issue.submittedBy,
+      title: `Issue Resolved: ${issue.title}`,
+      body: `Your issue "${issue.title}" has been resolved. ${issue.resolutionNotes || ''}`,
+      type: 'issue_resolved',
+      issueId: req.params.id,
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+
+    // Update notified users
+    const notifiedUsers = [...(issue.notifiedUsers || []), issue.submittedBy];
+    await docRef.update({ notifiedUsers });
+
+    res.json({ message: 'Notification sent' });
+  } catch (err) {
+    next(err);
+  }
+};

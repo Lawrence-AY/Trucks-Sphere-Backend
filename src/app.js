@@ -13,6 +13,10 @@ const redis = require('../config/redis');
 // Initialize real-time snapshot cache (eliminates repeated Firestore reads)
 const snapshotStore = require('./utils/snapshotStore');
 
+// Import security middleware
+const { authRateLimiter, apiRateLimiter, inputSanitizer, requestSizeLimiter, helmetConfig } = require('./middleware/securityMiddleware');
+const { auditLogger } = require('./middleware/auditMiddleware');
+
 // Start Redis connection in background, then init snapshot store
 // SnapshotStore will warm from Redis if available, then start Firestore listeners
 const initPromise = (async () => {
@@ -45,18 +49,52 @@ const usersRoutes = require('./modules/users/routes');
 const rolesRoutes = require('./modules/roles/routes');
 const masterDataRoutes = require('./modules/master-data/routes');
 const trackingRoutes = require('./modules/tracking/routes');
+const issuesRoutes = require('./modules/issues/routes');
+const notificationsRoutes = require('./modules/notifications/routes');
 const { getNextId } = require('./utils/counterService');
 
 const app = express();
 
+// ─── Trust proxy for accurate IP detection behind load balancers ───
+app.set('trust proxy', 1);
+
 // Enable ETag for smart 304 responses — saves bandwidth for unchanged data
 app.set('etag', 'weak');
 
-// Middleware
-app.use(helmet());           // Security headers
-app.use(cors());             // Enable CORS
-app.use(express.json());     // Parse JSON bodies
-app.use(morgan('combined')); // Logging
+// ─── Security Middleware (order matters) ───
+
+// 1. Helmet with hardened security headers
+app.use(helmet(helmetConfig));
+
+// 2. CORS — restrict to known origins in production
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production'
+    ? ['https://trucksphere.app', 'https://admin.trucksphere.app']
+    : '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['ETag', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+  maxAge: 86400,
+}));
+
+// 3. Parse JSON bodies with size limit
+app.use(express.json({ limit: '10mb' }));
+
+// 4. Request size limiter
+app.use(requestSizeLimiter(10485760)); // 10MB max body
+
+// 5. Input sanitization (XSS, SQL injection, NoSQL injection prevention)
+app.use(inputSanitizer);
+
+// 6. Rate limiting — auth routes get stricter limits
+app.use('/api/auth', authRateLimiter);
+app.use('/api', apiRateLimiter);
+
+// 7. Audit logging (fire-and-forget to Firestore auditLogs)
+app.use(auditLogger);
+
+// 8. HTTP request logging
+app.use(morgan('combined'));
 
 // ─── Client-side caching headers (stale-while-revalidate compatible) ───
 app.use((_req, res, next) => {
@@ -240,6 +278,8 @@ app.use('/api/users', usersRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/master-data', masterDataRoutes);
 app.use('/api/track', trackingRoutes);
+app.use('/api/issues', issuesRoutes);
+app.use('/api/notifications', notificationsRoutes);
 app.use('/api/admin/reports', reportsRoutes);
 
 // 404 handler for unmatched routes
