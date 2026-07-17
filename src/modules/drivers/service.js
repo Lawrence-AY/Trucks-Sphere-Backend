@@ -2,8 +2,17 @@ const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
 const collectionRef = db.collection('drivers');
+const nationalIdRef = db.collection('driverNationalIds');
 
 const COLLECTION_NAME = 'drivers';
+
+function normalizeNationalId(value) {
+  return String(value || '').trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function duplicateNationalIdError() {
+  return Object.assign(new Error('A driver with this National ID already exists.'), { statusCode: 409 });
+}
 
 const driversService = {
   /**
@@ -49,15 +58,32 @@ const driversService = {
     return doc || null;
   },
 
+  async isNationalIdAvailable(nationalId, excludeId) {
+    const normalized = normalizeNationalId(nationalId);
+    if (!normalized) return false;
+
+    const reservation = await nationalIdRef.doc(normalized).get();
+    if (reservation.exists && reservation.data().driverId !== excludeId) return false;
+
+    // Supports records created before the reservation collection was introduced.
+    const existing = await collectionRef.where('nationalId', '==', normalized).limit(2).get();
+    return existing.docs.every((doc) => doc.id === excludeId);
+  },
+
   async create(data) {
     try {
+      const normalizedNationalId = normalizeNationalId(data.nationalId);
+      if (!normalizedNationalId) {
+        throw Object.assign(new Error('National ID is required'), { statusCode: 400 });
+      }
       const driverId = await getNextId('driver');
       const docRef = collectionRef.doc(driverId);
       const item = {
         ...data,
         id: driverId,
         status: data.status || 'active',
-        nationalId: data.nationalId || '',
+        nationalId: normalizedNationalId,
+        nationalIdNormalized: normalizedNationalId,
         photoURL: data.photoURL || '',
         // WIBA (Worker Injury Benefit Act)
         wibaProvider: data.wibaProvider || '',
@@ -77,7 +103,23 @@ const driversService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await docRef.set(item);
+      await db.runTransaction(async (transaction) => {
+        const reservation = await transaction.get(nationalIdRef.doc(normalizedNationalId));
+        if (reservation.exists) throw duplicateNationalIdError();
+
+        // Check legacy driver records as well as the atomic reservation.
+        const legacyMatch = await transaction.get(
+          collectionRef.where('nationalId', '==', normalizedNationalId).limit(1),
+        );
+        if (!legacyMatch.empty) throw duplicateNationalIdError();
+
+        transaction.set(docRef, item);
+        transaction.set(nationalIdRef.doc(normalizedNationalId), {
+          driverId,
+          nationalId: normalizedNationalId,
+          createdAt: item.createdAt,
+        });
+      });
       return { id: driverId, ...item };
     } catch (error) {
       console.error('driversService.create error:', error);
@@ -88,11 +130,40 @@ const driversService = {
   async update(id, data) {
     try {
       const docRef = collectionRef.doc(id);
-      const doc = await docRef.get();
-      if (!doc.exists) return null;
-      const updates = { ...data, updatedAt: new Date().toISOString() };
-      await docRef.update(updates);
-      return { id, ...doc.data(), ...updates };
+      let result = null;
+      await db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(docRef);
+        if (!doc.exists) return;
+        const current = doc.data();
+        const currentNationalId = normalizeNationalId(current.nationalId);
+        const hasNationalIdUpdate = Object.prototype.hasOwnProperty.call(data, 'nationalId');
+        const nextNationalId = hasNationalIdUpdate
+          ? normalizeNationalId(data.nationalId)
+          : currentNationalId;
+        if (!nextNationalId) throw Object.assign(new Error('National ID is required'), { statusCode: 400 });
+
+        if (nextNationalId !== currentNationalId) {
+          const nextReservation = await transaction.get(nationalIdRef.doc(nextNationalId));
+          if (nextReservation.exists && nextReservation.data().driverId !== id) throw duplicateNationalIdError();
+          const legacyMatch = await transaction.get(collectionRef.where('nationalId', '==', nextNationalId).limit(1));
+          if (!legacyMatch.empty && legacyMatch.docs[0].id !== id) throw duplicateNationalIdError();
+          transaction.set(nationalIdRef.doc(nextNationalId), { driverId: id, nationalId: nextNationalId, createdAt: current.createdAt || new Date().toISOString() });
+          if (currentNationalId) transaction.delete(nationalIdRef.doc(currentNationalId));
+        } else if (nextNationalId) {
+          // Backfill a reservation for older records when they are edited.
+          transaction.set(nationalIdRef.doc(nextNationalId), { driverId: id, nationalId: nextNationalId, createdAt: current.createdAt || new Date().toISOString() }, { merge: true });
+        }
+
+        const updates = {
+          ...data,
+          nationalId: nextNationalId,
+          nationalIdNormalized: nextNationalId,
+          updatedAt: new Date().toISOString(),
+        };
+        transaction.update(docRef, updates);
+        result = { id, ...current, ...updates };
+      });
+      return result;
     } catch (error) {
       console.error('driversService.update error:', error);
       throw error;
@@ -101,7 +172,14 @@ const driversService = {
 
   async delete(id) {
     try {
-      await collectionRef.doc(id).delete();
+      const docRef = collectionRef.doc(id);
+      await db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(docRef);
+        if (!doc.exists) return;
+        const nationalId = normalizeNationalId(doc.data().nationalId);
+        transaction.delete(docRef);
+        if (nationalId) transaction.delete(nationalIdRef.doc(nationalId));
+      });
     } catch (error) {
       console.error('driversService.delete error:', error);
       throw error;

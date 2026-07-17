@@ -22,6 +22,20 @@ exports.create = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.previewUsername = async (req, res, next) => {
+  try {
+    const username = await vendorsService.previewUsername(req.query.contactPerson || req.query.companyName);
+    res.json({ username });
+  } catch (err) { next(err); }
+};
+
+exports.createWithAccount = async (req, res, next) => {
+  try {
+    const item = await vendorsService.createWithAccount(req.body);
+    res.status(201).json(item);
+  } catch (err) { next(err); }
+};
+
 exports.update = async (req, res, next) => {
   try {
     const item = await vendorsService.update(req.params.id, req.body);

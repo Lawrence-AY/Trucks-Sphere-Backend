@@ -5,6 +5,8 @@ const { verifyToken } = require('../../middleware/authMiddleware');
 
 router.use(verifyToken);
 
+router.get('/username', vendorsController.previewUsername);
+router.post('/with-account', vendorsController.createWithAccount);
 router.get('/', vendorsController.findAll);
 router.get('/:id', vendorsController.findById);
 router.post('/', vendorsController.create);

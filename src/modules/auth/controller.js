@@ -51,6 +51,9 @@ exports.register = async (req, res, next) => {
     if (!VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `Invalid role: "${role}". Valid roles: ${VALID_ROLES.join(', ')}` });
     }
+    if (role === 'vendor') {
+      return res.status(400).json({ error: 'Vendor accounts must be created together with a vendor profile.' });
+    }
 
     // Auto-generate email if not provided
     const displayName = reqDisplayName || name || (firstName && lastName ? `${firstName} ${lastName}` : email ? email.split('@')[0] : 'User');

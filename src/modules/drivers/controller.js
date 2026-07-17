@@ -22,6 +22,16 @@ exports.create = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.checkNationalId = async (req, res, next) => {
+  try {
+    const available = await driversService.isNationalIdAvailable(
+      req.params.nationalId,
+      req.query.excludeId,
+    );
+    res.json({ available });
+  } catch (err) { next(err); }
+};
+
 exports.update = async (req, res, next) => {
   try {
     const item = await driversService.update(req.params.id, req.body);
