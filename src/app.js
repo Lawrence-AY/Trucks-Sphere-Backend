@@ -43,6 +43,7 @@ const uploadsRoutes = require('./modules/uploads/routes');
 const customersRoutes = require('./modules/customers/routes');
 const fuelStationsRoutes = require('./modules/fuel-stations/routes');
 const reportsRoutes = require('./modules/reports/routes');
+const vendorReportRoutes = require('./modules/reports/vendorReportRoutes');
 const analyticsRoutes = require('./modules/analytics/routes');
 const auditLogsRoutes = require('./modules/audit-logs/routes');
 const usersRoutes = require('./modules/users/routes');
@@ -285,6 +286,7 @@ app.use('/api/track', trackingRoutes);
 app.use('/api/issues', issuesRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/admin/reports', reportsRoutes);
+app.use('/api/vendor/reports', vendorReportRoutes);
 
 // 404 handler for unmatched routes
 app.use((req, res) => {

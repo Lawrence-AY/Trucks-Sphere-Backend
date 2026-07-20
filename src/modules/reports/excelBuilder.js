@@ -90,8 +90,8 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Job ID', 'PO Number', 'PO Qty (T)', 'Job Status', 'Vendor', 'Driver', 'License', 'Plate',
     'Truck Make', 'Truck Model', 'Material', 'Material Source', 'Qty Ordered (T)',
     'Qty Delivered (T)', 'Quarry In', 'Quarry Out', 'Quarry W.In (T)', 'Quarry W.Out (T)',
-    'Quarry Net (T)', 'Quarry Total (T)', 'Site In', 'Site Out', 'Site W.In (T)',
-    'Site W.Out (T)', 'Site Net (T)', 'Site Total (T)', 'Fuel (L)',
+    'Quarry Net (T)', 'Site In', 'Site Out', 'Site W.In (T)',
+    'Site W.Out (T)', 'Site Net (T)', 'Fuel (L)',
     'Fuel Attendant', 'Auth PIN', 'Lot/Storage #', 'GRN/Receipt #',
     'Quarry Operator', 'Geolocation',
   ], data.masterAudit.map((r) => ({
@@ -114,13 +114,11 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Quarry W.In (T)': r.quarryWeighIn,
     'Quarry W.Out (T)': r.quarryWeighOut,
     'Quarry Net (T)': r.quarryNet,
-    'Quarry Total (T)': r.quarryTotal,
     'Site In': r.siteInTime,
     'Site Out': r.siteOutTime,
     'Site W.In (T)': r.siteWeighIn,
     'Site W.Out (T)': r.siteWeighOut,
     'Site Net (T)': r.siteNet,
-    'Site Total (T)': r.siteTotal,
     'Fuel (L)': r.totalFuelLitres,
     'Fuel Attendant': r.fuelAttendant,
     'Auth PIN': r.fuelOTP,
@@ -132,10 +130,11 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 2: Drivers ───
   addSheet(wb, `Drivers${suffix}`, [
-    'Driver Name', 'License Number', 'NTSA Status', 'Insurance Provider',
+    'Driver Name', 'National ID', 'License Number', 'NTSA Status', 'Insurance Provider',
     'Policy No', 'Insurance Expiry', 'Insurance Status', 'Vendor', 'Phone', 'Status',
   ], data.drivers.map((r) => ({
     'Driver Name': r.driverName,
+    'National ID': r.nationalId,
     'License Number': r.licenseNumber,
     'NTSA Status': r.ntsaStatus,
     'Insurance Provider': r.insuranceProvider,

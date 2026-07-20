@@ -158,9 +158,9 @@ function buildMasterAudit(options = {}) {
     const totalFuelLitres = jobFuel.reduce((sum, f) => sum + (Number(f.litres || f.fuelAmount) || 0), 0);
 
     const quarryNet = Number(d.weighOutWeight || d.netWeight || 0) - Number(d.weighInWeight || 0);
-    const siteNet = Number(d.siteNetWeight || d.netWeight || 0);
-    const quarryTotal = Number(d.weighOutWeight || d.netWeight || 0);
-    const siteTotal = Number(d.siteWeighInWeight || 0);
+    // Site Net = site weigh-in minus site weigh-out ONLY (site data is the receiving authority).
+    // No fallback to quarry data or stored siteNetWeight.
+    const siteNet = Number(d.siteWeighInWeight || 0) - Number(d.siteWeighOutWeight || 0);
 
     return {
       // Order
@@ -183,7 +183,8 @@ function buildMasterAudit(options = {}) {
       materialSource: d.materialSource || d.weighOutLocation || (d.quarryName || ''),
       // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
-      quantityDelivered: Number(d.netWeight || d.quantityDelivered || 0),
+      // Delivered Qty uses site net data only — no fallback to quarry netWeight.
+      quantityDelivered: siteNet > 0 ? siteNet : 0,
       // Lifecycle Timestamps (raw ISO)
       quarryInTime: d.weighInAt || '',
       quarryOutTime: d.weighOutAt || '',
@@ -203,9 +204,7 @@ function buildMasterAudit(options = {}) {
       siteWeighIn: Number(d.siteWeighInWeight || 0),
       siteWeighOut: Number(d.siteWeighOutWeight || 0),
       quarryNet: quarryNet > 0 ? quarryNet : Number(d.netWeight || 0),
-      siteNet: siteNet > 0 ? siteNet : Number(d.netWeight || 0),
-      quarryTotal: quarryTotal > 0 ? quarryTotal : Number(d.quarryWeighOut || d.netWeight || 0),
-      siteTotal: siteTotal > 0 ? siteTotal : Number(d.siteWeighInWeight || 0),
+      siteNet: siteNet,
       // Fuel
       totalFuelLitres,
       fuelOTP: jobFuel.length > 0 ? (jobFuel[0].otp || jobFuel[0].otpCode || jobFuel[0].authorizationCode || '') : '',
@@ -230,6 +229,7 @@ function buildDriverReport() {
 
   return driverDocs.map((d) => ({
     driverName: d.name || d.fullName || '',
+    nationalId: d.nationalId || '',
     licenseNumber: d.licenseNumber || '',
     ntsaStatus: d.ntsaStatus || 'Not Verified',
     insuranceProvider: d.insuranceProvider || '',
@@ -340,12 +340,25 @@ function buildPOReport(options = {}) {
 
   return poDocs.map((po) => {
     const allPoDeliveries = allDeliveries.filter((d) => d.purchaseOrderId === po.id);
-    const totalDeliveredQty = allPoDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
+    // Use site net weight as the delivered quantity (site data is the verified receiving weight).
+    // Compute siteNet per delivery: siteWeighIn - siteWeighOut, falling back to stored siteNetWeight or netWeight.
+    // Delivered Qty uses site net data (siteWeighIn - siteWeighOut) ONLY — no quarry fallback.
+    const totalDeliveredQty = allPoDeliveries.reduce(
+      (sum, d) => {
+        const siteNet = Number(d.siteWeighInWeight || 0) - Number(d.siteWeighOutWeight || 0);
+        return sum + (siteNet > 0 ? siteNet : 0);
+      },
+      0,
+    );
     const targetQty = Number(po.quantity || 0);
     const progress = targetQty > 0 ? Math.min(100, Math.round((totalDeliveredQty / targetQty) * 100)) : 0;
 
     const periodPoDeliveries = periodDeliveries.filter((d) => d.purchaseOrderId === po.id);
-    const periodDeliveredQty = periodPoDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
+    // Period delivered qty also uses site net data ONLY — no quarry fallback.
+    const periodDeliveredQty = periodPoDeliveries.reduce((sum, d) => {
+      const siteNet = Number(d.siteWeighInWeight || 0) - Number(d.siteWeighOutWeight || 0);
+      return sum + (siteNet > 0 ? siteNet : 0);
+    }, 0);
 
     return {
       poNumber: po.poNumber || '',
