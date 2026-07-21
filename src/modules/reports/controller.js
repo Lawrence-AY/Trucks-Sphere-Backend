@@ -98,8 +98,8 @@ exports.getCategorySummary = async (req, res, next) => {
         data = {
           total: deliveries.length,
           totalTonnage: deliveries.reduce((s, d) => s + (Number(d.quantityDelivered) || 0), 0),
-          completed: deliveries.filter(d => ['completed', 'delivered'].includes(d.jobStatus)).length,
-          inTransit: deliveries.filter(d => ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(d.jobStatus)).length,
+          completed: deliveries.filter(d => ['completed', 'delivered'].includes(String(d.jobStatusCode || '').toLowerCase())).length,
+          inTransit: deliveries.filter(d => ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(String(d.jobStatusCode || '').toLowerCase())).length,
           preview: deliveries.slice(0, 5),
         };
         break;

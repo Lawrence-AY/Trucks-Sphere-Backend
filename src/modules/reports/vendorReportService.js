@@ -5,7 +5,7 @@
  * Used by vendor account users to download their own reports.
  */
 const snapshotStore = require('../../utils/snapshotStore');
-const { formatEAT } = require('./service');
+const { formatEAT, formatJobStatus, getInsuranceDetails, getReportMaterialSource } = require('./service');
 
 function withinTimeframe(dateStr, options) {
   if (!dateStr) return false;
@@ -60,7 +60,7 @@ function getFilteredFuelRecords(vendorId, options = {}) {
   );
   if (!options.filter && !options.startDate) return vendorFuel;
   return vendorFuel.filter((r) =>
-    withinTimeframe(r.createdAt || r.timestamp, options),
+    withinTimeframe(r.dispensedAt || r.createdAt || r.timestamp, options),
   );
 }
 
@@ -100,6 +100,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
     const vehicle = vehicles[d.vehicleId] || {};
     const po = pos[d.purchaseOrderId] || {};
     const material = materials[d.materialId] || {};
+    const vendorInsurance = getInsuranceDetails(vendor);
     const jobFuel = allFuel.filter((f) => f.jobId === d.jobId);
     const totalFuelLitres = jobFuel.reduce(
       (sum, f) => sum + (Number(f.litres || f.fuelAmount) || 0), 0,
@@ -113,16 +114,24 @@ function buildVendorMasterAudit(vendorId, options = {}) {
     return {
       jobId: d.jobId || '',
       poNumber: d.poNumber || po.poNumber || '',
-      jobStatus: d.status || '',
+      jobStatusCode: d.status || '',
+      jobStatus: formatJobStatus(d.status),
       poQuantity: Number(po.quantity || 0),
       vendorName: d.vendorName || vendor.companyName || '',
+      vendorInsuranceCompany: vendorInsurance.insuranceCompany,
+      vendorInsuranceNumber: vendorInsurance.insuranceNumber,
+      vendorInsuranceStartDate: vendorInsurance.insuranceStartDate,
+      vendorInsuranceCommencingDate: vendorInsurance.insuranceCommencingDate,
+      vendorInsuranceExpiryDate: vendorInsurance.insuranceExpiryDate,
+      vendorInsuranceSupplier: vendorInsurance.insuranceSupplier,
+      vendorInsuranceStatus: vendorInsurance.insuranceStatus,
       driverName: d.driverName || driver.name || driver.fullName || '',
       driverLicense: driver.licenseNumber || '',
       plateNumber: d.plateNumber || vehicle.plateNumber || vehicle.plate || '',
       truckMake: vehicle.make || '',
       truckModel: vehicle.model || '',
       materialName: d.materialName || material.name || '',
-      materialSource: d.materialSource || d.weighOutLocation || (d.quarryName || ''),
+      materialSource: getReportMaterialSource(d),
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       quantityDelivered: effectiveSiteNet > 0 ? effectiveSiteNet : Number(d.netWeight || d.quantityDelivered || 0),
       quarryInTime: formatEAT(d.weighInAt),
@@ -152,19 +161,26 @@ function buildVendorMasterAudit(vendorId, options = {}) {
  */
 function buildVendorDriverReport(vendorId) {
   const driverDocs = snapshotStore.getAll('drivers').filter((d) => d.vendorId === vendorId);
+  const vendor = snapshotStore.getById('vendors', vendorId) || {};
 
-  return driverDocs.map((d) => ({
+  return driverDocs.map((d) => {
+    const insurance = getInsuranceDetails(vendor, d);
+    return {
     driverName: d.name || d.fullName || '',
     nationalId: d.nationalId || '',
     licenseNumber: d.licenseNumber || '',
     ntsaStatus: d.ntsaStatus || 'Not Verified',
-    insuranceProvider: d.insuranceProvider || '',
-    insurancePolicyNo: d.insurancePolicyNo || '',
-    insuranceExpiry: d.insuranceExpiry || '',
-    insuranceStatus: insuranceStatus(d.insuranceExpiry),
+    insuranceCompany: insurance.insuranceCompany,
+    insuranceNumber: insurance.insuranceNumber,
+    insuranceStartDate: insurance.insuranceStartDate,
+    insuranceCommencingDate: insurance.insuranceCommencingDate,
+    insuranceExpiryDate: insurance.insuranceExpiryDate,
+    insuranceSupplier: insurance.insuranceSupplier,
+    insuranceStatus: insurance.insuranceStatus,
     phone: d.phone || '',
     status: d.status || '',
-  }));
+    };
+  });
 }
 
 /**
@@ -174,19 +190,24 @@ function buildVendorTruckReport(vendorId) {
   const vehicleDocs = snapshotStore.getAll('vehicles').filter((v) => v.vendorId === vendorId);
   const vendors = buildMap(snapshotStore.getAll('vendors'));
 
-  return vehicleDocs.map((v) => ({
+  return vehicleDocs.map((v) => {
+    const insurance = getInsuranceDetails(vendors[v.vendorId], v);
+    return {
     plateNumber: v.plateNumber || v.plate || '',
     make: v.make || '',
     model: v.model || '',
-    capacity: v.capacity || '',
     ntsaStatus: v.ntsaStatus || 'Not Verified',
-    insuranceProvider: v.insuranceProvider || '',
-    insurancePolicyNo: v.insurancePolicyNo || '',
-    insuranceExpiry: v.insuranceExpiry || '',
-    insuranceStatus: insuranceStatus(v.insuranceExpiry),
+    insuranceCompany: insurance.insuranceCompany,
+    insuranceNumber: insurance.insuranceNumber,
+    insuranceStartDate: insurance.insuranceStartDate,
+    insuranceCommencingDate: insurance.insuranceCommencingDate,
+    insuranceExpiryDate: insurance.insuranceExpiryDate,
+    insuranceSupplier: insurance.insuranceSupplier,
+    insuranceStatus: insurance.insuranceStatus,
     vendorName: vendors[v.vendorId]?.companyName || '',
     status: v.status || '',
-  }));
+    };
+  });
 }
 
 /**
@@ -195,7 +216,7 @@ function buildVendorTruckReport(vendorId) {
 function buildVendorFuelReport(vendorId, options = {}) {
   const records = getFilteredFuelRecords(vendorId, options);
   return records.map((r) => ({
-    transactionDate: formatEAT(r.createdAt || r.timestamp),
+    transactionDate: formatEAT(r.dispensedAt || r.createdAt || r.timestamp),
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
     litres: Number(r.litres || r.fuelAmount || 0),

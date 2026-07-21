@@ -123,7 +123,7 @@ router.get('/', async (req, res, next) => {
         id: 'trucks',
         name: 'Trucks',
         category: 'Fleet',
-        description: 'Your trucks with insurance, NTSA status, and capacity.',
+        description: 'Your trucks with insurance and NTSA status.',
       },
       {
         id: 'fuel',
@@ -166,8 +166,10 @@ router.get('/export', async (req, res, next) => {
     const data = {
       masterAudit: vendorReportService.buildVendorMasterAudit(vendorId, options),
       drivers: vendorReportService.buildVendorDriverReport(vendorId),
+      materials: [],
       trucks: vendorReportService.buildVendorTruckReport(vendorId),
       fuel: vendorReportService.buildVendorFuelReport(vendorId, options),
+      vendors: [],
       purchaseOrders: vendorReportService.buildVendorPOReport(vendorId, options),
     };
 
@@ -278,10 +280,10 @@ router.get('/summary', async (req, res, next) => {
       deliveries: {
         total: deliveries.length,
         completed: deliveries.filter((d) =>
-          ['completed', 'delivered'].includes(d.jobStatus)
+          ['completed', 'delivered'].includes(String(d.jobStatusCode || '').toLowerCase())
         ).length,
         inTransit: deliveries.filter((d) =>
-          ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(d.jobStatus)
+          ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(String(d.jobStatusCode || '').toLowerCase())
         ).length,
         totalTonnage,
       },
@@ -340,10 +342,10 @@ router.get('/summary/:category', async (req, res, next) => {
           total: deliveries.length,
           totalTonnage: deliveries.reduce((s, d) => s + (Number(d.quantityDelivered) || 0), 0),
           completed: deliveries.filter((d) =>
-            ['completed', 'delivered'].includes(d.jobStatus)
+            ['completed', 'delivered'].includes(String(d.jobStatusCode || '').toLowerCase())
           ).length,
           inTransit: deliveries.filter((d) =>
-            ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(d.jobStatus)
+            ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(String(d.jobStatusCode || '').toLowerCase())
           ).length,
           preview: deliveries.slice(0, 5),
         };

@@ -45,6 +45,50 @@ function getReportOrigin(delivery) {
 }
 
 /**
+ * The Material Source column represents where the job was originated:
+ * quarry-created jobs use their captured quarry geolocation, while site-created
+ * jobs retain the source selected when the job was created at site.
+ */
+function getReportMaterialSource(delivery) {
+  const createdBy = String(delivery.createdBy || '').trim().toLowerCase();
+  const wasCreatedAtSite = createdBy === 'operator_site' || createdBy === 'site_operator';
+
+  if (wasCreatedAtSite) {
+    return delivery.materialSource || 'Not captured';
+  }
+
+  const geo = delivery.weighOutGeoLocation || {};
+  const city = String(geo.city || geo.town || geo.district || geo.locality || '').trim();
+  const rawLocation = String(geo.address || geo.name || delivery.weighOutLocation || '').trim();
+  // Generic defaults are not captured sources. Quarry-created jobs must show
+  // their captured location, never a configured quarry name.
+  const location = ['quarry', 'weigh-out location', 'material source', 'quarrymaterial source']
+    .includes(rawLocation.toLowerCase())
+    ? ''
+    : rawLocation;
+
+  if (city && location) {
+    return location.toLocaleLowerCase().includes(String(city).toLocaleLowerCase())
+      ? location
+      : `${city} — ${location}`;
+  }
+
+  return city || location || 'Not captured';
+}
+
+/** Turn internal lifecycle codes into clear, report-ready status text. */
+function formatJobStatus(status) {
+  const value = String(status || '').trim();
+  if (!value) return '';
+  return value
+    .toLowerCase()
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
  * Apply timeframe filter to a date value.
  * @param {string} dateStr - ISO date string
  * @param {object} options
@@ -98,7 +142,7 @@ function getDeliveries(options = {}) {
 function getFuelRecords(options = {}) {
   const all = snapshotStore.getAll('fuelRecords');
   if (!options.filter && !options.startDate) return all;
-  return all.filter((r) => withinTimeframe(r.createdAt || r.timestamp, options));
+  return all.filter((r) => withinTimeframe(r.dispensedAt || r.createdAt || r.timestamp, options));
 }
 
 /**
@@ -123,6 +167,34 @@ function insuranceStatus(expiryStr) {
   if (expiry < now) return 'expired';
   if (expiry < thirtyDays) return 'expiring_soon';
   return 'valid';
+}
+
+/**
+ * Vendor insurance is the source of truth for its fleet. Support the legacy
+ * report field names too, so historical driver/truck records remain complete.
+ */
+function getInsuranceDetails(vendor = {}, asset = {}) {
+  const sources = [vendor || {}, asset || {}];
+  const firstValue = (...fieldNames) => {
+    for (const source of sources) {
+      for (const fieldName of fieldNames) {
+        const value = source[fieldName];
+        if (value !== undefined && value !== null && String(value).trim()) return value;
+      }
+    }
+    return '';
+  };
+
+  const insuranceExpiryDate = firstValue('insuranceExpiryDate', 'insuranceExpiry');
+  return {
+    insuranceCompany: firstValue('insuranceCompany', 'insuranceProvider'),
+    insuranceNumber: firstValue('insuranceNumber', 'insurancePolicyNo'),
+    insuranceStartDate: firstValue('insuranceStartDate'),
+    insuranceCommencingDate: firstValue('insuranceCommencingDate'),
+    insuranceExpiryDate,
+    insuranceSupplier: firstValue('insuranceSupplier'),
+    insuranceStatus: insuranceStatus(insuranceExpiryDate),
+  };
 }
 
 /**
@@ -165,6 +237,7 @@ function buildMasterAudit(options = {}) {
     const vehicle = vehicles[d.vehicleId] || {};
     const po = pos[d.purchaseOrderId] || {};
     const material = materials[d.materialId] || {};
+    const vendorInsurance = getInsuranceDetails(vendor);
 
     // Fuel for this job
     const jobFuel = allFuel.filter((f) => f.jobId === d.jobId);
@@ -179,11 +252,19 @@ function buildMasterAudit(options = {}) {
       // Order
       jobId: d.jobId || '',
       poNumber: d.poNumber || po.poNumber || '',
-      jobStatus: d.status || '',
+      jobStatusCode: d.status || '',
+      jobStatus: formatJobStatus(d.status),
       // PO details
       poQuantity: Number(po.quantity || 0),
       // Vendor
       vendorName: d.vendorName || vendor.companyName || '',
+      vendorInsuranceCompany: vendorInsurance.insuranceCompany,
+      vendorInsuranceNumber: vendorInsurance.insuranceNumber,
+      vendorInsuranceStartDate: vendorInsurance.insuranceStartDate,
+      vendorInsuranceCommencingDate: vendorInsurance.insuranceCommencingDate,
+      vendorInsuranceExpiryDate: vendorInsurance.insuranceExpiryDate,
+      vendorInsuranceSupplier: vendorInsurance.insuranceSupplier,
+      vendorInsuranceStatus: vendorInsurance.insuranceStatus,
       // Driver
       driverName: d.driverName || driver.name || driver.fullName || '',
       driverLicense: driver.licenseNumber || '',
@@ -193,7 +274,7 @@ function buildMasterAudit(options = {}) {
       truckModel: vehicle.model || '',
       // Material
       materialName: d.materialName || material.name || '',
-      materialSource: d.materialSource || getReportOrigin(d),
+      materialSource: getReportMaterialSource(d),
       origin: getReportOrigin(d),
       // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
@@ -238,19 +319,25 @@ function buildDriverReport() {
   const driverDocs = snapshotStore.getAll('drivers');
   const vendors = buildMap(snapshotStore.getAll('vendors'));
 
-  return driverDocs.map((d) => ({
+  return driverDocs.map((d) => {
+    const insurance = getInsuranceDetails(vendors[d.vendorId], d);
+    return {
     driverName: d.name || d.fullName || '',
     nationalId: d.nationalId || '',
     licenseNumber: d.licenseNumber || '',
     ntsaStatus: d.ntsaStatus || 'Not Verified',
-    insuranceProvider: d.insuranceProvider || '',
-    insurancePolicyNo: d.insurancePolicyNo || '',
-    insuranceExpiry: d.insuranceExpiry || '',
-    insuranceStatus: insuranceStatus(d.insuranceExpiry),
+    insuranceCompany: insurance.insuranceCompany,
+    insuranceNumber: insurance.insuranceNumber,
+    insuranceStartDate: insurance.insuranceStartDate,
+    insuranceCommencingDate: insurance.insuranceCommencingDate,
+    insuranceExpiryDate: insurance.insuranceExpiryDate,
+    insuranceSupplier: insurance.insuranceSupplier,
+    insuranceStatus: insurance.insuranceStatus,
     vendorName: vendors[d.vendorId]?.companyName || d.vendorName || '',
     phone: d.phone || '',
     status: d.status || '',
-  }));
+    };
+  });
 }
 
 /**
@@ -283,7 +370,7 @@ function buildFuelReport(options = {}) {
   const vendors = buildMap(snapshotStore.getAll('vendors'));
 
   return records.map((r) => ({
-    transactionDate: formatEAT(r.createdAt || r.timestamp),
+    transactionDate: formatEAT(r.dispensedAt || r.createdAt || r.timestamp),
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
     litres: Number(r.litres || r.fuelAmount || 0),
@@ -301,19 +388,24 @@ function buildTruckReport() {
   const vehicleDocs = snapshotStore.getAll('vehicles');
   const vendors = buildMap(snapshotStore.getAll('vendors'));
 
-  return vehicleDocs.map((v) => ({
+  return vehicleDocs.map((v) => {
+    const insurance = getInsuranceDetails(vendors[v.vendorId], v);
+    return {
     plateNumber: v.plateNumber || v.plate || '',
     make: v.make || '',
     model: v.model || '',
-    capacity: v.capacity || '',
     ntsaStatus: v.ntsaStatus || 'Not Verified',
-    insuranceProvider: v.insuranceProvider || '',
-    insurancePolicyNo: v.insurancePolicyNo || '',
-    insuranceExpiry: v.insuranceExpiry || '',
-    insuranceStatus: insuranceStatus(v.insuranceExpiry),
+    insuranceCompany: insurance.insuranceCompany,
+    insuranceNumber: insurance.insuranceNumber,
+    insuranceStartDate: insurance.insuranceStartDate,
+    insuranceCommencingDate: insurance.insuranceCommencingDate,
+    insuranceExpiryDate: insurance.insuranceExpiryDate,
+    insuranceSupplier: insurance.insuranceSupplier,
+    insuranceStatus: insurance.insuranceStatus,
     vendorName: vendors[v.vendorId]?.companyName || '',
     status: v.status || '',
-  }));
+    };
+  });
 }
 
 /**
@@ -452,5 +544,8 @@ module.exports = {
   buildSummary,
   withinTimeframe,
   formatEAT,
+  formatJobStatus,
+  getInsuranceDetails,
   getReportOrigin,
+  getReportMaterialSource,
 };

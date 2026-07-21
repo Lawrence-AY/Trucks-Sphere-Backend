@@ -20,11 +20,16 @@ exports.findAll = async (req, res, next) => {
     const { uid, role } = req.user;
     const { status } = req.query;
 
-    // Management/admin see all issues; others see only their own
+    // Management/admin see all issues; others see only their own. Do not add
+    // orderBy(createdAt) to this Firestore query: combining it with submittedBy
+    // requires a composite index and prevents the Issues screen from loading.
+    // The result set is small and is sorted below after the access filter.
     const isManagement = normalizeRole(role) === MANAGEMENT_ROLES.SUPER_ADMIN;
-    let query = db.collection('issues').orderBy('createdAt', 'desc');
+    let query = db.collection('issues');
 
-    if (status) {
+    // A non-management user's submittedBy filter is the server-side privacy
+    // boundary. Apply any status filter in memory to avoid a second index.
+    if (status && isManagement) {
       query = query.where('status', '==', String(status).toUpperCase());
     }
     if (!isManagement) {
@@ -36,6 +41,19 @@ exports.findAll = async (req, res, next) => {
     snap.forEach((doc) => {
       issues.push({ id: doc.id, ...doc.data() });
     });
+
+    if (status && !isManagement) {
+      const requestedStatus = String(status).toUpperCase();
+      for (let index = issues.length - 1; index >= 0; index -= 1) {
+        if (String(issues[index].status || '').toUpperCase() !== requestedStatus) {
+          issues.splice(index, 1);
+        }
+      }
+    }
+
+    issues.sort((a, b) =>
+      new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+    );
 
     // Enrich with submitter names
     const userMap = {};

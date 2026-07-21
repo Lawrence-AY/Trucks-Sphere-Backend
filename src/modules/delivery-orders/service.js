@@ -53,9 +53,11 @@ async function findActiveAssignmentConflict(data) {
   return results.flatMap((snapshot) => snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))).find(isConflict);
 }
 
+const SITE_ARRIVAL_VARIANCE_TOLERANCE_TONNES = 5;
+
 // Site arrival is the one authoritative transition into the site-weights
 // queue. Keeping these markers server-owned prevents client/query drift.
-function applySiteArrivalWorkflow(data, updates) {
+function applySiteArrivalWorkflow(data, updates, existing = {}) {
   const hasSiteArrivalWeight =
     Object.prototype.hasOwnProperty.call(data, 'siteWeighInWeight') &&
     data.siteWeighInWeight !== null &&
@@ -74,6 +76,20 @@ function applySiteArrivalWorkflow(data, updates) {
   updates.currentStage = 'site_weights';
   updates.status = JOB_STATUS.SITE_WEIGHED_IN;
   updates.readyForSiteWeightsAt = now;
+
+  // Site arrival variance is always measured from the quarry weigh-out:
+  // positive = site arrival is heavier; negative = site arrival is lighter.
+  const quarryWeighOut = Number(data.weighOutWeight ?? existing.weighOutWeight);
+  const siteWeighIn = Number(data.siteWeighInWeight);
+  if (Number.isFinite(quarryWeighOut) && quarryWeighOut > 0 && Number.isFinite(siteWeighIn)) {
+    const variance = siteWeighIn - quarryWeighOut;
+    const isFlagged = Math.abs(variance) > SITE_ARRIVAL_VARIANCE_TOLERANCE_TONNES;
+    updates.siteArrivalWeightVariance = variance;
+    updates.siteArrivalWeightVarianceTolerance = SITE_ARRIVAL_VARIANCE_TOLERANCE_TONNES;
+    updates.siteArrivalWeightVarianceFlagged = isFlagged;
+    updates.siteArrivalWeightVarianceStatus = isFlagged ? 'flagged' : 'within_tolerance';
+    updates.hasWeightDiscrepancy = isFlagged;
+  }
   return true;
 }
 
@@ -283,7 +299,7 @@ const delivery_ordersService = {
       if (Object.prototype.hasOwnProperty.call(data, 'materialSource')) {
         updates.materialSource = normalizeMaterialSource(data.materialSource);
       }
-      const enteredWeightsQueue = applySiteArrivalWorkflow(data, updates);
+      const enteredWeightsQueue = applySiteArrivalWorkflow(data, updates, existing);
 
       console.debug('[SiteWeights] delivery order before update', {
         documentId: id,

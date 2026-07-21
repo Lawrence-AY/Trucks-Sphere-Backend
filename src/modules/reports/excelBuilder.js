@@ -87,7 +87,10 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 1: Master Audit ───
   addSheet(wb, `Master Audit${suffix}`, [
-    'Job ID', 'PO Number', 'PO Qty (T)', 'Job Status', 'Vendor', 'Driver', 'License', 'Plate',
+    'Job ID', 'PO Number', 'PO Qty (T)', 'Job Status', 'Vendor',
+    'Vendor Insurance Company', 'Vendor Policy No', 'Vendor Insurance Start',
+    'Vendor Insurance Commencing', 'Vendor Insurance Expiry', 'Vendor Insurance Supplier', 'Vendor Insurance Status',
+    'Driver', 'License', 'Plate',
     'Truck Make', 'Truck Model', 'Material', 'Material Source', 'Qty Ordered (T)',
     'Qty Delivered (T)', 'Quarry In (EAT)', 'Quarry Out (EAT)', 'Quarry W.In (T)', 'Quarry W.Out (T)',
     'Quarry Net (T)', 'Site In (EAT)', 'Site Out (EAT)', 'Site W.In (T)',
@@ -100,6 +103,13 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'PO Qty (T)': r.poQuantity,
     'Job Status': r.jobStatus,
     'Vendor': r.vendorName,
+    'Vendor Insurance Company': r.vendorInsuranceCompany,
+    'Vendor Policy No': r.vendorInsuranceNumber,
+    'Vendor Insurance Start': r.vendorInsuranceStartDate,
+    'Vendor Insurance Commencing': r.vendorInsuranceCommencingDate,
+    'Vendor Insurance Expiry': r.vendorInsuranceExpiryDate,
+    'Vendor Insurance Supplier': r.vendorInsuranceSupplier,
+    'Vendor Insurance Status': r.vendorInsuranceStatus,
     'Driver': r.driverName,
     'License': r.driverLicense,
     'Plate': r.plateNumber,
@@ -130,16 +140,20 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 2: Drivers ───
   addSheet(wb, `Drivers${suffix}`, [
-    'Driver Name', 'National ID', 'License Number', 'NTSA Status', 'Insurance Provider',
-    'Policy No', 'Insurance Expiry', 'Insurance Status', 'Vendor', 'Phone', 'Status',
+    'Driver Name', 'National ID', 'License Number', 'NTSA Status', 'Insurance Company',
+    'Policy No', 'Insurance Start', 'Insurance Commencing', 'Insurance Expiry', 'Insurance Supplier',
+    'Insurance Status', 'Vendor', 'Phone', 'Status',
   ], data.drivers.map((r) => ({
     'Driver Name': r.driverName,
     'National ID': r.nationalId,
     'License Number': r.licenseNumber,
     'NTSA Status': r.ntsaStatus,
-    'Insurance Provider': r.insuranceProvider,
-    'Policy No': r.insurancePolicyNo,
-    'Insurance Expiry': r.insuranceExpiry,
+    'Insurance Company': r.insuranceCompany,
+    'Policy No': r.insuranceNumber,
+    'Insurance Start': r.insuranceStartDate,
+    'Insurance Commencing': r.insuranceCommencingDate,
+    'Insurance Expiry': r.insuranceExpiryDate,
+    'Insurance Supplier': r.insuranceSupplier,
     'Insurance Status': r.insuranceStatus,
     'Vendor': r.vendorName,
     'Phone': r.phone,
@@ -160,10 +174,10 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 4: Fuel ───
   addSheet(wb, `Fuel${suffix}`, [
-    'Date & Time (EAT)', 'Driver', 'Plate', 'Litres', 'Attendant',
+    'Timestamp (EAT)', 'Driver', 'Plate', 'Litres', 'Attendant',
     'Auth PIN', 'Authorizing Vendor', 'Job ID',
   ], data.fuel.map((r) => ({
-    'Date & Time (EAT)': r.transactionDate,
+    'Timestamp (EAT)': r.transactionDate,
     'Driver': r.driverName,
     'Plate': r.plateNumber,
     'Litres': r.litres,
@@ -175,18 +189,20 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 5: Trucks ───
   addSheet(wb, `Trucks${suffix}`, [
-    'Plate Number', 'Make', 'Model', 'Capacity (T)', 'NTSA Status',
-    'Insurance Provider', 'Policy No', 'Insurance Expiry', 'Insurance Status',
+    'Plate Number', 'Make', 'Model', 'NTSA Status', 'Insurance Company',
+    'Policy No', 'Insurance Start', 'Insurance Commencing', 'Insurance Expiry', 'Insurance Supplier', 'Insurance Status',
     'Vendor', 'Status',
   ], data.trucks.map((r) => ({
     'Plate Number': r.plateNumber,
     'Make': r.make,
     'Model': r.model,
-    'Capacity (T)': r.capacity,
     'NTSA Status': r.ntsaStatus,
-    'Insurance Provider': r.insuranceProvider,
-    'Policy No': r.insurancePolicyNo,
-    'Insurance Expiry': r.insuranceExpiry,
+    'Insurance Company': r.insuranceCompany,
+    'Policy No': r.insuranceNumber,
+    'Insurance Start': r.insuranceStartDate,
+    'Insurance Commencing': r.insuranceCommencingDate,
+    'Insurance Expiry': r.insuranceExpiryDate,
+    'Insurance Supplier': r.insuranceSupplier,
     'Insurance Status': r.insuranceStatus,
     'Vendor': r.vendorName,
     'Status': r.status,
