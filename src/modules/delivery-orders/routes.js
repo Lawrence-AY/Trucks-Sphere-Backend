@@ -19,15 +19,36 @@ router.get(
   delivery_ordersController.findFuelReady
 );
 
-router.use(requireManagementAccess());
+// Delivery orders have role-specific filtering in the controller.  Do not
+// use requireManagementAccess here: it rejects quarry/site operators before
+// that filtering can run, which leaves their job-card and weighbridge queues
+// empty and rejects their weigh-in/out updates with 403.
+const DELIVERY_READ_ROLES = [
+  MANAGEMENT_ROLES.SUPER_ADMIN,
+  MANAGEMENT_ROLES.ADMIN,
+  MANAGEMENT_ROLES.ADMIN_LITE,
+  'vendor',
+  'operator_quarry',
+  'operator_site',
+];
+
+const DELIVERY_WRITE_ROLES = [
+  MANAGEMENT_ROLES.SUPER_ADMIN,
+  MANAGEMENT_ROLES.ADMIN,
+  MANAGEMENT_ROLES.ADMIN_LITE,
+  'operator_quarry',
+  'operator_site',
+];
+
+router.use(requireRoles(...DELIVERY_READ_ROLES));
 
 router.get('/', delivery_ordersController.findAll);
 router.get('/job/*', delivery_ordersController.findByJobId);
 router.get('/po/*', delivery_ordersController.findByPurchaseOrderId);
 router.get('/:id', delivery_ordersController.findById);
-router.post('/', requireManagementAccess({ write: true }), delivery_ordersController.create);
+router.post('/', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.create);
 router.post('/receive-lot', requireManagementAccess({ write: true }), delivery_ordersController.receiveLot);
-router.put('/:id', requireManagementAccess({ write: true }), delivery_ordersController.update);
+router.put('/:id', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.update);
 router.delete('/:id', requireManagementAccess({ write: true }), delivery_ordersController.delete);
 
 module.exports = router;

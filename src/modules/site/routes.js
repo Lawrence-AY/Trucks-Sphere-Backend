@@ -5,7 +5,15 @@ const { verifyToken } = require('../../middleware/authMiddleware');
 const { MANAGEMENT_ROLES, requireManagementAccess, requireRoles } = require('../../middleware/authorizationMiddleware');
 
 router.use(verifyToken);
-router.use(requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, 'operator_site'));
+// Quarry operators may read destination-site details attached to an assigned
+// purchase order, while mutations remain management-only below.
+router.use(requireRoles(
+  MANAGEMENT_ROLES.SUPER_ADMIN,
+  MANAGEMENT_ROLES.ADMIN,
+  MANAGEMENT_ROLES.ADMIN_LITE,
+  'operator_quarry',
+  'operator_site',
+));
 
 router.get('/', siteController.findAll);
 router.get('/:id', siteController.findById);

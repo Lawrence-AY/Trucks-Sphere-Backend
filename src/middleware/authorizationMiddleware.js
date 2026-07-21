@@ -13,6 +13,14 @@ const LEGACY_ROLES = Object.freeze({
   management_edit: MANAGEMENT_ROLES.ADMIN,
   management_lite: MANAGEMENT_ROLES.ADMIN_LITE,
   admin_lite: MANAGEMENT_ROLES.ADMIN_LITE,
+  // Operational aliases used by older seeded and Firebase-auth accounts.
+  // Normalize them once so every route makes the same authorization decision.
+  quarry_operator: 'operator_quarry',
+  site_operator: 'operator_site',
+  fuel_operator: 'operator_fuel',
+  'operator-quarry': 'operator_quarry',
+  'operator-site': 'operator_site',
+  'operator-fuel': 'operator_fuel',
 });
 
 function normalizeRole(role) {

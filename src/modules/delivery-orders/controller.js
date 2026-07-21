@@ -69,6 +69,10 @@ function isOwnedBy(item, uid) {
   return item?.createdBy?.uid === uid || item?.updatedBy?.uid === uid || item?.createdByUid === uid || item?.ownerUid === uid || item?.operatorUid === uid || item?.quarryOperatorUid === uid || item?.weighInByUid === uid || item?.weighOutByUid === uid;
 }
 
+function matchesId(left, right) {
+  return Boolean(left && right && String(left).trim().toLowerCase() === String(right).trim().toLowerCase());
+}
+
 function canAccessDelivery(item, user, userEntity) {
   const role = user?.role;
   const normalizedRole = normalizeRole(role);
@@ -95,6 +99,13 @@ function canAccessDelivery(item, user, userEntity) {
   // records the authenticated operator who actually receives the load.
   if (normalizedRole === 'operator_site') {
     return true;
+  }
+
+  // A vendor can view its own delivery jobs regardless of which quarry or
+  // site operator created or updated them.  This is deliberately based on
+  // the authenticated profile, never a value supplied by the client.
+  if (normalizedRole === 'vendor') {
+    return matchesId(item?.vendorId, userEntity?.vendorId || user?.entityId);
   }
 
   return Boolean(user?.uid && isOwnedBy(item, user.uid));

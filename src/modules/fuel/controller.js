@@ -1,21 +1,29 @@
 const fuelService = require('./service');
+const { normalizeRole } = require('../../middleware/authorizationMiddleware');
 
 exports.findAll = async (req, res, next) => {
   try {
-    const { role, email } = req.user;
+    const { email } = req.user;
+    const role = normalizeRole(req.user?.role);
     // Scope fuel records based on user role
     let scopedQuery = { ...req.query };
-    const { db } = require('../../../config/firebase');
 
     if (role === 'vendor') {
-      // Vendor sees only their fuel records
-      const userSnap = await db.collection('users').where('email', '==', email).limit(1).get();
-      if (!userSnap.empty) {
-        const userDoc = userSnap.docs[0].data();
-        if (userDoc.vendorId) {
-          scopedQuery.vendorId = userDoc.vendorId;
+      // `verifyToken` normally resolves entityId from the authenticated
+      // profile. Fall back to both legacy and current email fields for older
+      // vendor accounts, but never return the unscoped fuel collection.
+      let vendorId = req.user?.entityId || req.user?.vendorId || '';
+      if (!vendorId) {
+        const { db } = require('../../../config/firebase');
+        const legacyUser = await db.collection('users').where('email', '==', email).limit(1).get();
+        const authEmailUser = legacyUser.empty
+          ? await db.collection('users').where('authEmail', '==', email).limit(1).get()
+          : legacyUser;
+        if (!authEmailUser.empty) {
+          vendorId = authEmailUser.docs[0].data().vendorId || '';
         }
       }
+      scopedQuery.vendorId = vendorId || '__none__';
     } else if (role === 'operator_fuel') {
       // Fuel operator sees only records they dispensed
       scopedQuery.dispensedByEmail = email;

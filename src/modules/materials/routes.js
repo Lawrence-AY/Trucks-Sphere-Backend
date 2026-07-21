@@ -2,12 +2,22 @@ const express = require('express');
 const router = express.Router();
 const materialsController = require('./controller');
 const { verifyToken } = require('../../middleware/authMiddleware');
-const { requireManagementAccess } = require('../../middleware/authorizationMiddleware');
+const { MANAGEMENT_ROLES, requireManagementAccess, requireRoles } = require('../../middleware/authorizationMiddleware');
 
 router.use(verifyToken);
-// Admin Lite needs the material catalogue to create a purchase order, but the
-// management Materials screen itself remains unavailable to that role.
-router.use(requireManagementAccess({ allowLite: true }));
+// Materials are a read-only catalogue for every operational workflow: vendors
+// need it for their material summary, and quarry/site operators need it while
+// creating and processing job cards.  Creation and maintenance remain
+// management-only below.
+router.use(requireRoles(
+  MANAGEMENT_ROLES.SUPER_ADMIN,
+  MANAGEMENT_ROLES.ADMIN,
+  MANAGEMENT_ROLES.ADMIN_LITE,
+  'vendor',
+  'operator_quarry',
+  'operator_site',
+  'operator_fuel',
+));
 
 router.get('/', materialsController.findAll);
 router.get('/:id', materialsController.findById);
