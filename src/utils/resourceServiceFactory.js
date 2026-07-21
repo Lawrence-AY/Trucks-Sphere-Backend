@@ -14,39 +14,18 @@ function createResourceService({
   defaultStatusField = 'status',
   defaultSortField = 'createdAt',
   defaultSortDirection = 'desc',
-  /** Field names used for role-based filtering. Set per-collection when configuring. */
-  roleFilterFieldMap = {
-    vendor: 'vendorId',
-    operator_quarry: 'quarryId',
-    operator_site: 'siteId',
-    operator_fuel: 'fuelStationId',
-  },
 }) {
   const collectionRef = db.collection(collectionName);
 
   /**
-   * Apply role-based filtering so users only see their own data.
-   * - management / admin: see everything (no filter)
-   * - vendor: filter by vendorId
-   * - operator_quarry: filter by quarryId
-   * - operator_site: filter by siteId
-   * - operator_fuel: filter by fuelStationId
+   * Role access decides what a user can do; ownership decides which individual
+   * records they can see. Entity-wide filters alone would expose one operator's
+   * records to every operator assigned to the same quarry/site/vendor.
    */
   function applyRoleFilter(results, user) {
-    if (!user || !user.role) return results;
-    const role = user.role;
-
-    // Management sees everything
-    if (role === 'management' || role === 'admin') return results;
-
-    const filterField = roleFilterFieldMap[role];
-    if (!filterField) return results;
-
-    // Determine the filter value from the user object
-    const filterValue = user[filterField] || user.uid;
-    if (!filterValue) return results;
-
-    return results.filter((item) => item[filterField] === filterValue);
+    if (!user?.uid) return [];
+    if (user.role === 'super_admin' || user.role === 'admin') return results;
+    return results.filter((item) => isOwnedBy(item, user.uid));
   }
 
   return {
@@ -89,28 +68,14 @@ function createResourceService({
       };
     },
 
-    findById(id) {
-      return snapshotStore.getById(cacheName, id) || null;
+    findById(id, user = {}) {
+      const item = snapshotStore.getById(cacheName, id) || null;
+      return item && applyRoleFilter([item], user).length ? item : null;
     },
 
     async create(data, user = {}) {
       const docRef = data.id ? collectionRef.doc(data.id) : collectionRef.doc();
       const now = new Date().toISOString();
-
-      // Resolve user display info for tracking
-      let createdByUsername = data.createdByUsername || null;
-      let createdByDisplayName = data.createdByDisplayName || null;
-      if (!createdByUsername || !createdByDisplayName) {
-        try {
-          const userProfile = snapshotStore.getById('users', user.uid);
-          if (userProfile) {
-            createdByUsername = createdByUsername || userProfile.username || null;
-            createdByDisplayName = createdByDisplayName || userProfile.displayName || userProfile.name || null;
-          }
-        } catch {
-          // Non-blocking
-        }
-      }
 
       const item = {
         ...data,
@@ -118,10 +83,8 @@ function createResourceService({
         status: data.status || 'active',
         createdAt: data.createdAt || now,
         updatedAt: now,
-        createdBy: data.createdBy || user.uid || user.email || null,
-        createdByUsername: createdByUsername || user.email || null,
-        createdByDisplayName: createdByDisplayName || user.email || null,
-        updatedBy: data.updatedBy || user.uid || user.email || null,
+        createdBy: data.createdBy || buildActorReference(user),
+        updatedBy: data.updatedBy || buildActorReference(user),
       };
 
       await docRef.set(item);
@@ -131,21 +94,46 @@ function createResourceService({
     async update(id, data, user = {}) {
       const docRef = collectionRef.doc(id);
       const doc = await docRef.get();
-      if (!doc.exists) return null;
+      if (!doc.exists || !applyRoleFilter([{ id, ...doc.data() }], user).length) return null;
 
       const updates = {
         ...data,
         updatedAt: new Date().toISOString(),
-        updatedBy: data.updatedBy || user.uid || user.email || null,
+        updatedBy: data.updatedBy || buildActorReference(user),
       };
 
       await docRef.update(updates);
       return { id, ...doc.data(), ...updates };
     },
 
-    async delete(id) {
-      await collectionRef.doc(id).delete();
+    async delete(id, user = {}) {
+      const docRef = collectionRef.doc(id);
+      const doc = await docRef.get();
+      if (!doc.exists || !applyRoleFilter([{ id, ...doc.data() }], user).length) return false;
+      await docRef.delete();
+      return true;
     },
+  };
+}
+
+function isOwnedBy(item, uid) {
+  return item?.createdBy?.uid === uid ||
+    item?.updatedBy?.uid === uid ||
+    item?.createdByUid === uid ||
+    item?.ownerUid === uid ||
+    item?.userId === uid ||
+    item?.uid === uid;
+}
+
+function buildActorReference(user = {}) {
+  const email = user.email || '';
+  return {
+    uid: user.uid || '',
+    username: user.username || email.split('@')[0] || '',
+    displayName: user.displayName || user.name || email || 'system',
+    email,
+    role: user.role || '',
+    ...(user.entityId ? { entityId: user.entityId, entityType: user.entityType } : {}),
   };
 }
 

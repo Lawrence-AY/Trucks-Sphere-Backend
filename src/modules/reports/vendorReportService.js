@@ -5,6 +5,7 @@
  * Used by vendor account users to download their own reports.
  */
 const snapshotStore = require('../../utils/snapshotStore');
+const { formatEAT } = require('./service');
 
 function withinTimeframe(dateStr, options) {
   if (!dateStr) return false;
@@ -124,10 +125,10 @@ function buildVendorMasterAudit(vendorId, options = {}) {
       materialSource: d.materialSource || d.weighOutLocation || (d.quarryName || ''),
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       quantityDelivered: effectiveSiteNet > 0 ? effectiveSiteNet : Number(d.netWeight || d.quantityDelivered || 0),
-      quarryInTime: d.weighInAt || '',
-      quarryOutTime: d.weighOutAt || '',
-      siteInTime: d.siteWeighInAt || '',
-      siteOutTime: d.siteWeighOutAt || '',
+      quarryInTime: formatEAT(d.weighInAt),
+      quarryOutTime: formatEAT(d.weighOutAt),
+      siteInTime: formatEAT(d.siteWeighInAt),
+      siteOutTime: formatEAT(d.siteWeighOutAt),
       quarryWeighIn: Number(d.weighInWeight || 0),
       quarryWeighOut: Number(d.weighOutWeight || 0),
       siteWeighIn: Number(d.siteWeighInWeight || 0),
@@ -194,7 +195,7 @@ function buildVendorTruckReport(vendorId) {
 function buildVendorFuelReport(vendorId, options = {}) {
   const records = getFilteredFuelRecords(vendorId, options);
   return records.map((r) => ({
-    transactionDate: r.createdAt || r.timestamp || '',
+    transactionDate: formatEAT(r.createdAt || r.timestamp),
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
     litres: Number(r.litres || r.fuelAmount || 0),
@@ -240,7 +241,7 @@ function buildVendorPOReport(vendorId, options = {}) {
       progressPercent: progress,
       status: po.status || '',
       deliveryCount: periodPoDeliveries.length,
-      createdAt: po.createdAt || '',
+      createdAt: formatEAT(po.createdAt),
     };
   });
 }

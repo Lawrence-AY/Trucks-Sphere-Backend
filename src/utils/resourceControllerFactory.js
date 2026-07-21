@@ -11,7 +11,7 @@ function createResourceController(service) {
 
     findById: async (req, res, next) => {
       try {
-        const item = await service.findById(req.params.id);
+        const item = await service.findById(req.params.id, req.user);
         if (!item) return res.status(404).json({ error: 'Not found' });
         res.json(item);
       } catch (error) {
@@ -40,7 +40,8 @@ function createResourceController(service) {
 
     delete: async (req, res, next) => {
       try {
-        await service.delete(req.params.id);
+        const deleted = await service.delete(req.params.id, req.user);
+        if (!deleted) return res.status(404).json({ error: 'Not found' });
         res.json({ message: 'Deleted successfully' });
       } catch (error) {
         next(error);

@@ -7,6 +7,7 @@
 
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
+const { isTrackableJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 
 const COLLECTION_NAME = 'deliveryOrders';
 
@@ -32,8 +33,7 @@ function findByTrackingId(trackingId) {
 
   // Only allow tracking if the job is in-transit (active tracking state).
   // 'loaded' is set after quarry weigh-out — this is when the truck departs.
-  const activeStatuses = ['loaded', 'dispatched', 'in_transit', 'en_route'];
-  if (!activeStatuses.includes(order.status)) {
+  if (!isTrackableJob(order.status)) {
     return null; // tracking expired
   }
 
@@ -103,32 +103,42 @@ function sanitizeForPublic(order) {
 function findByPlate(plateNumber) {
   if (!plateNumber) return null;
 
-  const activeStatuses = ['loaded', 'dispatched', 'in_transit', 'en_route'];
   const allOrders = snapshotStore.getAll(COLLECTION_NAME);
 
-  // Normalize the input plate: trim, uppercase, collapse whitespace
-  const normalizedPlate = plateNumber.trim().toUpperCase().replace(/\s+/g, '');
+  // decodeURIComponent is necessary when a direct mobile/web request has
+  // left %20 in the route parameter. Remove all whitespace and separators
+  // so "KCD 123 A", "KCD%20123%20A" and "kcd-123-a" match one record.
+  const normalizePlate = (value) => {
+    let decoded = String(value || '');
+    try { decoded = decodeURIComponent(decoded.replace(/\+/g, ' ')); } catch {}
+    return decoded.toUpperCase().replace(/[\s-]+/g, '');
+  };
+  const normalizedPlate = normalizePlate(plateNumber);
 
   // Filter to only active-status orders FIRST, then find by plate.
   // Previously the code used .find() which returns the first matching
   // plate regardless of status. If an older completed delivery had the
   // same plate number, it would match first, fail the status check,
   // and return null — never finding the active delivery.
-  const activeOrders = allOrders.filter((doc) =>
-    activeStatuses.includes(doc.status)
-  );
+  const activeOrders = allOrders.filter((doc) => isTrackableJob(doc.status));
 
   const order = activeOrders.find((doc) => {
-    const docPlate = (doc.plateNumber || '').toUpperCase().replace(/\s+/g, '');
+    const docPlate = normalizePlate(doc.plateNumber);
     return docPlate === normalizedPlate;
   });
 
   if (!order) {
-    console.log(`[Tracking] findByPlate: No active delivery found for plate "${normalizedPlate}" (searched ${activeOrders.length} active orders out of ${allOrders.length} total)`);
+    console.log('[Tracking] by-plate miss', {
+      originalPlate: plateNumber,
+      normalizedPlate,
+      recordsChecked: allOrders.length,
+      activeRecordsChecked: activeOrders.length,
+      statusesFound: [...new Set(allOrders.map((doc) => normalizeJobStatus(doc.status)))],
+    });
     return null;
   }
 
-  console.log(`[Tracking] findByPlate: Found active delivery ${order.id} (status: ${order.status}) for plate "${normalizedPlate}"`);
+  console.log('[Tracking] by-plate hit', { originalPlate: plateNumber, normalizedPlate, recordId: order.id, status: normalizeJobStatus(order.status) });
   return order;
 }
 

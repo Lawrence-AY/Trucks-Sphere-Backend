@@ -40,6 +40,7 @@ function auditLogger(req, res, next) {
       durationMs,
       ipAddress: req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || '',
       userAgent: (req.headers['user-agent'] || '').slice(0, 200),
+      actor: req.user ? actorReference(req.user) : null,
       actorUid: req.user?.uid || 'anonymous',
       actorEmail: req.user?.email || '',
       actorName: req.user?.name || req.user?.displayName || '',
@@ -61,6 +62,7 @@ async function logAudit({ action, entityType, entityId = '', severity = 'info', 
     const entry = {
       action, entityType, entityId, severity, metadata,
       timestamp: new Date().toISOString(),
+      actor: req?.user ? actorReference(req.user) : null,
       actorUid: req?.user?.uid || 'system',
       actorEmail: req?.user?.email || '',
       actorName: req?.user?.name || req?.user?.displayName || 'system',
@@ -72,6 +74,17 @@ async function logAudit({ action, entityType, entityId = '', severity = 'info', 
   } catch (err) {
     console.error('[Audit] Failed to write manual audit:', err.message);
   }
+}
+
+function actorReference(user) {
+  return {
+    uid: user.uid || '',
+    username: user.username || user.email?.split('@')[0] || '',
+    displayName: user.displayName || user.name || user.email || 'system',
+    email: user.email || '',
+    role: user.role || '',
+    ...(user.entityId ? { entityId: user.entityId, entityType: user.entityType } : {}),
+  };
 }
 
 function sanitizeForLog(query) {

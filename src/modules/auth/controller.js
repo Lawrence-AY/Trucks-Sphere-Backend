@@ -2,6 +2,17 @@ const { getAuth } = require('firebase-admin/auth');
 const { db } = require('../../../config/firebase');
 const cryptoUtils = require('../../utils/cryptoUtils');
 const { logAudit } = require('../../middleware/auditMiddleware');
+const { MANAGEMENT_ROLES, normalizeRole } = require('../../middleware/authorizationMiddleware');
+const { normalizeQuarryLocation } = require('../../utils/quarryLocations');
+
+const VALID_ROLES = [
+  MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.EDIT, MANAGEMENT_ROLES.LITE,
+  'operator_quarry', 'operator_site', 'vendor', 'operator_fuel',
+  'quarry_operator', 'site_operator', 'fuel_operator', 'weighbridge_operator', 'driver', 'viewer',
+];
+const resetAttempts = new Map();
+const RESET_WINDOW_MS = 15 * 60 * 1000;
+const RESET_LIMIT = 5;
 
 /**
  * Generate a unique username from firstName + first 3 letters of lastName.
@@ -47,43 +58,56 @@ exports.register = async (req, res, next) => {
     if (!password) {
       return res.status(400).json({ error: 'Password required' });
     }
-    const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel', 'quarry_operator', 'site_operator', 'fuel_operator', 'weighbridge_operator', 'driver', 'viewer'];
-    if (!VALID_ROLES.includes(role)) {
+    const normalizedRole = normalizeRole(role);
+    if (
+      normalizeRole(req.user?.role) === MANAGEMENT_ROLES.EDIT &&
+      normalizedRole === MANAGEMENT_ROLES.SUPER_ADMIN
+    ) {
+      return res.status(403).json({ error: 'Management Edit cannot create Super Admin users.' });
+    }
+    if (!VALID_ROLES.includes(normalizedRole)) {
       return res.status(400).json({ error: `Invalid role: "${role}". Valid roles: ${VALID_ROLES.join(', ')}` });
     }
-    if (role === 'vendor') {
+    if (normalizedRole === 'vendor') {
       return res.status(400).json({ error: 'Vendor accounts must be created together with a vendor profile.' });
     }
+    const quarryLocation = normalizeQuarryLocation(req.body.quarryLocation);
+    if (normalizedRole === 'operator_quarry' && !quarryLocation) {
+      return res.status(400).json({ error: 'A valid quarry station is required for an operator at quarry.' });
+    }
 
-    // Auto-generate email if not provided
-    const displayName = reqDisplayName || name || (firstName && lastName ? `${firstName} ${lastName}` : email ? email.split('@')[0] : 'User');
-    const userEmail = email || `${displayName.toLowerCase().replace(/[^a-z0-9]/g, '')}@trucksphere.user`;
+    const displayName = reqDisplayName || name || (firstName && lastName ? `${firstName} ${lastName}` : 'User');
 
     // Auto-generate username from firstName + lastName
     const generatedUsername = await generateUsername(
       firstName || displayName.split(' ')[0],
       lastName || displayName.split(' ').slice(1).join(' ') || 'user',
     );
+    // Firebase password sign-in needs an internal address. Keep it separate
+    // from the user's visible, initially blank profile email.
+    const authEmail = `${generatedUsername}@users.trucksphere.local`;
 
     // Create Firebase Auth user
     const userRecord = await getAuth().createUser({
-      email: userEmail,
+      email: authEmail,
       password,
       displayName,
     });
-    await getAuth().setCustomUserClaims(userRecord.uid, { role });
+    await getAuth().setCustomUserClaims(userRecord.uid, { role: normalizedRole });
 
     // Store user profile in Firestore (including generated username, authUid maps to Firebase UID)
     const userDoc = {
       uid: userRecord.uid,
       authUid: userRecord.uid,      // Maps registration UID directly to authUid field
-      email: userEmail,
+      email: '',
+      authEmail,
       displayName,
       generatedUsername,
       phone: req.body.phone || '',
       firstName: firstName || displayName.split(' ')[0],
       lastName: lastName || displayName.split(' ').slice(1).join(' ') || '',
-      role,
+      role: normalizedRole,
+      quarryLocation,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -94,11 +118,11 @@ exports.register = async (req, res, next) => {
       user: {
         uid: userRecord.uid,
         authUid: userRecord.uid,
-        email: userRecord.email,
+        email: '',
         displayName: userRecord.displayName,
         generatedUsername,
       phone: req.body.phone || '',
-      role,
+      role: normalizedRole,
       },
     });
   } catch (err) {
@@ -127,8 +151,8 @@ exports.changePassword = async (req, res, next) => {
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ error: 'New password and confirm password do not match.' });
     }
-    if (newPassword.length < 8) {
-      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters and include a letter and a number.' });
     }
     if (currentPassword === newPassword) {
       return res.status(400).json({ error: 'New password must be different from current password.' });
@@ -180,6 +204,36 @@ exports.changePassword = async (req, res, next) => {
   }
 };
 
+/** Public, rate-limited and deliberately neutral password-reset request. */
+exports.requestPasswordReset = async (req, res) => {
+  const neutral = { message: 'If an account matches those details, a password-reset link has been sent.' };
+  try {
+    const identifier = String(req.body?.identifier || req.body?.email || req.body?.username || '').trim().toLowerCase();
+    if (!identifier) return res.status(400).json({ error: 'Email or username is required.' });
+    const now = Date.now();
+    const attempts = (resetAttempts.get(identifier) || []).filter((value) => now - value < RESET_WINDOW_MS);
+    if (attempts.length >= RESET_LIMIT) return res.status(429).json(neutral);
+    resetAttempts.set(identifier, [...attempts, now]);
+
+    let email = identifier.includes('@') ? identifier : '';
+    if (!email) {
+      const result = await db.collection('users').where('generatedUsername', '==', identifier).limit(1).get();
+      if (!result.empty) email = result.docs[0].data().email || '';
+    }
+    const firebaseApiKey = process.env.FIREBASE_API_KEY || 'AIzaSyATEU61bk0_DNuEBui15djMTvlGmSv_5fc';
+    if (email) {
+      await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${firebaseApiKey}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestType: 'PASSWORD_RESET', email }),
+      });
+      logAudit({ action: 'user.password_reset_requested', entityType: 'user', entityId: email, severity: 'info', metadata: {}, req }).catch(() => {});
+    }
+  } catch (error) {
+    console.warn('[Auth] password reset request failed:', error.message);
+  }
+  return res.json(neutral);
+};
+
 /**
  * Resolve vendorId / quarryId / siteId from Firestore for role-based users
  */
@@ -187,7 +241,10 @@ async function resolveEntityIds(email, role) {
   const ids = {};
   try {
     // First, try to resolve from the users collection (seeded with vendorId/quarryId/siteId)
-    const usersSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+    let usersSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+    if (usersSnap.empty && email) {
+      usersSnap = await db.collection('users').where('authEmail', '==', email).limit(1).get();
+    }
     let userDoc = null;
     if (!usersSnap.empty) {
       userDoc = usersSnap.docs[0].data();
@@ -205,6 +262,9 @@ async function resolveEntityIds(email, role) {
         }
       }
     } else if (role === 'operator_quarry') {
+      if (userDoc && userDoc.quarryLocation) {
+        ids.quarryLocation = userDoc.quarryLocation;
+      }
       if (userDoc && userDoc.quarryId) {
         ids.quarryId = userDoc.quarryId;
       } else {
@@ -242,57 +302,74 @@ exports.login = async (req, res, next) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password required' });
+      return res.status(400).json({ error: 'Username or email and password required' });
     }
 
-    // Reject email-style logins — enforce username-only authentication
-    if (username.includes('@')) {
-      return res.status(400).json({ error: 'Please use your username (not email) to log in.' });
-    }
-
-    // Look up the user by generatedUsername in Firestore to resolve their email
-    const userSnap = await db.collection('users')
-      .where('generatedUsername', '==', username.toLowerCase())
-      .limit(1)
-      .get();
-
+    const isEmail = username.includes('@');
     let email;
     let userDocData = null;
-    let needsBackfill = false;
 
-    if (!userSnap.empty) {
-      // Fast path: user has generatedUsername field
-      userDocData = userSnap.docs[0].data();
-      email = userDocData.email;
-    } else {
-      // Backward-compatible fallback: legacy users without generatedUsername
-      // Try resolving via the old email convention (username@truck.com)
-      const fallbackEmail = `${username.toLowerCase()}@truck.com`;
-      try {
-        const legacySnap = await db.collection('users')
-          .where('email', '==', fallbackEmail)
+    if (isEmail) {
+      // Email-based login — look up directly by email
+      const emailSnap = await db.collection('users')
+        .where('email', '==', username.toLowerCase())
+        .limit(1)
+        .get();
+
+      if (!emailSnap.empty) {
+        userDocData = emailSnap.docs[0].data();
+        email = userDocData.authEmail || userDocData.email;
+      } else {
+        // Also try authEmail field
+        const authEmailSnap = await db.collection('users')
+          .where('authEmail', '==', username.toLowerCase())
           .limit(1)
           .get();
-
-        if (!legacySnap.empty) {
-          userDocData = legacySnap.docs[0].data();
-          email = fallbackEmail;
-          needsBackfill = true;
-          // Backfill generatedUsername for future fast-path logins
-          try {
-            await db.collection('users').doc(legacySnap.docs[0].id).update({
-              generatedUsername: username.toLowerCase(),
-            });
-            console.log(`[Auth] Backfilled generatedUsername for legacy user: ${username}`);
-          } catch (backfillErr) {
-            console.warn(`[Auth] Failed to backfill generatedUsername for ${username}:`, backfillErr.message);
-          }
+        if (!authEmailSnap.empty) {
+          userDocData = authEmailSnap.docs[0].data();
+          email = userDocData.authEmail || userDocData.email;
         } else {
+          return res.status(401).json({ error: 'Invalid email or password' });
+        }
+      }
+    } else {
+      // Username-based login — look up by generatedUsername
+      const userSnap = await db.collection('users')
+        .where('generatedUsername', '==', username.toLowerCase())
+        .limit(1)
+        .get();
+
+      if (!userSnap.empty) {
+        userDocData = userSnap.docs[0].data();
+        email = userDocData.authEmail || userDocData.email;
+      } else {
+        // Backward-compatible fallback: legacy users without generatedUsername
+        const fallbackEmail = `${username.toLowerCase()}@truck.com`;
+        try {
+          const legacySnap = await db.collection('users')
+            .where('email', '==', fallbackEmail)
+            .limit(1)
+            .get();
+
+          if (!legacySnap.empty) {
+            userDocData = legacySnap.docs[0].data();
+            email = fallbackEmail;
+            // Backfill generatedUsername for future fast-path logins
+            try {
+              await db.collection('users').doc(legacySnap.docs[0].id).update({
+                generatedUsername: username.toLowerCase(),
+              });
+              console.log(`[Auth] Backfilled generatedUsername for legacy user: ${username}`);
+            } catch (backfillErr) {
+              console.warn(`[Auth] Failed to backfill generatedUsername for ${username}:`, backfillErr.message);
+            }
+          } else {
+            return res.status(401).json({ error: 'Invalid username or password' });
+          }
+        } catch (legacyErr) {
+          console.warn('[Auth] Legacy user lookup failed:', legacyErr.message);
           return res.status(401).json({ error: 'Invalid username or password' });
         }
-      } catch (legacyErr) {
-        console.warn('[Auth] Legacy user lookup failed:', legacyErr.message);
-        return res.status(401).json({ error: 'Invalid username or password' });
       }
     }
 
@@ -331,6 +408,7 @@ exports.login = async (req, res, next) => {
         firestoreProfile = {
           username: profile.username || null,
           phone: profile.phone || userRecord.phoneNumber || '',
+          email: profile.email || '',
           phoneNumber: profile.phoneNumber || userRecord.phoneNumber || '',
         };
       }
@@ -356,7 +434,7 @@ exports.login = async (req, res, next) => {
     res.json({
       user: {
         uid: userRecord.uid,
-        email: userRecord.email,
+        email: userDocData?.email || '',
         displayName: userRecord.displayName || email.split('@')[0],
         role,
         phone: firestoreProfile.phone || userRecord.phoneNumber || '',
@@ -397,7 +475,7 @@ exports.getProfile = async (req, res) => {
     res.json({
       user: {
         uid: userRecord.uid,
-        email: userRecord.email,
+        email: firestoreProfile.email || '',
         displayName: userRecord.displayName || email?.split('@')[0] || '',
         role,
         username: firestoreProfile.username || null,
@@ -434,6 +512,12 @@ exports.updateProfile = async (req, res) => {
     }
     if (newEmail) {
       updates.email = newEmail;
+      updates.authEmail = newEmail;
+      try {
+        await getAuth().updateUser(uid, { email: newEmail });
+      } catch (authErr) {
+        return res.status(400).json({ error: authErr.message || 'Unable to update email.' });
+      }
     }
     updates.updatedAt = new Date().toISOString();
 
@@ -443,7 +527,7 @@ exports.updateProfile = async (req, res) => {
     res.json({
       user: {
         uid,
-        email: newEmail || email,
+        email: newEmail || '',
         displayName: displayName || req.user.displayName || email?.split('@')[0] || '',
         role,
         phone: phone || req.user.phone || '',
@@ -459,12 +543,17 @@ exports.updateProfile = async (req, res) => {
 
 exports.updateRole = async (req, res, next) => {
   try {
+    if (normalizeRole(req.user?.role) !== MANAGEMENT_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ error: 'FORBIDDEN', code: 'FORBIDDEN' });
+    }
     const { uid, role } = req.body;
-    if (!['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel'].includes(role)) {
+    const normalizedRole = normalizeRole(role);
+    if (!VALID_ROLES.includes(normalizedRole)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
-    await getAuth().setCustomUserClaims(uid, { role });
-    res.json({ message: `Role updated to ${role}` });
+    await getAuth().setCustomUserClaims(uid, { role: normalizedRole });
+    await db.collection('users').doc(uid).set({ role: normalizedRole, updatedAt: new Date().toISOString() }, { merge: true });
+    res.json({ message: `Role updated to ${normalizedRole}` });
   } catch (err) {
     next(err);
   }

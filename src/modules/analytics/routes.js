@@ -1,6 +1,7 @@
 const express = require('express');
 const { verifyToken } = require('../../middleware/authMiddleware');
 const snapshotStore = require('../../utils/snapshotStore');
+const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 
 const router = express.Router();
 router.use(verifyToken);
@@ -24,8 +25,8 @@ router.get('/summary', (_req, res) => {
   res.json({
     operations: {
       totalJobs: deliveryOrders.length,
-      activeJobs: deliveryOrders.filter((item) => !['completed', 'cancelled'].includes(item.status)).length,
-      completedJobs: deliveryOrders.filter((item) => item.status === 'completed').length,
+      activeJobs: deliveryOrders.filter((item) => isActiveJob(item.status)).length,
+      completedJobs: deliveryOrders.filter((item) => ['SITE_WEIGHED_OUT', 'COMPLETED'].includes(normalizeJobStatus(item.status))).length,
       jobsByStatus: countBy(deliveryOrders, 'status'),
     },
     procurement: {

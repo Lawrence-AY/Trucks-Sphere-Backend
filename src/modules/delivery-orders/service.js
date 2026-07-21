@@ -6,6 +6,7 @@ const { getNextId } = require('../../utils/counterService');
 const { generateJobIdForPO } = require('../../utils/jobIdService');
 const { generateTrackingId } = require('../../utils/trackingUtils');
 const snapshotStore = require('../../utils/snapshotStore');
+const { JOB_STATUS, normalizeJobStatus, isActiveJob } = require('../../utils/jobLifecycle');
 const collectionRef = db.collection('deliveryOrders');
 const purchaseOrdersCollection = db.collection('purchaseOrders');
 
@@ -15,6 +16,65 @@ function normalizeMaterialSource(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+function normalizeResourceId(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+/**
+ * A driver and a truck can each have only one open delivery job. This check
+ * runs on the server so a stale mobile cache cannot create a duplicate job.
+ */
+async function findActiveAssignmentConflict(data) {
+  const requestedDriverId = normalizeResourceId(data.driverId);
+  const requestedVehicleId = normalizeResourceId(data.vehicleId);
+  const requestedPlate = normalizeResourceId(data.plateNumber);
+
+  const isConflict = (job) => {
+    if (!isActiveJob(job.status)) return false;
+
+    const sameDriver = requestedDriverId && normalizeResourceId(job.driverId) === requestedDriverId;
+    const sameVehicle = requestedVehicleId && normalizeResourceId(job.vehicleId) === requestedVehicleId;
+    const samePlate = requestedPlate && normalizeResourceId(job.plateNumber) === requestedPlate;
+    return sameDriver || sameVehicle || samePlate;
+  };
+
+  const cachedConflict = snapshotStore.getAll(COLLECTION_NAME).find(isConflict);
+  if (cachedConflict) return cachedConflict;
+
+  // The snapshot is normally current, but confirm against Firestore before a
+  // safety-critical create in case the process has only just started.
+  const checks = [];
+  if (requestedDriverId) checks.push(collectionRef.where('driverId', '==', data.driverId).get());
+  if (requestedVehicleId) checks.push(collectionRef.where('vehicleId', '==', data.vehicleId).get());
+  if (requestedPlate) checks.push(collectionRef.where('plateNumber', '==', data.plateNumber).get());
+  const results = await Promise.all(checks);
+  return results.flatMap((snapshot) => snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))).find(isConflict);
+}
+
+// Site arrival is the one authoritative transition into the site-weights
+// queue. Keeping these markers server-owned prevents client/query drift.
+function applySiteArrivalWorkflow(data, updates) {
+  const hasSiteArrivalWeight =
+    Object.prototype.hasOwnProperty.call(data, 'siteWeighInWeight') &&
+    data.siteWeighInWeight !== null &&
+    data.siteWeighInWeight !== '' &&
+    Number.isFinite(Number(data.siteWeighInWeight));
+
+  if (!hasSiteArrivalWeight) return false;
+
+  const now = new Date().toISOString();
+  updates.siteWeighInWeight = Number(data.siteWeighInWeight);
+  updates.siteArrivalWeight = Number(data.siteWeighInWeight);
+  updates.siteWeighInAt = data.siteWeighInAt || now;
+  updates.siteArrivalCompleted = true;
+  updates.arrivalCompleted = true;
+  updates.workflowStage = 'ready_for_site_weights';
+  updates.currentStage = 'site_weights';
+  updates.status = JOB_STATUS.SITE_WEIGHED_IN;
+  updates.readyForSiteWeightsAt = now;
+  return true;
 }
 
 /**
@@ -122,6 +182,18 @@ const delivery_ordersService = {
    */
   async create(data) {
     try {
+      const conflict = await findActiveAssignmentConflict(data);
+      if (conflict) {
+        const driverConflict = data.driverId && normalizeResourceId(conflict.driverId) === normalizeResourceId(data.driverId);
+        const resource = driverConflict ? 'driver' : 'truck';
+        const error = new Error(
+          `Cannot create this job: the selected ${resource} is already assigned to active job ${conflict.jobId || conflict.id}.`
+        );
+        error.statusCode = 409;
+        error.code = 'ACTIVE_JOB_RESOURCE_CONFLICT';
+        throw error;
+      }
+
       // The client sends a "jobKey" (everything before the /J####), e.g. "POMAT003/V001/D004/T010"
       // If they sent a full jobId, strip the J number — the backend owns the counter.
       const jobKey = (data.jobKey || data.jobId || '')
@@ -158,7 +230,7 @@ const delivery_ordersService = {
         quarryName: data.quarryName || purchaseOrderContext?.quarryName || '',
         siteId: data.siteId || purchaseOrderContext?.siteId || '',
         siteName: data.siteName || purchaseOrderContext?.siteName || '',
-        status: data.status || 'assigned',
+        status: normalizeJobStatus(data.status, JOB_STATUS.CREATED),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -199,21 +271,49 @@ const delivery_ordersService = {
   async _applyUpdate(docRef, id, existing, data) {
     try {
       const updates = { ...data, updatedAt: new Date().toISOString() };
-      // `weighed_in` was a legacy client-only status. A site arrival weigh-in
-      // is an active `site_in` job and must not be treated as completed.
-      if (updates.status === 'weighed_in') {
-        updates.status = 'site_in';
-      }
+      if (updates.status) updates.status = normalizeJobStatus(updates.status, normalizeJobStatus(existing.status));
       if (Object.prototype.hasOwnProperty.call(data, 'materialSource')) {
         updates.materialSource = normalizeMaterialSource(data.materialSource);
       }
+      const enteredWeightsQueue = applySiteArrivalWorkflow(data, updates);
+
+      console.debug('[SiteWeights] delivery order before update', {
+        documentId: id,
+        status: existing.status,
+        workflowStage: existing.workflowStage,
+        currentStage: existing.currentStage,
+        siteWeighInWeight: existing.siteWeighInWeight,
+        siteId: existing.siteId,
+      });
+      console.debug('[SiteWeights] delivery order update payload', {
+        documentId: id,
+        payload: updates,
+        enteredWeightsQueue,
+      });
       await docRef.update(updates);
+      console.debug('[SiteWeights] delivery order update succeeded', { documentId: id });
+
+      // Diagnostic verification of the exact document written. Remove this
+      // direct read after the transition has been verified in production.
+      const persistedDocument = await docRef.get();
+      const persisted = persistedDocument.data() || {};
+      console.debug('[SiteWeights] delivery order after update', {
+        documentId: persistedDocument.id,
+        exists: persistedDocument.exists,
+        status: persisted.status,
+        workflowStage: persisted.workflowStage,
+        currentStage: persisted.currentStage,
+        siteWeighInWeight: persisted.siteWeighInWeight,
+        siteArrivalWeight: persisted.siteArrivalWeight,
+        siteArrivalCompleted: persisted.siteArrivalCompleted,
+        siteId: persisted.siteId,
+      });
 
       // ─── Tracking ID Lifecycle ───
       const newStatus = updates.status;
       // When a job transitions to 'loaded' (quarry weigh-out complete),
       // auto-generate a tracking ID so the public tracking link goes live.
-      if (newStatus === 'loaded' && !existing.trackingId) {
+      if ((newStatus === JOB_STATUS.QUARRY_WEIGHED_OUT || newStatus === JOB_STATUS.DISPATCHED || newStatus === JOB_STATUS.IN_TRANSIT) && !existing.trackingId) {
         try {
           const trackingId = generateTrackingId();
           await docRef.update({ trackingId });
@@ -227,8 +327,8 @@ const delivery_ordersService = {
       }
 
       // When delivery is marked as delivered/completed, tag it as awaiting quality control check
-      const wasCompleted = ['delivered', 'completed'].includes(existing.status);
-      const isNowCompleted = ['delivered', 'completed'].includes(newStatus);
+      const wasCompleted = [JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED].includes(normalizeJobStatus(existing.status));
+      const isNowCompleted = [JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED].includes(newStatus);
       
       if (!wasCompleted && isNowCompleted) {
         const purchaseOrderId = existing.purchaseOrderId;
@@ -255,7 +355,7 @@ const delivery_ordersService = {
         }
       }
 
-      return { id, ...existing, ...updates };
+      return { id: persistedDocument.id, ...persisted };
     } catch (error) {
       console.error('delivery_ordersService._applyUpdate error:', error);
       throw error;

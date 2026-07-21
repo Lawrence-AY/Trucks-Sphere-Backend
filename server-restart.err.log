@@ -1,0 +1,95 @@
+[Redis] Not available — running with in-memory cache only
+Authentication error: FirebaseAuthError: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.
+    at FirebaseTokenVerifier.mapJwtErrorToAuthError (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:268:20)
+    at C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:252:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async authenticate (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\src\middleware\authMiddleware.js:68:26) {
+  errorInfo: {
+    code: 'auth/id-token-expired',
+    message: 'Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.'
+  },
+  codePrefix: 'auth'
+}
+Authentication error: FirebaseAuthError: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.
+    at FirebaseTokenVerifier.mapJwtErrorToAuthError (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:268:20)
+    at C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:252:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async authenticate (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\src\middleware\authMiddleware.js:68:26) {
+  errorInfo: {
+    code: 'auth/id-token-expired',
+    message: 'Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.'
+  },
+  codePrefix: 'auth'
+}
+Authentication error: FirebaseAuthError: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.
+    at FirebaseTokenVerifier.mapJwtErrorToAuthError (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:268:20)
+    at C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:252:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async authenticate (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\src\middleware\authMiddleware.js:68:26) {
+  errorInfo: {
+    code: 'auth/id-token-expired',
+    message: 'Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.'
+  },
+  codePrefix: 'auth'
+}
+Authentication error: FirebaseAuthError: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.
+    at FirebaseTokenVerifier.mapJwtErrorToAuthError (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:268:20)
+    at C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:252:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async authenticate (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\src\middleware\authMiddleware.js:68:26) {
+  errorInfo: {
+    code: 'auth/id-token-expired',
+    message: 'Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.'
+  },
+  codePrefix: 'auth'
+}
+Authentication error: FirebaseAuthError: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.
+    at FirebaseTokenVerifier.mapJwtErrorToAuthError (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:268:20)
+    at C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:252:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async authenticate (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\src\middleware\authMiddleware.js:68:26) {
+  errorInfo: {
+    code: 'auth/id-token-expired',
+    message: 'Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.'
+  },
+  codePrefix: 'auth'
+}
+Authentication error: FirebaseAuthError: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.
+    at FirebaseTokenVerifier.mapJwtErrorToAuthError (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:268:20)
+    at C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:252:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async authenticate (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\src\middleware\authMiddleware.js:68:26) {
+  errorInfo: {
+    code: 'auth/id-token-expired',
+    message: 'Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.'
+  },
+  codePrefix: 'auth'
+}
+Authentication error: FirebaseAuthError: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.
+    at FirebaseTokenVerifier.mapJwtErrorToAuthError (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:268:20)
+    at C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\node_modules\firebase-admin\lib\auth\token-verifier.js:252:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async authenticate (C:\Users\Wallace Owili\Documents\COWRIE\TRUCK SPHERE\Mobile App\Trucks-Sphere-Backend\src\middleware\authMiddleware.js:68:26) {
+  errorInfo: {
+    code: 'auth/id-token-expired',
+    message: 'Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.'
+  },
+  codePrefix: 'auth'
+}
+[Snapshot] Error on fuelStations: A backoff operation is already in progress.
+[Snapshot] Error on materials: A backoff operation is already in progress.
+[Snapshot] Error on drivers: A backoff operation is already in progress.
+[Snapshot] Error on siteGeolocations: A backoff operation is already in progress.
+[Snapshot] Error on users: A backoff operation is already in progress.
+[Snapshot] Error on checkpoints: A backoff operation is already in progress.
+[Snapshot] Error on fuelRecords: A backoff operation is already in progress.
+[Snapshot] Error on vendors: A backoff operation is already in progress.
+[Snapshot] Error on vehicles: A backoff operation is already in progress.
+[Snapshot] Error on weighments: A backoff operation is already in progress.
+[Snapshot] Error on roles: A backoff operation is already in progress.
+[Snapshot] Error on sites: A backoff operation is already in progress.
+[Snapshot] Error on customers: A backoff operation is already in progress.
+[Snapshot] Error on quarries: A backoff operation is already in progress.
+[Snapshot] Error on uploads: A backoff operation is already in progress.
+[Snapshot] Error on deliveryOrders: A backoff operation is already in progress.
+[Snapshot] Error on purchaseOrders: A backoff operation is already in progress.

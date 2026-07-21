@@ -2,12 +2,14 @@ const express = require('express');
 const router = express.Router();
 const authController = require('./controller');
 const { verifyToken } = require('../../middleware/authMiddleware');
+const { requireManagementAccess } = require('../../middleware/authorizationMiddleware');
 
 // Register new user (creates Firebase Auth user + custom claims for role)
-router.post('/register', authController.register);
+router.post('/register', verifyToken, requireManagementAccess({ write: true }), authController.register);
 
 // Login with email + password → backend proxies to Firebase Auth REST API
 router.post('/login', authController.login);
+router.post('/password-reset', authController.requestPasswordReset);
 
 // Logout (JWT is stateless — client clears token; no server-side invalidation needed)
 router.post('/logout', (req, res) => {

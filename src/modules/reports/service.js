@@ -10,12 +10,18 @@ const snapshotStore = require('../../utils/snapshotStore');
 
 /**
  * Format an ISO date string to East African Time (EAT = UTC+3).
- * Returns a human-readable string like "15/Jul/2026, 14:30" or empty string if invalid.
+ * Returns a human-readable Africa/Nairobi timestamp, or an empty string when invalid.
  */
-function formatEAT(isoStr) {
-  if (!isoStr) return '';
+function formatEAT(value) {
+  if (!value) return '';
   try {
-    const d = new Date(isoStr);
+    const d = value instanceof Date
+      ? value
+      : typeof value?.toDate === 'function'
+        ? value.toDate()
+        : typeof value === 'object' && typeof value.seconds === 'number'
+          ? new Date(value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1e6))
+          : new Date(value);
     if (isNaN(d.getTime())) return '';
     return d.toLocaleString('en-KE', {
       year: 'numeric',
@@ -25,10 +31,17 @@ function formatEAT(isoStr) {
       minute: '2-digit',
       timeZone: 'Africa/Nairobi',
       hour12: false,
+      timeZoneName: 'short',
     });
   } catch {
-    return isoStr;
+    return '';
   }
+}
+
+/** Human-readable operational origin; never lead a report with raw GPS. */
+function getReportOrigin(delivery) {
+  const geo = delivery.weighOutGeoLocation || {};
+  return delivery.quarryName || geo.town || geo.locality || geo.city || geo.address || delivery.weighOutLocation || 'Not captured';
 }
 
 /**
@@ -180,23 +193,21 @@ function buildMasterAudit(options = {}) {
       truckModel: vehicle.model || '',
       // Material
       materialName: d.materialName || material.name || '',
-      materialSource: d.materialSource || d.weighOutLocation || (d.quarryName || ''),
+      materialSource: d.materialSource || getReportOrigin(d),
+      origin: getReportOrigin(d),
       // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       // Delivered Qty uses site net data only — no fallback to quarry netWeight.
       quantityDelivered: siteNet > 0 ? siteNet : 0,
       // Lifecycle Timestamps (raw ISO)
-      quarryInTime: d.weighInAt || '',
-      quarryOutTime: d.weighOutAt || '',
-      siteInTime: d.siteWeighInAt || '',
-      siteOutTime: d.siteWeighOutAt || '',
+     
       // Lifecycle Timestamps (EAT formatted — East African Time, UTC+3)
       quarryInTimeEAT: formatEAT(d.weighInAt),
       quarryOutTimeEAT: formatEAT(d.weighOutAt),
       siteInTimeEAT: formatEAT(d.siteWeighInAt),
       siteOutTimeEAT: formatEAT(d.siteWeighOutAt),
-      assignedTimeEAT: formatEAT(d.createdAt),
-      completedTimeEAT: formatEAT(d.completedAt || d.updatedAt),
+    
+   
       // Weights
       quarryWeighIn: Number(d.weighInWeight || 0),
       quarryWeighOut: Number(d.weighOutWeight || 0),
@@ -272,7 +283,7 @@ function buildFuelReport(options = {}) {
   const vendors = buildMap(snapshotStore.getAll('vendors'));
 
   return records.map((r) => ({
-    transactionDate: r.createdAt || r.timestamp || '',
+    transactionDate: formatEAT(r.createdAt || r.timestamp),
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
     litres: Number(r.litres || r.fuelAmount || 0),
@@ -370,7 +381,7 @@ function buildPOReport(options = {}) {
       progressPercent: progress,
       status: po.status || '',
       deliveryCount: periodPoDeliveries.length,
-      createdAt: po.createdAt || '',
+      createdAt: formatEAT(po.createdAt),
     };
   });
 }
@@ -440,4 +451,6 @@ module.exports = {
   buildPOReport,
   buildSummary,
   withinTimeframe,
+  formatEAT,
+  getReportOrigin,
 };

@@ -217,11 +217,11 @@ exports.exportCategoryCSV = async (req, res, next) => {
         filename = `PurchaseOrders_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'quarry-ops':
-        rows = reportsService.buildMasterAudit(options).filter(r => r.quarryInTime);
+        rows = reportsService.buildMasterAudit(options).filter(r => r.quarryInTimeEAT);
         filename = `QuarryOps_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'site-ops':
-        rows = reportsService.buildMasterAudit(options).filter(r => r.siteInTime);
+        rows = reportsService.buildMasterAudit(options).filter(r => r.siteInTimeEAT);
         filename = `SiteOps_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       default:

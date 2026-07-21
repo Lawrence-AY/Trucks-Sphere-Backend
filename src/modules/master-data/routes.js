@@ -1,9 +1,11 @@
 const express = require('express');
 const { verifyToken } = require('../../middleware/authMiddleware');
 const snapshotStore = require('../../utils/snapshotStore');
+const { requireManagementAccess } = require('../../middleware/authorizationMiddleware');
 
 const router = express.Router();
 router.use(verifyToken);
+router.use(requireManagementAccess({ superAdminOnly: true }));
 
 const RESOURCES = [
   { key: 'materials', label: 'Materials', collection: 'materials' },

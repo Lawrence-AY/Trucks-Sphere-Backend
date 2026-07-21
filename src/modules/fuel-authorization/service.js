@@ -188,20 +188,48 @@ async function getAuthorizationStatus(authId) {
  * Get all pending authorizations for a vendor.
  */
 async function getPendingForVendor(vendorId) {
-  const snapshot = await authCollectionRef
-    .where('vendorId', '==', vendorId)
-    .where('status', '==', 'pending')
-    .orderBy('createdAt', 'desc')
-    .get();
+  try {
+    const snapshot = await authCollectionRef
+      .where('vendorId', '==', vendorId)
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'desc')
+      .get();
 
-  const results = [];
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    // Don't expose OTP in list
-    const { otp, ...safe } = data;
-    results.push(safe);
-  });
-  return results;
+    const results = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Don't expose OTP in list
+      const { otp, ...safe } = data;
+      results.push(safe);
+    });
+    return results;
+  } catch (err) {
+    // Fallback: if the composite index hasn't been deployed yet,
+    // query without orderBy and sort in memory.
+    if (err.code === 9 || (err.message && err.message.includes('index'))) {
+      console.warn('[FuelAuth] Composite index missing, using fallback sort:', err.message);
+      const snapshot = await authCollectionRef
+        .where('vendorId', '==', vendorId)
+        .where('status', '==', 'pending')
+        .get();
+
+      const results = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const { otp, ...safe } = data;
+        results.push(safe);
+      });
+
+      // Sort in memory by createdAt descending
+      results.sort((a, b) => {
+        const dateA = a.createdAt || '';
+        const dateB = b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+      return results;
+    }
+    throw err;
+  }
 }
 
 module.exports = {

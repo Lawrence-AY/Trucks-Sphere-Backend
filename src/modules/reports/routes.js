@@ -9,8 +9,10 @@ const router = express.Router();
 const reportsController = require('./controller');
 const { verifyToken } = require('../../middleware/authMiddleware');
 const snapshotStore = require('../../utils/snapshotStore');
+const { requireManagementAccess } = require('../../middleware/authorizationMiddleware');
 
 router.use(verifyToken);
+router.use(requireManagementAccess());
 
 // GET /api/admin/reports — list available report types
 router.get('/', (_req, res) => {

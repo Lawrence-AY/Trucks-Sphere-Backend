@@ -89,8 +89,8 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
   addSheet(wb, `Master Audit${suffix}`, [
     'Job ID', 'PO Number', 'PO Qty (T)', 'Job Status', 'Vendor', 'Driver', 'License', 'Plate',
     'Truck Make', 'Truck Model', 'Material', 'Material Source', 'Qty Ordered (T)',
-    'Qty Delivered (T)', 'Quarry In', 'Quarry Out', 'Quarry W.In (T)', 'Quarry W.Out (T)',
-    'Quarry Net (T)', 'Site In', 'Site Out', 'Site W.In (T)',
+    'Qty Delivered (T)', 'Quarry In (EAT)', 'Quarry Out (EAT)', 'Quarry W.In (T)', 'Quarry W.Out (T)',
+    'Quarry Net (T)', 'Site In (EAT)', 'Site Out (EAT)', 'Site W.In (T)',
     'Site W.Out (T)', 'Site Net (T)', 'Fuel (L)',
     'Fuel Attendant', 'Auth PIN', 'Lot/Storage #', 'GRN/Receipt #',
     'Quarry Operator', 'Geolocation',
@@ -109,13 +109,13 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Material Source': r.materialSource,
     'Qty Ordered (T)': r.quantityOrdered,
     'Qty Delivered (T)': r.quantityDelivered,
-    'Quarry In': r.quarryInTime,
-    'Quarry Out': r.quarryOutTime,
+    'Quarry In (EAT)': r.quarryInTimeEAT || r.quarryInTime,
+    'Quarry Out (EAT)': r.quarryOutTimeEAT || r.quarryOutTime,
     'Quarry W.In (T)': r.quarryWeighIn,
     'Quarry W.Out (T)': r.quarryWeighOut,
     'Quarry Net (T)': r.quarryNet,
-    'Site In': r.siteInTime,
-    'Site Out': r.siteOutTime,
+    'Site In (EAT)': r.siteInTimeEAT || r.siteInTime,
+    'Site Out (EAT)': r.siteOutTimeEAT || r.siteOutTime,
     'Site W.In (T)': r.siteWeighIn,
     'Site W.Out (T)': r.siteWeighOut,
     'Site Net (T)': r.siteNet,
@@ -160,10 +160,10 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 4: Fuel ───
   addSheet(wb, `Fuel${suffix}`, [
-    'Date & Time', 'Driver', 'Plate', 'Litres', 'Attendant',
+    'Date & Time (EAT)', 'Driver', 'Plate', 'Litres', 'Attendant',
     'Auth PIN', 'Authorizing Vendor', 'Job ID',
   ], data.fuel.map((r) => ({
-    'Date & Time': r.transactionDate,
+    'Date & Time (EAT)': r.transactionDate,
     'Driver': r.driverName,
     'Plate': r.plateNumber,
     'Litres': r.litres,
@@ -207,7 +207,7 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
   // ─── Sheet 7: Purchase Orders ───
   addSheet(wb, `Purchase Orders${suffix}`, [
     'PO Number', 'Vendor', 'Material', 'Target Qty (T)', 'Delivered Qty (T)',
-    'Remaining (T)', 'Progress %', 'Status', 'Delivery Count', 'Created At',
+    'Remaining (T)', 'Progress %', 'Status', 'Delivery Count', 'Created At (EAT)',
   ], data.purchaseOrders.map((r) => ({
     'PO Number': r.poNumber,
     'Vendor': r.vendorName,
@@ -218,7 +218,7 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Progress %': r.progressPercent,
     'Status': r.status,
     'Delivery Count': r.deliveryCount,
-    'Created At': r.createdAt,
+    'Created At (EAT)': r.createdAt,
   })));
 
   const buffer = await wb.xlsx.writeBuffer();

@@ -7,6 +7,9 @@
 
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
+const { MANAGEMENT_ROLES, normalizeRole } = require('../../middleware/authorizationMiddleware');
+const { logAudit } = require('../../middleware/auditMiddleware');
+const ISSUE_STATUSES = new Set(['OPEN', 'IN_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'REJECTED']);
 
 /**
  * GET /api/issues
@@ -18,11 +21,11 @@ exports.findAll = async (req, res, next) => {
     const { status } = req.query;
 
     // Management/admin see all issues; others see only their own
-    const isManagement = role === 'admin' || role === 'management';
+    const isManagement = normalizeRole(role) === MANAGEMENT_ROLES.SUPER_ADMIN;
     let query = db.collection('issues').orderBy('createdAt', 'desc');
 
     if (status) {
-      query = query.where('status', '==', status);
+      query = query.where('status', '==', String(status).toUpperCase());
     }
     if (!isManagement) {
       query = query.where('submittedBy', '==', uid);
@@ -90,7 +93,10 @@ exports.create = async (req, res, next) => {
       title: title.trim(),
       description: description.trim(),
       category: category || 'general',
-      status: 'open',
+      relatedModule: req.body.relatedModule || category || 'general',
+      relatedRecordId: req.body.relatedRecordId || null,
+      attachmentUrl: req.body.attachmentUrl || null,
+      status: 'OPEN',
       priority: priority || 'medium',
       submittedBy: uid,
       submittedByName: displayName || req.user.email || '',
@@ -129,7 +135,7 @@ exports.update = async (req, res, next) => {
   try {
     const { uid, displayName, role } = req.user;
     const { status, resolutionNotes, priority } = req.body;
-    const isManagement = role === 'admin' || role === 'management';
+    const isManagement = normalizeRole(role) === MANAGEMENT_ROLES.SUPER_ADMIN;
 
     const docRef = db.collection('issues').doc(req.params.id);
     const doc = await docRef.get();
@@ -146,19 +152,24 @@ exports.update = async (req, res, next) => {
 
     const updates = { updatedAt: new Date().toISOString() };
 
-    if (status) updates.status = status;
+    if (status) {
+      const nextStatus = String(status).toUpperCase();
+      if (!ISSUE_STATUSES.has(nextStatus)) return res.status(400).json({ error: 'Invalid issue status.' });
+      if (!isManagement) return res.status(403).json({ error: 'FORBIDDEN', code: 'FORBIDDEN' });
+      updates.status = nextStatus;
+    }
     if (priority) updates.priority = priority;
     if (resolutionNotes !== undefined) updates.resolutionNotes = resolutionNotes;
 
     // If resolving, set resolution metadata
-    if (status === 'resolved') {
+    if (updates.status === 'RESOLVED') {
       updates.resolvedAt = new Date().toISOString();
       updates.resolvedBy = uid;
       updates.resolvedByName = displayName || '';
     }
 
     // If reopening, clear resolution metadata
-    if (status === 'open' && issue.status === 'resolved') {
+    if (updates.status === 'OPEN' && String(issue.status).toUpperCase() === 'RESOLVED') {
       updates.resolvedAt = null;
       updates.resolvedBy = null;
       updates.resolvedByName = null;
@@ -166,6 +177,7 @@ exports.update = async (req, res, next) => {
     }
 
     await docRef.update(updates);
+    logAudit({ action: 'issue.status_changed', entityType: 'issue', entityId: doc.id, severity: 'info', metadata: { previousStatus: issue.status, newStatus: updates.status || issue.status }, req }).catch(() => {});
 
     // Notify SSE clients
     try {
@@ -188,7 +200,7 @@ exports.update = async (req, res, next) => {
 exports.delete = async (req, res, next) => {
   try {
     const { uid, role } = req.user;
-    const isManagement = role === 'admin' || role === 'management';
+    const isManagement = normalizeRole(role) === MANAGEMENT_ROLES.SUPER_ADMIN;
 
     const docRef = db.collection('issues').doc(req.params.id);
     const doc = await docRef.get();

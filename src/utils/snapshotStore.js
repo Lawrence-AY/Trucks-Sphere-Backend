@@ -26,7 +26,6 @@
  *   - fuelStations
  *   - users
  *   - roles
- *   - auditLogs
  *   - siteGeolocations
  */
 const { db } = require('../../config/firebase');
@@ -37,6 +36,7 @@ const store = new Map();           // collectionName → array of { id, ...data 
 const ready = new Map();           // collectionName → boolean (listener has received first snapshot)
 const hashes = new Map();          // collectionName → latest SHA-256 hash (for ETag)
 const timestamps = new Map();      // collectionName → last update timestamp
+const changeSubscribers = new Map(); // collectionName → Set<(change) => void>
 
 // ─── Subscribers for readiness notifications ───
 const readinessSubscribers = [];
@@ -65,8 +65,17 @@ function watchCollection(name, ref) {
 
   ref.onSnapshot(
     (snapshot) => {
-      const docs = [];
-      snapshot.forEach(doc => docs.push({ id: doc.id, ...doc.data() }));
+      // The initial snapshot is a list of `added` changes. Every later
+      // snapshot carries only Firestore's changed documents, preserving
+      // references for all untouched records.
+      const byId = new Map((store.get(name) || []).map(item => [item.id, item]));
+      snapshot.docChanges().forEach(change => {
+        const record = { id: change.doc.id, ...change.doc.data() };
+        if (change.type === 'removed') byId.delete(change.doc.id);
+        else byId.set(change.doc.id, record);
+        emitChange(name, { type: change.type, id: change.doc.id, record });
+      });
+      const docs = Array.from(byId.values());
       store.set(name, docs);
 
       const hash = cacheService.generateHash(docs);
@@ -88,6 +97,21 @@ function watchCollection(name, ref) {
  * Try to warm a collection from Redis before Firestore listener connects.
  * Returns true if warm data was loaded, false otherwise.
  */
+function emitChange(collectionName, change) {
+  const subscribers = changeSubscribers.get(collectionName);
+  if (!subscribers) return;
+  subscribers.forEach(callback => {
+    try { callback(change); } catch (error) { console.error(`[Snapshot] Subscriber error for ${collectionName}:`, error.message); }
+  });
+}
+
+/** Subscribe backend features to document-level collection changes. */
+function subscribe(collectionName, callback) {
+  if (!changeSubscribers.has(collectionName)) changeSubscribers.set(collectionName, new Set());
+  changeSubscribers.get(collectionName).add(callback);
+  return () => changeSubscribers.get(collectionName)?.delete(callback);
+}
+
 async function warmFromRedis(name) {
   try {
     const cached = await cacheService.loadSnapshot(name);
@@ -129,7 +153,6 @@ async function init() {
     { name: 'fuelStations', ref: db.collection('fuelStations') },
     { name: 'users', ref: db.collection('users') },
     { name: 'roles', ref: db.collection('roles') },
-    { name: 'auditLogs', ref: db.collection('auditLogs') },
     { name: 'siteGeolocations', ref: db.collection('siteGeolocations') },
   ];
 
@@ -215,5 +238,6 @@ module.exports = {
   isReady,
   getHash,
   getTimestamp,
+  subscribe,
   invalidateRedisCache,
 };
