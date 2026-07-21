@@ -5,6 +5,9 @@ const { verifyToken } = require('../../middleware/authMiddleware');
 const { requireManagementAccess } = require('../../middleware/authorizationMiddleware');
 
 router.use(verifyToken);
+// Admin Lite needs the material catalogue to create a purchase order, but the
+// management Materials screen itself remains unavailable to that role.
+router.use(requireManagementAccess({ allowLite: true }));
 
 router.get('/', materialsController.findAll);
 router.get('/:id', materialsController.findById);

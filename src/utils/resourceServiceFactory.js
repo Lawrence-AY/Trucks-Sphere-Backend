@@ -1,5 +1,6 @@
 const { db } = require('../../config/firebase');
 const snapshotStore = require('./snapshotStore');
+const { MANAGEMENT_ROLES, normalizeRole } = require('../middleware/authorizationMiddleware');
 
 function normalizeLimit(limit) {
   const parsed = parseInt(limit, 10);
@@ -24,7 +25,7 @@ function createResourceService({
    */
   function applyRoleFilter(results, user) {
     if (!user?.uid) return [];
-    if (user.role === 'super_admin' || user.role === 'admin') return results;
+    if ([MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN].includes(normalizeRole(user.role))) return results;
     return results.filter((item) => isOwnedBy(item, user.uid));
   }
 

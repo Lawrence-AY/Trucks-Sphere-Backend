@@ -13,6 +13,10 @@ function isSuperAdmin(user) {
   return normalizeRole(user?.role) === MANAGEMENT_ROLES.SUPER_ADMIN;
 }
 
+function isDriverAccountRole(role) {
+  return normalizeRole(role) === 'driver';
+}
+
 const service = createResourceService({
   collectionName: 'users',
   searchableFields: ['displayName', 'name', 'email', 'username', 'generatedUsername', 'role'],
@@ -25,6 +29,9 @@ const baseController = createResourceController(service);
 exports.findAll = baseController.findAll;
 exports.findById = baseController.findById;
 exports.create = async (req, res, next) => {
+  if (isDriverAccountRole(req.body.role)) {
+    return res.status(400).json({ error: 'Drivers are operational records and cannot be created as user accounts.' });
+  }
   if (isManagementEdit(req) && normalizeRole(req.body.role) === MANAGEMENT_ROLES.SUPER_ADMIN) {
     return res.status(403).json({ error: 'Management Edit cannot create Super Admin users.' });
   }
@@ -41,6 +48,9 @@ exports.update = async (req, res, next) => {
 
     const current = existing.data();
     const { displayName, email, phone, role, isActive, username, generatedUsername, quarryLocation } = req.body;
+    if (role !== undefined && isDriverAccountRole(role)) {
+      return res.status(400).json({ error: 'Drivers are operational records and cannot be assigned as user accounts.' });
+    }
     if (
       isManagementEdit(req) &&
       (isSuperAdmin(current) || (role !== undefined && normalizeRole(role) === MANAGEMENT_ROLES.SUPER_ADMIN))

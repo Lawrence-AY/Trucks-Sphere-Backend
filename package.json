@@ -10,6 +10,7 @@
     "seed-firestore": "node scripts/seed-firebase.js",
     "seed-auth": "node scripts/seed-auth-users.js",
     "seed-accounts": "node scripts/seed-accounts.js",
+    "seed-superadmin": "node scripts/seed-superadmin.js",
     "seed-compliance": "node scripts/seed-compliance.js",
     "seed-compliance:dry": "node scripts/seed-compliance.js --dry-run",
     "add-national-ids": "node scripts/add-national-id-to-drivers.js",

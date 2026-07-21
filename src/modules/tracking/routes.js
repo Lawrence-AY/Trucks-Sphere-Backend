@@ -7,6 +7,11 @@
 const express = require('express');
 const router = express.Router();
 const trackingController = require('./controller');
+const { verifyToken } = require('../../middleware/authMiddleware');
+const { requireManagementAccess } = require('../../middleware/authorizationMiddleware');
+
+router.use(verifyToken);
+router.use(requireManagementAccess());
 
 // GET /track/by-plate/:plateNumber — public, no auth required
 router.get('/by-plate/:plateNumber', trackingController.getTrackingByPlate);

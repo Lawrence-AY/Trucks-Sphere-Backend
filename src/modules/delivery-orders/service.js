@@ -103,7 +103,7 @@ const delivery_ordersService = {
    * Eliminates Firestore reads — data is kept in sync via onSnapshot.
    */
   findAll(query = {}) {
-    const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, createdByUid, page = 1, limit = 50 } = query;
+    const { search, status, jobId, purchaseOrderId, vendorId, quarryId, siteId, createdByUid, fuelReady, page = 1, limit = 50 } = query;
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
@@ -120,6 +120,14 @@ const delivery_ordersService = {
     // Post-filter by status
     if (status) {
       results = results.filter(item => item.status === status);
+    }
+    // Fuel can be issued only after the site operator has finalized the job.
+    // Filter before pagination so older finalized jobs are not skipped.
+    if (fuelReady === true || fuelReady === 'true') {
+      results = results.filter((item) => {
+        const normalizedStatus = normalizeJobStatus(item.status);
+        return normalizedStatus === JOB_STATUS.SITE_WEIGHED_OUT || normalizedStatus === JOB_STATUS.COMPLETED;
+      });
     }
     // Post-filter by jobId
     if (jobId) {

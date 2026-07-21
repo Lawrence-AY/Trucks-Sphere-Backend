@@ -1,6 +1,8 @@
 const delivery_ordersService = require('./service');
 const { db } = require('../../../config/firebase');
 const { normalizeRole, MANAGEMENT_ROLES } = require('../../middleware/authorizationMiddleware');
+const { JOB_STATUS, normalizeJobStatus } = require('../../utils/jobLifecycle');
+const snapshotStore = require('../../utils/snapshotStore');
 
 async function getUserEntity(userOrEmail) {
   const user = typeof userOrEmail === 'string' ? null : userOrEmail;
@@ -125,6 +127,52 @@ exports.findAll = async (req, res, next) => {
     }
     res.json({ ...result, data, total: data.length, totalPages: 1 });
   } catch (err) { next(err); }
+};
+
+/**
+ * Fuel operators can see only delivery jobs that have been finalized at site.
+ * This keeps the general delivery-order board restricted to management while
+ * giving the fuel-dispensing workflow the precise data it needs.
+ */
+exports.findFuelReady = async (req, res, next) => {
+  try {
+    const result = unwrapDeliveryResults(
+      await delivery_ordersService.findAll({ ...req.query, fuelReady: true })
+    );
+    const vendorsById = new Map();
+    snapshotStore.getAll('vendors').forEach((vendor) => {
+      [vendor.id, vendor.vendorId]
+        .filter(Boolean)
+        .forEach((id) => vendorsById.set(String(id).trim().toLowerCase(), vendor));
+    });
+
+    const data = result.data
+      .filter((item) => {
+        const status = normalizeJobStatus(item.status);
+        return status === JOB_STATUS.SITE_WEIGHED_OUT || status === JOB_STATUS.COMPLETED;
+      })
+      .map((item) => {
+        const vendor = vendorsById.get(String(item.vendorId || '').trim().toLowerCase());
+        return {
+          ...item,
+          vendorName: item.vendorName || vendor?.companyName || vendor?.name || '',
+          // Only the contact needed for a fuel-authorization PIN is exposed
+          // to the fuel workflow; vendor-directory access remains restricted.
+          vendorPhone:
+            item.vendorPhone ||
+            item.vendorMobile ||
+            item.vendorContactPhone ||
+            vendor?.phone ||
+            vendor?.mobile ||
+            vendor?.contactPhone ||
+            '',
+        };
+      });
+
+    res.json({ ...result, data, total: data.length, totalPages: 1 });
+  } catch (err) {
+    next(err);
+  }
 };
 
 exports.findById = async (req, res, next) => {

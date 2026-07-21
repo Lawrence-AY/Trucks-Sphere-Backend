@@ -1,10 +1,19 @@
 const MANAGEMENT_ROLES = Object.freeze({
-  SUPER_ADMIN: 'super_admin',
-  EDIT: 'management_edit',
-  LITE: 'management_lite',
+  SUPER_ADMIN: 'superadmin',
+  ADMIN: 'admin',
+  ADMIN_LITE: 'adminlite',
+  // Compatibility aliases for modules not yet migrated to the clearer names.
+  EDIT: 'admin',
+  LITE: 'adminlite',
 });
 
-const LEGACY_ROLES = Object.freeze({ management: MANAGEMENT_ROLES.EDIT, admin: MANAGEMENT_ROLES.SUPER_ADMIN });
+const LEGACY_ROLES = Object.freeze({
+  super_admin: MANAGEMENT_ROLES.SUPER_ADMIN,
+  management: MANAGEMENT_ROLES.ADMIN,
+  management_edit: MANAGEMENT_ROLES.ADMIN,
+  management_lite: MANAGEMENT_ROLES.ADMIN_LITE,
+  admin_lite: MANAGEMENT_ROLES.ADMIN_LITE,
+});
 
 function normalizeRole(role) {
   const value = String(role || '').trim().toLowerCase();
@@ -20,15 +29,19 @@ function requireRoles(...roles) {
   return (req, res, next) => allowed.has(normalizeRole(req.user?.role)) ? next() : forbid(res);
 }
 
-function requireManagementAccess({ allowLite = false, write = false, superAdminOnly = false } = {}) {
+function requireManagementAccess({ allowLite = false, write = false, allowAdminWrite = false, allowLiteWrite = false, superAdminOnly = false } = {}) {
   return (req, res, next) => {
     const role = normalizeRole(req.user?.role);
     if (role === MANAGEMENT_ROLES.SUPER_ADMIN) return next();
     if (superAdminOnly) return forbid(res);
-    if (role === MANAGEMENT_ROLES.EDIT) return next();
+    if (role === MANAGEMENT_ROLES.ADMIN) {
+      if (!write || allowAdminWrite) return next();
+      return forbid(res);
+    }
     if (allowLite && !write && role === MANAGEMENT_ROLES.LITE) return next();
-    // Lite accounts may only create drivers, vendors and vehicles; they do
-    // not update or delete existing records.
+    // Admin Lite may create and edit the operational records explicitly
+    // granted to it, but never delete them.
+    if (allowLite && write && allowLiteWrite && ['POST', 'PUT', 'PATCH'].includes(req.method) && role === MANAGEMENT_ROLES.LITE) return next();
     if (allowLite && write && req.method === 'POST' && role === MANAGEMENT_ROLES.LITE) return next();
     return forbid(res);
   };

@@ -1,8 +1,16 @@
 const driversService = require('./service');
 
+function scopedQuery(req) {
+  return req.user?.role === 'vendor' ? { ...req.query, vendorId: req.user?.entityId || '__none__' } : req.query;
+}
+
+function isOutsideVendorScope(req, item) {
+  return req.user?.role === 'vendor' && (!req.user?.entityId || item?.vendorId !== req.user.entityId);
+}
+
 exports.findAll = async (req, res, next) => {
   try {
-    const items = await driversService.findAll(req.query);
+    const items = await driversService.findAll(scopedQuery(req));
     res.json(items);
   } catch (err) { next(err); }
 };
@@ -10,6 +18,7 @@ exports.findAll = async (req, res, next) => {
 exports.findById = async (req, res, next) => {
   try {
     const item = await driversService.findById(req.params.id);
+    if (isOutsideVendorScope(req, item)) return res.status(404).json({ error: 'Not found' });
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json(item);
   } catch (err) { next(err); }

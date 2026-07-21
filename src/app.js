@@ -73,6 +73,9 @@ const allowedCorsOrigins = [...new Set([
   'http://127.0.0.1:8081',
   'http://localhost:19006',
   'http://127.0.0.1:19006',
+  // Expo web served over the current LAN address during local device testing.
+  // Add other deliberate development origins through CORS_ALLOWED_ORIGINS.
+  'http://192.168.1.199:8081',
   ...configuredCorsOrigins,
 ])];
 

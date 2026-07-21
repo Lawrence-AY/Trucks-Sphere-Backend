@@ -8,7 +8,7 @@ const { normalizeQuarryLocation } = require('../../utils/quarryLocations');
 const VALID_ROLES = [
   MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.EDIT, MANAGEMENT_ROLES.LITE,
   'operator_quarry', 'operator_site', 'vendor', 'operator_fuel',
-  'quarry_operator', 'site_operator', 'fuel_operator', 'weighbridge_operator', 'driver', 'viewer',
+  'quarry_operator', 'site_operator', 'fuel_operator', 'weighbridge_operator', 'viewer',
 ];
 const resetAttempts = new Map();
 const RESET_WINDOW_MS = 15 * 60 * 1000;

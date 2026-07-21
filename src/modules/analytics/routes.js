@@ -2,9 +2,11 @@ const express = require('express');
 const { verifyToken } = require('../../middleware/authMiddleware');
 const snapshotStore = require('../../utils/snapshotStore');
 const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
+const { requireManagementAccess } = require('../../middleware/authorizationMiddleware');
 
 const router = express.Router();
 router.use(verifyToken);
+router.use(requireManagementAccess());
 
 function countBy(items, field) {
   return items.reduce((acc, item) => {
