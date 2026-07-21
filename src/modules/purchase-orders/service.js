@@ -1,6 +1,5 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
-const vendorsService = require('../vendors/service');
 const collectionRef = db.collection('purchaseOrders');
 
 /**
@@ -12,7 +11,7 @@ function normalizeVendorId(raw) {
   const match = str.match(/^([Vv]?)(\d+)$/);
   if (match) {
     const num = parseInt(match[2], 10);
-    return `v${String(num).padStart(3, '0')}`;
+    return `V${String(num).padStart(3, '0')}`;
   }
   return str;
 }
@@ -33,12 +32,27 @@ function normalizeMaterialId(raw) {
 
 const COLLECTION_NAME = 'purchaseOrders';
 
+function findReference(collectionName, id) {
+  const requested = String(id || '').trim().toLowerCase();
+  if (!requested) return null;
+  return snapshotStore.getAll(collectionName).find((item) =>
+    [item.id, item.vendorId, item.materialId]
+      .filter(Boolean)
+      .some((value) => String(value).trim().toLowerCase() === requested)
+  ) || null;
+}
+
+function displayNumber(value, prefix) {
+  const raw = String(value || '').trim();
+  return raw.replace(new RegExp(`^${prefix}`, 'i'), '') || raw;
+}
+
 const purchase_ordersService = {
   /**
    * findAll reads from the in-memory snapshot cache.
    */
   findAll(query = {}) {
-    const { search, status, vendorId, page = 1, limit = 50 } = query;
+    const { search, status, vendorId, quarryId, siteId, page = 1, limit = 50 } = query;
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
@@ -50,6 +64,8 @@ const purchase_ordersService = {
 
     if (status) results = results.filter(item => item.status === status);
     if (vendorId) results = results.filter(item => item.vendorId === vendorId);
+    if (quarryId) results = results.filter(item => item.quarryId === quarryId);
+    if (siteId) results = results.filter(item => item.siteId === siteId);
     if (search) {
       const s = search.toLowerCase();
       results = results.filter(item =>
@@ -80,22 +96,33 @@ const purchase_ordersService = {
    */
   async create(data) {
     try {
+      // Retired form fields are deliberately ignored for old clients.
+      const { expectedCompletion, notes, ...payload } = data;
+      const quantity = Number(payload.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        const error = new Error('Quantity must be a positive number.');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const vendor = findReference('vendors', payload.vendorId);
+      const material = findReference('materials', payload.materialId);
+      const quarry = payload.quarryId ? findReference('quarries', payload.quarryId) : null;
+      const site = payload.siteId ? findReference('sites', payload.siteId) : null;
+      if (!vendor || !material || (payload.quarryId && !quarry) || (payload.siteId && !site)) {
+        const missing = !vendor ? 'vendor' : !material ? 'material' : payload.quarryId && !quarry ? 'quarry/source' : 'delivery destination';
+        const error = new Error(`A valid ${missing} is required.`);
+        error.statusCode = 400;
+        throw error;
+      }
+
       // Normalize material ID → MAT### number
-      const materialId = normalizeMaterialId(data.materialId);
+      const materialId = normalizeMaterialId(material.id || payload.materialId);
       const matNum = materialId ? materialId : 'MAT000';
 
       // Normalize vendor ID → V### number
       let vendorIdShort = '';
-      if (data.vendorId) {
-        try {
-          const vendor = await vendorsService.findById(data.vendorId);
-          const rawId = vendor?.id || vendor?.vendorId || '';
-          vendorIdShort = normalizeVendorId(rawId);
-        } catch (_) { /* ignore */ }
-      }
-      if (!vendorIdShort && data.vendorId) {
-        vendorIdShort = normalizeVendorId(data.vendorId);
-      }
+      vendorIdShort = normalizeVendorId(vendor.vendorId || vendor.id || payload.vendorId);
 
       // Build PO number: POMAT###/V###
       const poNumber = vendorIdShort
@@ -121,11 +148,21 @@ const purchase_ordersService = {
       }
 
       const item = {
-        ...data,
+        ...payload,
         id: docId,
         poNumber,
-        companyName: data.companyName || data.vendorName || '',
-        status: data.status || 'pending',
+        vendorId: vendor.id,
+        vendorNumber: displayNumber(vendor.vendorId || vendor.id, 'V'),
+        vendorName: vendor.companyName || vendor.name || '',
+        companyName: vendor.companyName || vendor.name || '',
+        materialId: material.id,
+        materialNumber: displayNumber(material.id, 'MAT'),
+        materialName: material.name || '',
+        ...(quarry ? { quarryId: quarry.id, quarryName: quarry.name || quarry.location?.address || '' } : {}),
+        ...(site ? { siteId: site.id, siteName: site.name || site.location?.address || '' } : {}),
+        quantity,
+        unit: payload.unit || material.defaultUnit || material.measurementType || 'units',
+        status: 'approved',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -142,7 +179,15 @@ const purchase_ordersService = {
       const docRef = collectionRef.doc(id);
       const doc = await docRef.get();
       if (!doc.exists) return null;
-      const updates = { ...data, updatedAt: new Date().toISOString() };
+      // PO numbers are immutable and retired fields must never be written
+      // again by an older mobile build.
+      const { expectedCompletion, notes, poNumber, ...updates } = data;
+      if (updates.quantity !== undefined && (!Number.isFinite(Number(updates.quantity)) || Number(updates.quantity) <= 0)) {
+        const error = new Error('Quantity must be a positive number.');
+        error.statusCode = 400;
+        throw error;
+      }
+      updates.updatedAt = new Date().toISOString();
       await docRef.update(updates);
       return { id, ...doc.data(), ...updates };
     } catch (error) {
@@ -160,17 +205,8 @@ const purchase_ordersService = {
       const materialIdNorm = normalizeMaterialId(materialId);
       const matNum = materialIdNorm ? materialIdNorm : 'MAT000';
 
-      let vendorShort = '';
-      if (vendorId) {
-        try {
-          const vendor = await vendorsService.findById(vendorId);
-          const rawId = vendor?.id || vendor?.vendorId || '';
-          vendorShort = normalizeVendorId(rawId);
-        } catch (_) { /* ignore */ }
-      }
-      if (!vendorShort && vendorId) {
-        vendorShort = normalizeVendorId(vendorId);
-      }
+      const vendor = findReference('vendors', vendorId);
+      const vendorShort = normalizeVendorId(vendor?.vendorId || vendor?.id || vendorId);
 
       return vendorShort
         ? `${matNum.replace('MAT', 'POMAT')}/${vendorShort}`
