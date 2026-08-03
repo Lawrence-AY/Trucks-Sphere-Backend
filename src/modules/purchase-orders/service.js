@@ -1,5 +1,6 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
+const { syncPurchaseOrder } = require('../../integrations/odooPurchaseService');
 const collectionRef = db.collection('purchaseOrders');
 
 /**
@@ -166,6 +167,11 @@ const purchase_ordersService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      // Odoo is synchronized before the local record is committed. This keeps
+      // a successful TruckSphere creation coupled to a successful Odoo entry;
+      // the Odoo client reference makes a retry safe after an interrupted call.
+      const odooFields = await syncPurchaseOrder({ purchaseOrder: item, vendor, material });
+      Object.assign(item, odooFields);
       await docRef.set(item);
       return { id: docId, ...item };
     } catch (error) {

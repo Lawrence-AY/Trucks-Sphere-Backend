@@ -2,7 +2,6 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
 
 // Import Firebase config (must be initialized before any routes that use it)
 const { db, admin } = require('../config/firebase');
@@ -14,7 +13,16 @@ const redis = require('../config/redis');
 const snapshotStore = require('./utils/snapshotStore');
 
 // Import security middleware
-const { authRateLimiter, apiRateLimiter, inputSanitizer, requestSizeLimiter, helmetConfig } = require('./middleware/securityMiddleware');
+const {
+  authRateLimiter,
+  apiRateLimiter,
+  commandInjectionFilter,
+  inputSanitizer,
+  requestSizeLimiter,
+  requestLogger,
+  enforceHttpsInProduction,
+  helmetConfig,
+} = require('./middleware/securityMiddleware');
 const { auditLogger } = require('./middleware/auditMiddleware');
 
 // Start Redis connection in background, then init snapshot store
@@ -33,6 +41,7 @@ const vehiclesRoutes = require('./modules/vehicles/routes');
 const materialsRoutes = require('./modules/materials/routes');
 const purchaseOrdersRoutes = require('./modules/purchase-orders/routes');
 const deliveryOrdersRoutes = require('./modules/delivery-orders/routes');
+const warehouseJobsRoutes = require('./modules/warehouse-jobs/routes');
 const weighbridgeRoutes = require('./modules/weighbridge/routes');
 const quarryRoutes = require('./modules/quarry/routes');
 const siteRoutes = require('./modules/site/routes');
@@ -51,9 +60,27 @@ const masterDataRoutes = require('./modules/master-data/routes');
 const trackingRoutes = require('./modules/tracking/routes');
 const issuesRoutes = require('./modules/issues/routes');
 const notificationsRoutes = require('./modules/notifications/routes');
+const bulkImportRoutes = require('./modules/bulk-import/routes');
 const { getNextId } = require('./utils/counterService');
 
 const app = express();
+
+// Install response scrubbing before every security, parsing, and route
+// middleware so no HTTP failure can leak implementation details to a client.
+app.use((_req, res, next) => {
+  const sendJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (res.statusCode >= 400) {
+      const suppliedCode = String(payload?.code || payload?.errorCode || '').trim().toUpperCase();
+      const code = /^[A-Z0-9_:-]+$/.test(suppliedCode)
+        ? suppliedCode
+        : `HTTP_${res.statusCode}`;
+      return sendJson({ code, error: code });
+    }
+    return sendJson(payload);
+  };
+  next();
+});
 
 const configuredCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
   .split(',')
@@ -75,6 +102,8 @@ const allowedCorsOrigins = [...new Set([
   'http://127.0.0.1:19006',
   // Expo web served over the current LAN address during local device testing.
   // Add other deliberate development origins through CORS_ALLOWED_ORIGINS.
+  'http://192.168.0.110:8081',
+  'http://192.168.0.110:19006',
   'http://192.168.1.199:8081',
   ...configuredCorsOrigins,
 ])];
@@ -111,6 +140,7 @@ app.set('etag', false);
 // ─── Security Middleware (order matters) ───
 
 // 1. Helmet with hardened security headers
+app.use(enforceHttpsInProduction);
 app.use(helmet(helmetConfig));
 
 // 2. CORS — handle preflight before routing, then apply the same explicit
@@ -126,6 +156,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(requestSizeLimiter(10485760)); // 10MB max body
 
 // 5. Input sanitization (XSS, SQL injection, NoSQL injection prevention)
+app.use(commandInjectionFilter);
 app.use(inputSanitizer);
 
 // 6. Rate limiting — auth routes get stricter limits
@@ -136,7 +167,7 @@ app.use('/api', apiRateLimiter);
 app.use(auditLogger);
 
 // 8. HTTP request logging
-app.use(morgan('combined'));
+app.use(requestLogger);
 
 // ─── API caching headers ───
 app.use((_req, res, next) => {
@@ -258,23 +289,33 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Firebase connection test endpoint
-app.get('/api/test-firebase', async (req, res) => {
-  try {
-    // Write a test document
-    const testRef = db.collection('_test').doc('connection');
-    await testRef.set({
-      message: 'Firebase is connected!',
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    // Read it back
-    const snapshot = await testRef.get();
-    const data = snapshot.data();
-    res.json({ success: true, data });
-  } catch (error) {
-    console.error('Firebase test failed:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// This endpoint writes to Firestore and must never be exposed in production.
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/test-firebase', async (_req, res) => {
+    try {
+      const testRef = db.collection('_test').doc('connection');
+      await testRef.set({
+        message: 'Firebase is connected!',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      const snapshot = await testRef.get();
+      res.json({ success: true, data: snapshot.data() });
+    } catch (error) {
+      console.error('Firebase test failed:', error.message);
+      res.status(500).json({ success: false, error: 'Firebase connection test failed.' });
+    }
+  });
+}
+
+const securityContact = process.env.SECURITY_CONTACT || 'mailto:security@trucksphere.app';
+const securityPolicy = process.env.SECURITY_POLICY_URL || 'https://trucksphere.app/security';
+app.get(['/.well-known/security.txt', '/security.txt'], (_req, res) => {
+  res.type('text/plain').send([
+    `Contact: ${securityContact}`,
+    `Policy: ${securityPolicy}`,
+    'Preferred-Languages: en',
+    'Expires: 2027-07-24T00:00:00.000Z',
+  ].join('\n'));
 });
 
 // Mount routes
@@ -286,6 +327,7 @@ app.use('/api/vehicles', vehiclesRoutes);
 app.use('/api/materials', materialsRoutes);
 app.use('/api/purchase-orders', purchaseOrdersRoutes);
 app.use('/api/delivery-orders', deliveryOrdersRoutes);
+app.use('/api/warehouse-jobs', warehouseJobsRoutes);
 app.use('/api/weighbridge', weighbridgeRoutes);
 app.use('/api/quarries', quarryRoutes);
 app.use('/api/sites', siteRoutes);
@@ -303,24 +345,22 @@ app.use('/api/master-data', masterDataRoutes);
 app.use('/api/track', trackingRoutes);
 app.use('/api/issues', issuesRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/bulk-imports', bulkImportRoutes);
 app.use('/api/admin/reports', reportsRoutes);
 app.use('/api/vendor/reports', vendorReportRoutes);
 
 // 404 handler for unmatched routes
 app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({ code: 'ROUTE_NOT_FOUND' });
 });
 
 // Global error handler
-// Always includes the error message so the client can surface it to the user.
-// In development, the full stack trace is also included.
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message, err.stack);
   const statusCode = err.statusCode || 500;
-  res.status(statusCode).json({ 
-    error: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  });
+  const rawCode = String(err.code || '').trim().toUpperCase();
+  const code = /^[A-Z0-9_:-]+$/.test(rawCode) ? rawCode : `HTTP_${statusCode}`;
+  res.status(statusCode).json({ code });
 });
 
 module.exports = app;

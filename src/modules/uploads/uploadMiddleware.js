@@ -10,6 +10,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10 MB
+    files: 1,
+    fields: 10,
+    fieldSize: 1024 * 1024,
+    parts: 12,
   },
   fileFilter: (_req, file, cb) => {
     const allowed = [
@@ -28,6 +32,27 @@ const upload = multer({
     }
   },
 });
+
+function detectFileType(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return null;
+  if (buffer.subarray(0, 3).equals(Buffer.from([0xFF, 0xD8, 0xFF]))) return 'image/jpeg';
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))) return 'image/png';
+  if (buffer.subarray(0, 6).toString('ascii') === 'GIF87a' || buffer.subarray(0, 6).toString('ascii') === 'GIF89a') return 'image/gif';
+  if (buffer.subarray(0, 2).toString('ascii') === 'BM') return 'image/bmp';
+  if (buffer.subarray(0, 4).toString('ascii') === '%PDF') return 'application/pdf';
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+function validateUploadedFile(req, res, next) {
+  if (!req.file) return next();
+  const actualType = detectFileType(req.file.buffer);
+  const claimedType = req.file.mimetype === 'image/jpg' ? 'image/jpeg' : req.file.mimetype;
+  if (!actualType || actualType !== claimedType) {
+    return res.status(400).json({ error: 'File content does not match its declared type.' });
+  }
+  return next();
+}
 
 /**
  * Express error-handling middleware that catches Multer errors
@@ -63,3 +88,5 @@ function multerErrorHandler(err, req, res, next) {
 
 module.exports = upload;
 module.exports.multerErrorHandler = multerErrorHandler;
+module.exports.validateUploadedFile = validateUploadedFile;
+module.exports.detectFileType = detectFileType;

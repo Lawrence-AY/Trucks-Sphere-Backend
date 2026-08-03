@@ -10,6 +10,7 @@
 
 const { db } = require('../../config/firebase');
 const cryptoUtils = require('../utils/cryptoUtils');
+const { redactSensitiveData } = require('./securityMiddleware');
 
 // Routes to skip audit logging
 const SKIP_PATHS = ['/api/health', '/api/test-firebase', '/api/sync/stream'];
@@ -60,7 +61,7 @@ function auditLogger(req, res, next) {
 async function logAudit({ action, entityType, entityId = '', severity = 'info', metadata = {}, req = null }) {
   try {
     const entry = {
-      action, entityType, entityId, severity, metadata,
+      action, entityType, entityId, severity, metadata: redactSensitiveData(metadata),
       timestamp: new Date().toISOString(),
       actor: req?.user ? actorReference(req.user) : null,
       actorUid: req?.user?.uid || 'system',
@@ -88,10 +89,7 @@ function actorReference(user) {
 }
 
 function sanitizeForLog(query) {
-  if (!query || typeof query !== 'object') return {};
-  const clean = { ...query };
-  ['password', 'token', 'secret', 'apiKey', 'api_key', 'key'].forEach(f => { if (clean[f]) clean[f] = '[REDACTED]'; });
-  return clean;
+  return redactSensitiveData(query || {});
 }
 
 function summarizeBody(body, method, path) {
@@ -102,11 +100,11 @@ function summarizeBody(body, method, path) {
     if (path.includes('change-password')) return { action: 'changePassword' };
     return { action: 'auth' };
   }
-  const sensitives = ['password', 'token', 'secret', 'refreshToken', 'idToken', 'currentPassword', 'newPassword', 'confirmPassword'];
+  const redacted = redactSensitiveData(body);
   const summary = {};
-  for (const [key, value] of Object.entries(body)) {
-    if (sensitives.some(f => key.toLowerCase().includes(f.toLowerCase()))) {
-      summary[key] = '[REDACTED]';
+  for (const [key, value] of Object.entries(redacted)) {
+    if (value === '[REDACTED]') {
+      summary[key] = value;
     } else if (typeof value === 'string' && value.length > 100) {
       summary[key] = value.slice(0, 100) + '...';
     } else if (typeof value === 'object') {

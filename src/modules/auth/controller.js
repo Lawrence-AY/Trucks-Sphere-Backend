@@ -1,18 +1,28 @@
 const { getAuth } = require('firebase-admin/auth');
 const { db } = require('../../../config/firebase');
 const cryptoUtils = require('../../utils/cryptoUtils');
+const { assertStrongPassword } = require('../../utils/passwordPolicy');
+const refreshTokenService = require('./refreshTokenService');
 const { logAudit } = require('../../middleware/auditMiddleware');
 const { MANAGEMENT_ROLES, normalizeRole } = require('../../middleware/authorizationMiddleware');
 const { normalizeQuarryLocation } = require('../../utils/quarryLocations');
 
 const VALID_ROLES = [
   MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.EDIT, MANAGEMENT_ROLES.LITE,
-  'operator_quarry', 'operator_site', 'vendor', 'operator_fuel',
-  'quarry_operator', 'site_operator', 'fuel_operator', 'weighbridge_operator', 'viewer',
+  'operator_quarry', 'operator_site', 'vendor', 'operator_fuel', 'operator_warehouse',
+  'quarry_operator', 'site_operator', 'fuel_operator', 'warehouse_operator', 'weighbridge_operator', 'viewer',
 ];
-const resetAttempts = new Map();
-const RESET_WINDOW_MS = 15 * 60 * 1000;
-const RESET_LIMIT = 5;
+
+function getFirebaseApiKey() {
+  const firebaseApiKey = String(process.env.FIREBASE_API_KEY || '').trim();
+  if (!firebaseApiKey) {
+    const error = new Error('FIREBASE_API_KEY is not configured.');
+    error.statusCode = 500;
+    error.code = 'SECURITY_CONFIGURATION_ERROR';
+    throw error;
+  }
+  return firebaseApiKey;
+}
 
 /**
  * Generate a unique username from firstName + first 3 letters of lastName.
@@ -58,6 +68,7 @@ exports.register = async (req, res, next) => {
     if (!password) {
       return res.status(400).json({ error: 'Password required' });
     }
+    assertStrongPassword(password);
     const normalizedRole = normalizeRole(role);
     if (
       normalizeRole(req.user?.role) === MANAGEMENT_ROLES.EDIT &&
@@ -151,15 +162,13 @@ exports.changePassword = async (req, res, next) => {
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ error: 'New password and confirm password do not match.' });
     }
-    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
-      return res.status(400).json({ error: 'New password must be at least 8 characters and include a letter and a number.' });
-    }
+    assertStrongPassword(newPassword);
     if (currentPassword === newPassword) {
       return res.status(400).json({ error: 'New password must be different from current password.' });
     }
 
     // Verify current password via Firebase Auth REST API sign-in
-    const firebaseApiKey = process.env.FIREBASE_API_KEY || 'AIzaSyATEU61bk0_DNuEBui15djMTvlGmSv_5fc';
+    const firebaseApiKey = getFirebaseApiKey();
     const verifyRes = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
       {
@@ -210,17 +219,12 @@ exports.requestPasswordReset = async (req, res) => {
   try {
     const identifier = String(req.body?.identifier || req.body?.email || req.body?.username || '').trim().toLowerCase();
     if (!identifier) return res.status(400).json({ error: 'Email or username is required.' });
-    const now = Date.now();
-    const attempts = (resetAttempts.get(identifier) || []).filter((value) => now - value < RESET_WINDOW_MS);
-    if (attempts.length >= RESET_LIMIT) return res.status(429).json(neutral);
-    resetAttempts.set(identifier, [...attempts, now]);
-
     let email = identifier.includes('@') ? identifier : '';
     if (!email) {
       const result = await db.collection('users').where('generatedUsername', '==', identifier).limit(1).get();
-      if (!result.empty) email = result.docs[0].data().email || '';
+      if (!result.empty) email = result.docs[0].data().authEmail || result.docs[0].data().email || '';
     }
-    const firebaseApiKey = process.env.FIREBASE_API_KEY || 'AIzaSyATEU61bk0_DNuEBui15djMTvlGmSv_5fc';
+    const firebaseApiKey = getFirebaseApiKey();
     if (email) {
       await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${firebaseApiKey}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -232,6 +236,30 @@ exports.requestPasswordReset = async (req, res) => {
     console.warn('[Auth] password reset request failed:', error.message);
   }
   return res.json(neutral);
+};
+
+// Verifies a Firebase password-reset OOB code without exposing account details.
+// The route is protected by the dedicated passwordResetRateLimiter.
+exports.verifyPasswordResetCode = async (req, res) => {
+  try {
+    const oobCode = String(req.body?.oobCode || '').trim();
+    if (!oobCode) return res.status(400).json({ error: 'Reset code is required.' });
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key=${getFirebaseApiKey()}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oobCode }),
+      },
+    );
+    if (!response.ok) return res.status(400).json({ error: 'Invalid or expired reset code.' });
+    return res.json({ valid: true });
+  } catch (error) {
+    if (error.code === 'SECURITY_CONFIGURATION_ERROR') {
+      return res.status(500).json({ error: 'Password reset is temporarily unavailable.' });
+    }
+    return res.status(400).json({ error: 'Invalid or expired reset code.' });
+  }
 };
 
 /**
@@ -373,7 +401,7 @@ exports.login = async (req, res, next) => {
       }
     }
 
-    const firebaseApiKey = process.env.FIREBASE_API_KEY || 'AIzaSyATEU61bk0_DNuEBui15djMTvlGmSv_5fc';
+    const firebaseApiKey = getFirebaseApiKey();
 
     const response = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
@@ -416,10 +444,11 @@ exports.login = async (req, res, next) => {
       // Non-blocking
     }
 
-    // Encrypt the refresh token before sending to client
-    const encryptedRefreshToken = data.refreshToken
-      ? cryptoUtils.encrypt(data.refreshToken)
-      : '';
+    if (!data.refreshToken) throw new Error('Authentication provider did not return a refresh token.');
+    const refreshSession = await refreshTokenService.issueRefreshSession({
+      uid: userRecord.uid,
+      firebaseRefreshToken: data.refreshToken,
+    });
 
     // Log successful login to audit
     logAudit({
@@ -442,13 +471,70 @@ exports.login = async (req, res, next) => {
         ...entityIds,
       },
       token: data.idToken,
-      refreshToken: encryptedRefreshToken,
-      refreshTokenExpiresIn: data.expiresIn ? parseInt(data.expiresIn) * 1000 : 3600000,
+      refreshToken: refreshSession.refreshToken,
+      refreshTokenExpiresIn: refreshSession.expiresInMs,
     });
   } catch (err) {
     console.error('Login error:', err);
     next(err);
   }
+};
+
+exports.refresh = async (req, res, next) => {
+  const invalidResponse = () => res.status(401).json({ error: 'Invalid or expired refresh token.' });
+  try {
+    const active = await refreshTokenService.getActiveRefreshSession(req.body?.refreshToken);
+    if (active.status === 'reused') {
+      await refreshTokenService.revokeRefreshTokenFamily(active.session.record.familyId);
+      await getAuth().revokeRefreshTokens(active.session.record.uid);
+      logAudit({ action: 'user.refresh_token_reuse', entityType: 'user', entityId: active.session.record.uid, severity: 'warning', metadata: {}, req }).catch(() => {});
+      return invalidResponse();
+    }
+    if (active.status !== 'active') return invalidResponse();
+
+    const firebaseApiKey = getFirebaseApiKey();
+    const firebaseRefreshToken = cryptoUtils.decrypt(active.session.record.encryptedFirebaseRefreshToken);
+    const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${firebaseApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: firebaseRefreshToken }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.refresh_token || !data.id_token) {
+      await refreshTokenService.revokeRefreshTokenFamily(active.session.record.familyId, 'provider_refresh_failed');
+      return invalidResponse();
+    }
+
+    const rotated = await refreshTokenService.rotateRefreshSession({
+      session: active.session,
+      firebaseRefreshToken: data.refresh_token,
+    });
+    if (rotated.reused) {
+      await refreshTokenService.revokeRefreshTokenFamily(active.session.record.familyId);
+      await getAuth().revokeRefreshTokens(active.session.record.uid);
+      return invalidResponse();
+    }
+
+    return res.json({
+      token: data.id_token,
+      refreshToken: rotated.refreshToken,
+      expiresIn: data.expires_in ? Number.parseInt(data.expires_in, 10) * 1000 : 3600000,
+      refreshTokenExpiresIn: rotated.expiresInMs,
+    });
+  } catch (error) {
+    if (error.code === 'SECURITY_CONFIGURATION_ERROR') return next(error);
+    console.warn('[Auth] Refresh token failed:', error.message);
+    return invalidResponse();
+  }
+};
+
+exports.logout = async (req, res) => {
+  try {
+    if (req.body?.refreshToken) await refreshTokenService.revokeRefreshSession(req.body.refreshToken);
+  } catch (error) {
+    console.warn('[Auth] Logout session cleanup failed:', error.message);
+  }
+  return res.status(204).send();
 };
 
 exports.getProfile = async (req, res) => {

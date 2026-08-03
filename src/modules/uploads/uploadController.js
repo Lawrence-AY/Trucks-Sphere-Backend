@@ -14,6 +14,7 @@
 const { db } = require('../../../config/firebase');
 const { uploadFile, deleteFile } = require('../../utils/cloudStorage');
 const upload = require('./uploadMiddleware');
+const { validateUploadedFile } = require('./uploadMiddleware');
 
 /**
  * POST /api/uploads/driver-photo/:driverId
@@ -22,6 +23,7 @@ const upload = require('./uploadMiddleware');
  */
 exports.uploadDriverPhoto = [
   upload.single('file'),
+  validateUploadedFile,
   async (req, res, next) => {
     try {
       if (!req.file) {
@@ -48,7 +50,8 @@ exports.uploadDriverPhoto = [
         req.file.buffer,
         req.file.originalname,
         'driver',
-        driverId
+        driverId,
+        req.file.mimetype,
       );
 
       // Update Firestore driver record
@@ -73,6 +76,7 @@ exports.uploadDriverPhoto = [
  */
 exports.uploadDeliveryNote = [
   upload.single('file'),
+  validateUploadedFile,
   async (req, res, next) => {
     try {
       if (!req.file) {
@@ -88,7 +92,7 @@ exports.uploadDeliveryNote = [
       }
 
       // Delete old file if exists
-      const existingPhoto = orderDoc.data().photoURL;
+      const existingPhoto = orderDoc.data().deliveryNoteURL || orderDoc.data().photoURL;
       if (existingPhoto) {
         const oldPath = extractStoragePath(existingPhoto);
         if (oldPath) await deleteFile(oldPath);
@@ -99,11 +103,18 @@ exports.uploadDeliveryNote = [
         req.file.buffer,
         req.file.originalname,
         'Deliverynotes',
-        deliveryOrderId
+        deliveryOrderId,
+        req.file.mimetype,
       );
 
       // Update Firestore delivery order record
       await db.collection('deliveryOrders').doc(deliveryOrderId).update({
+        // Keep photoURL for older mobile builds, while the named field makes
+        // it clear this can be a photographed or externally-issued PDF note.
+        deliveryNoteURL: url,
+        deliveryNoteFileName: req.file.originalname,
+        deliveryNoteMimeType: req.file.mimetype,
+        deliveryNoteCapturedAt: new Date().toISOString(),
         photoURL: url,
         updatedAt: new Date().toISOString(),
       });
@@ -118,12 +129,76 @@ exports.uploadDeliveryNote = [
 ];
 
 /**
+ * POST /api/uploads/warehouse-packaging/:warehouseJobId
+ * Upload the packaging photo captured by warehouse personnel. The image is
+ * linked to both the warehouse submission and its site-facing delivery order.
+ */
+exports.uploadWarehousePackagingPhoto = [
+  upload.single('file'),
+  validateUploadedFile,
+  async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No file provided' });
+
+      const { warehouseJobId } = req.params;
+      const warehouseJobRef = db.collection('warehouseJobs').doc(warehouseJobId);
+      const warehouseJobDoc = await warehouseJobRef.get();
+      if (!warehouseJobDoc.exists) {
+        return res.status(404).json({ error: `Warehouse job ${warehouseJobId} not found` });
+      }
+
+      const warehouseJob = warehouseJobDoc.data();
+      const deliveryOrderId = String(warehouseJob.deliveryOrderId || '').trim();
+      if (!deliveryOrderId) {
+        return res.status(409).json({ error: 'This warehouse job has no linked site delivery.' });
+      }
+      const deliveryOrderRef = db.collection('deliveryOrders').doc(deliveryOrderId);
+      const deliveryOrderDoc = await deliveryOrderRef.get();
+      if (!deliveryOrderDoc.exists) {
+        return res.status(409).json({ error: 'The linked site delivery no longer exists.' });
+      }
+
+      const existingPhoto = warehouseJob.packagingPhotoURL || deliveryOrderDoc.data().packagingPhotoURL;
+      if (existingPhoto) {
+        const oldPath = extractStoragePath(existingPhoto);
+        if (oldPath) await deleteFile(oldPath);
+      }
+
+      const { url } = await uploadFile(
+        req.file.buffer,
+        req.file.originalname,
+        'Warehouse packaging',
+        warehouseJobId,
+        req.file.mimetype,
+      );
+      const now = new Date().toISOString();
+      const photoFields = {
+        packagingPhotoURL: url,
+        packagingPhotoCapturedAt: now,
+        packagingPhotoFileName: req.file.originalname,
+        updatedAt: now,
+      };
+      await Promise.all([
+        warehouseJobRef.update(photoFields),
+        deliveryOrderRef.update(photoFields),
+      ]);
+
+      res.json({ success: true, photoURL: url, warehouseJobId, deliveryOrderId });
+    } catch (err) {
+      console.error('[uploadWarehousePackagingPhoto] Error:', err.message);
+      next(err);
+    }
+  },
+];
+
+/**
  * POST /api/uploads/receipt-note/:weighRecordId
  * Upload a receipt note image for a weigh record.
  * Body: multipart/form-data with field "file"
  */
 exports.uploadReceiptNote = [
   upload.single('file'),
+  validateUploadedFile,
   async (req, res, next) => {
     try {
       if (!req.file) {
@@ -150,7 +225,8 @@ exports.uploadReceiptNote = [
         req.file.buffer,
         req.file.originalname,
         'Receipt note',
-        weighRecordId
+        weighRecordId,
+        req.file.mimetype,
       );
 
       // Update Firestore weigh record
@@ -183,6 +259,7 @@ exports.uploadReceiptNote = [
  */
 exports.uploadDriverPhotoWeighOut = [
   upload.single('file'),
+  validateUploadedFile,
   async (req, res, next) => {
     try {
       console.log('[uploadDriverPhotoWeighOut] Request received');
@@ -270,6 +347,7 @@ exports.uploadDriverPhotoWeighOut = [
  */
 exports.uploadFuelPumpPhoto = [
   upload.single('file'),
+  validateUploadedFile,
   async (req, res, next) => {
     try {
       console.log('[uploadFuelPumpPhoto] Request received');
@@ -371,21 +449,17 @@ async function uploadFileWithName(buffer, fileName, folder) {
   return { url: publicUrl, path: filePath };
 }
 
-function getExtension(originalName, mimetype) {
-  const path = require('path');
-  const ext = path.extname(originalName).toLowerCase();
-  if (ext && ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)) {
-    return ext;
-  }
-  // Fallback based on mimetype
+function getExtension(_originalName, mimetype) {
   const mimeMap = {
     'image/jpeg': '.jpg',
     'image/jpg': '.jpg',
     'image/png': '.png',
     'image/gif': '.gif',
     'image/webp': '.webp',
+    'image/bmp': '.bmp',
+    'application/pdf': '.pdf',
   };
-  return mimeMap[mimetype] || '.jpg';
+  return mimeMap[mimetype] || '.bin';
 }
 
 function getContentTypeFromExt(fileName) {

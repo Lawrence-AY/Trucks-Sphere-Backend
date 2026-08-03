@@ -102,6 +102,12 @@ exports.create = async (req, res, next) => {
     const { uid, displayName, role } = req.user;
     const { title, description, category, priority } = req.body;
 
+    // Super admins manage and resolve reported issues; they do not submit
+    // tickets themselves, even if the endpoint is called directly.
+    if (normalizeRole(role) === MANAGEMENT_ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ error: 'Super admins cannot submit issues.' });
+    }
+
     if (!title || !description) {
       return res.status(400).json({ error: 'Title and description are required.' });
     }

@@ -13,6 +13,7 @@ router.use(requireRoles(
   MANAGEMENT_ROLES.ADMIN_LITE,
   'operator_quarry',
   'operator_site',
+  'operator_warehouse',
 ));
 
 router.get('/', siteController.findAll);

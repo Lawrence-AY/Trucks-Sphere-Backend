@@ -46,6 +46,19 @@ exports.createWithAccount = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.syncFromOdoo = async (_req, res, next) => {
+  try {
+    const job = vendorsService.startOdooSync();
+    res.status(job.status === 'running' ? 202 : 200).json(job);
+  } catch (err) { next(err); }
+};
+
+exports.getOdooSyncStatus = async (_req, res, next) => {
+  try {
+    res.json(vendorsService.getOdooSyncStatus());
+  } catch (err) { next(err); }
+};
+
 exports.update = async (req, res, next) => {
   try {
     const item = await vendorsService.update(req.params.id, req.body);

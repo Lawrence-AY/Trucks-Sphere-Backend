@@ -1,6 +1,6 @@
 const { getAuth } = require('firebase-admin/auth');
 
-const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel'];
+const VALID_ROLES = ['management', 'operator_quarry', 'operator_site', 'vendor', 'operator_fuel', 'operator_warehouse'];
 
 // Mock users for development / Firebase-free mode
 const MOCK_USERS = {
@@ -9,6 +9,7 @@ const MOCK_USERS = {
   'site@truck.com': { displayName: 'Anna Site', role: 'operator_site', phone: '+254700100202' },
   'vendor@truck.com': { displayName: 'John Vendor', role: 'vendor', phone: '+254700100203' },
   'fuel@truck.com': { displayName: 'Mike Fuel', role: 'operator_fuel', phone: '+254700100204' },
+  'warehouse@truck.com': { displayName: 'Wanjiku Warehouse', role: 'operator_warehouse', phone: '+254700100205' },
 };
 
 class AuthService {

@@ -2,9 +2,88 @@ const { db } = require('../../../config/firebase');
 const { getAuth } = require('firebase-admin/auth');
 const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
+const { assertStrongPassword } = require('../../utils/passwordPolicy');
+const { fetchOdooVendors, odooPartnerToVendor } = require('../../integrations/odooVendorService');
 const collectionRef = db.collection('vendors');
 
 const COLLECTION_NAME = 'vendors';
+let odooSyncJob = { status: 'idle', result: null, startedAt: null, completedAt: null };
+
+function withoutUndefined(source) {
+  return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined));
+}
+
+function normalizedMatchKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function addUniqueIndex(index, key, value) {
+  if (!key) return;
+  index.set(key, index.has(key) ? null : value);
+}
+
+async function importOdooVendors(options = {}) {
+  const result = { total: 0, imported: 0, updatedFromOdoo: 0 };
+  const [odooPartners, vendorSnapshot] = await Promise.all([
+    fetchOdooVendors(options),
+    collectionRef.get(),
+  ]);
+  result.total = odooPartners.length;
+
+  const byOdooId = new Map();
+  const byKraPin = new Map();
+  const byCompanyName = new Map();
+  vendorSnapshot.docs.forEach((doc) => {
+    const vendor = doc.data();
+    if (Number.isInteger(vendor.odooPartnerId)) byOdooId.set(vendor.odooPartnerId, doc);
+    addUniqueIndex(byKraPin, normalizedMatchKey(vendor.kraPin), doc);
+    addUniqueIndex(byCompanyName, normalizedMatchKey(vendor.companyName || vendor.name), doc);
+  });
+
+  for (const partner of odooPartners) {
+    const mapped = withoutUndefined(odooPartnerToVendor(partner));
+    const matchingKraPin = normalizedMatchKey(mapped.kraPin);
+    const matchingCompanyName = normalizedMatchKey(mapped.companyName);
+    const existing = byOdooId.get(partner.id)
+      || (matchingKraPin && byKraPin.get(matchingKraPin))
+      || (matchingCompanyName && byCompanyName.get(matchingCompanyName));
+    const now = new Date().toISOString();
+
+    if (existing) {
+      await existing.ref.update({ ...mapped, updatedAt: now });
+      byOdooId.set(partner.id, existing);
+      result.updatedFromOdoo += 1;
+      continue;
+    }
+
+    const vendorId = await getNextId('vendor');
+    const item = {
+      ...mapped,
+      id: vendorId,
+      vendorId,
+      companyName: mapped.companyName || `Odoo Vendor ${partner.id}`,
+      contactPerson: mapped.contactPerson || mapped.companyName || `Odoo Vendor ${partner.id}`,
+      phone: mapped.phone || '',
+      status: mapped.status || 'active',
+      fleetSize: 0,
+      companyActCR12: '',
+      kraPin: mapped.kraPin || '',
+      businessPermit: '',
+      taxCompliance: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    const ref = collectionRef.doc(vendorId);
+    await ref.set(item);
+    const newDoc = { ref, data: () => item };
+    byOdooId.set(partner.id, newDoc);
+    addUniqueIndex(byKraPin, normalizedMatchKey(item.kraPin), newDoc);
+    addUniqueIndex(byCompanyName, normalizedMatchKey(item.companyName), newDoc);
+    result.imported += 1;
+  }
+
+  return result;
+}
 
 function splitName(value = '') {
   const parts = String(value).trim().split(/\s+/).filter(Boolean);
@@ -107,7 +186,7 @@ const vendorsService = {
     const email = String(account.email || vendor.email || '').trim().toLowerCase();
     const password = account.password;
     if (!email) throw Object.assign(new Error('Account email is required'), { statusCode: 400 });
-    if (!password || password.length < 6) throw Object.assign(new Error('Password must be at least 6 characters'), { statusCode: 400 });
+    assertStrongPassword(password);
     if (!vendor.companyName || !vendor.contactPerson || !vendor.phone) {
       throw Object.assign(new Error('Company name, contact person, and phone number are required'), { statusCode: 400 });
     }
@@ -196,6 +275,34 @@ const vendorsService = {
       console.error('vendorsService.delete error:', error);
       throw error;
     }
+  },
+
+  async importFromOdoo(options) {
+    return importOdooVendors(options);
+  },
+
+  startOdooSync() {
+    if (odooSyncJob.status === 'running') return odooSyncJob;
+
+    odooSyncJob = { status: 'running', result: null, startedAt: new Date().toISOString(), completedAt: null };
+    void vendorsService.importFromOdoo()
+      .then((result) => {
+        odooSyncJob = { status: 'completed', result, startedAt: odooSyncJob.startedAt, completedAt: new Date().toISOString() };
+      })
+      .catch((error) => {
+        console.error(`[Odoo] Vendor sync failed: ${error.message}`);
+        odooSyncJob = {
+          status: 'failed',
+          result: { code: error.code || 'ODOO_VENDOR_SYNC_FAILED' },
+          startedAt: odooSyncJob.startedAt,
+          completedAt: new Date().toISOString(),
+        };
+      });
+    return odooSyncJob;
+  },
+
+  getOdooSyncStatus() {
+    return odooSyncJob;
   },
 };
 

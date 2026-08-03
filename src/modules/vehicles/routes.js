@@ -15,6 +15,7 @@ router.use(requireRoles(
   'vendor',
   'operator_quarry',
   'operator_site',
+  'operator_warehouse',
 ));
 
 router.get('/', vehiclesController.findAll);

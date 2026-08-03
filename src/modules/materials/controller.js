@@ -30,6 +30,19 @@ exports.update = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.syncToOdoo = async (_req, res, next) => {
+  try {
+    const job = materialsService.startOdooSync();
+    res.status(job.status === 'running' ? 202 : 200).json(job);
+  } catch (err) { next(err); }
+};
+
+exports.getOdooSyncStatus = async (_req, res, next) => {
+  try {
+    res.json(materialsService.getOdooSyncStatus());
+  } catch (err) { next(err); }
+};
+
 exports.delete = async (req, res, next) => {
   try {
     await materialsService.delete(req.params.id);

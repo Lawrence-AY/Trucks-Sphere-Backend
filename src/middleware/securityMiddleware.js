@@ -12,7 +12,7 @@
 const rateLimitStore = new Map(); // key → { count, resetAt, blocked }
 
 // Clean up expired entries every 60 seconds
-setInterval(() => {
+const cleanupRateLimitStore = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of rateLimitStore) {
     if (entry.blocked && now > entry.blockedUntil) {
@@ -22,6 +22,7 @@ setInterval(() => {
     }
   }
 }, 60000);
+cleanupRateLimitStore.unref();
 
 /**
  * Rate Limiter Middleware Factory
@@ -71,6 +72,7 @@ function rateLimiter(options = {}) {
 
 const authRateLimiter = rateLimiter({ windowMs: 60000, max: 10, blockDurationMs: 900000 });
 const apiRateLimiter = rateLimiter({ windowMs: 60000, max: 200, blockDurationMs: 300000 });
+const passwordResetRateLimiter = rateLimiter({ windowMs: 15 * 60 * 1000, max: 5, blockDurationMs: 30 * 60 * 1000 });
 
 // ─── Input Sanitization ───
 
@@ -84,6 +86,41 @@ const INJECTION_PATTERNS = [
   /\bOR\b\s+['"]?\d+['"]?\s*=\s*['"]?\d+['"]?/i,
   /\/\*[\s\S]*?\*\/|\bUNION\b.*\bSELECT\b/i,
 ];
+
+// This API does not accept shell expressions. Reject command substitution,
+// shell chaining, and process-launch constructs before they reach any route.
+const COMMAND_INJECTION_PATTERNS = [
+  /(?:`[^`]*`|\$\([^)]*\))/,
+  /(?:^|[;&|])\s*(?:bash|sh|zsh|cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh|curl|wget|nc|ncat|netcat|python(?:3)?|node|perl|ruby)\b/i,
+  /(?:&&|\|\|)\s*\S+/,
+  /(?:^|[;&|])\s*(?:rm|del|rmdir|mkfs|shutdown|reboot)\b/i,
+];
+
+function findCommandInjection(value, fieldName = '') {
+  if (typeof value === 'string') {
+    return COMMAND_INJECTION_PATTERNS.some((pattern) => pattern.test(value)) ? fieldName || 'input' : null;
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const match = findCommandInjection(value[index], `${fieldName}[${index}]`);
+      if (match) return match;
+    }
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      const match = findCommandInjection(item, fieldName ? `${fieldName}.${key}` : key);
+      if (match) return match;
+    }
+  }
+  return null;
+}
+
+function commandInjectionFilter(req, res, next) {
+  const field = findCommandInjection(req.body, 'body') || findCommandInjection(req.query, 'query');
+  if (!field) return next();
+  console.warn(`[Security] Command injection pattern rejected in field "${field}"`);
+  return res.status(400).json({ error: 'Request contains unsupported command syntax.' });
+}
 
 function sanitizeValue(value, fieldName = '') {
   if (typeof value !== 'string') return value;
@@ -147,12 +184,57 @@ function requestSizeLimiter(maxSize = 10485760) {
   };
 }
 
+const SENSITIVE_FIELD_PATTERN = /(password|token|secret|authorization|cookie|api[_-]?key|credential|private[_-]?key|oobcode|code)$/i;
+
+function redactSensitiveData(value, key = '') {
+  if (SENSITIVE_FIELD_PATTERN.test(key)) return '[REDACTED]';
+  if (Array.isArray(value)) return value.map((item) => redactSensitiveData(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([entryKey, item]) => [entryKey, redactSensitiveData(item, entryKey)]));
+  }
+  return value;
+}
+
+function sanitizedRequestPath(req) {
+  const query = redactSensitiveData(req.query || {});
+  const entries = Object.entries(query);
+  if (!entries.length) return req.path;
+  const serialized = entries.map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join('&');
+  return `${req.path}?${serialized}`;
+}
+
+function requestLogger(req, res, next) {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    console.info('[HTTP]', {
+      method: req.method,
+      path: sanitizedRequestPath(req),
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      ip: req.ip,
+    });
+  });
+  next();
+}
+
+function enforceHttpsInProduction(req, res, next) {
+  if (process.env.NODE_ENV !== 'production') return next();
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (req.secure || forwardedProto === 'https') return next();
+
+  const host = String(req.get('host') || '');
+  if (!/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) {
+    return res.status(400).json({ error: 'Invalid host header.' });
+  }
+  return res.redirect(308, `https://${host}${req.originalUrl}`);
+}
+
 const helmetConfig = {
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'"], scriptSrc: ["'self'", "'unsafe-inline'"], styleSrc: ["'self'", "'unsafe-inline'"],
+      defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"], fontSrc: ["'self'"],
-      objectSrc: ["'none'"], mediaSrc: ["'self'"], frameSrc: ["'none'"],
+      objectSrc: ["'none'"], mediaSrc: ["'self'"], frameSrc: ["'none'"], baseUri: ["'self'"], formAction: ["'self'"],
     },
   },
   crossOriginEmbedderPolicy: false,
@@ -167,4 +249,19 @@ const helmetConfig = {
   xssFilter: true,
 };
 
-module.exports = { rateLimiter, authRateLimiter, apiRateLimiter, inputSanitizer, requestSizeLimiter, helmetConfig, sanitizeValue, sanitizeObject };
+module.exports = {
+  rateLimiter,
+  authRateLimiter,
+  apiRateLimiter,
+  passwordResetRateLimiter,
+  commandInjectionFilter,
+  inputSanitizer,
+  requestSizeLimiter,
+  requestLogger,
+  enforceHttpsInProduction,
+  helmetConfig,
+  sanitizeValue,
+  sanitizeObject,
+  redactSensitiveData,
+  findCommandInjection,
+};

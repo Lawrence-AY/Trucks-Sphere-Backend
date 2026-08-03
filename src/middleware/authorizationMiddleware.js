@@ -21,6 +21,8 @@ const LEGACY_ROLES = Object.freeze({
   'operator-quarry': 'operator_quarry',
   'operator-site': 'operator_site',
   'operator-fuel': 'operator_fuel',
+  warehouse_operator: 'operator_warehouse',
+  'operator-warehouse': 'operator_warehouse',
 });
 
 function normalizeRole(role) {

@@ -10,7 +10,6 @@ router.use(verifyToken);
 
 // Multer error handler — catches file size, type, and field-name errors
 // before they fall through to the generic 500 handler
-router.use(multerErrorHandler);
 
 // CRUD for uploads collection (legacy)
 router.get('/', controller.findAll);
@@ -22,6 +21,7 @@ router.delete('/:id', controller.delete);
 // File upload endpoints → Firebase Storage + Firestore photoURL
 router.post('/driver-photo/:driverId', uploadController.uploadDriverPhoto);
 router.post('/delivery-note/:deliveryOrderId', uploadController.uploadDeliveryNote);
+router.post('/warehouse-packaging/:warehouseJobId', uploadController.uploadWarehousePackagingPhoto);
 router.post('/receipt-note/:weighRecordId', uploadController.uploadReceiptNote);
 
 // Wildcard route for driver-photo-weigh-out to handle jobIds with slashes
@@ -30,5 +30,7 @@ router.post('/receipt-note/:weighRecordId', uploadController.uploadReceiptNote);
 // The 0-9 wildcard captures the remaining path as req.params[0].
 router.post('/driver-photo-weigh-out/(*)', uploadController.uploadDriverPhotoWeighOut);
 router.post('/fuel-pump-photo/(*)', uploadController.uploadFuelPumpPhoto);
+
+router.use(multerErrorHandler);
 
 module.exports = router;

@@ -10,9 +10,8 @@
 
 const crypto = require('crypto');
 
-// Key derivation from environment secret (PBKDF2 with salt)
-const SECRET = process.env.ENCRYPTION_SECRET || 'trucksphere-encryption-key-2026-secure-df8a3b2c';
-const SALT = process.env.ENCRYPTION_SALT || 'trucksphere-salt-9f2a7c1e';
+// Deployment-provided key material. There are intentionally no fallback
+// values: a predictable default can compromise every misconfigured instance.
 const KEY_LENGTH = 32; // AES-256
 const IV_LENGTH = 16;  // AES-GCM recommended
 const AUTH_TAG_LENGTH = 16; // 128-bit auth tag
@@ -21,9 +20,26 @@ const PBKDF2_ITERATIONS = 100000;
 // ─── Derive AES-256 key from secret using PBKDF2 ───
 let derivedKey = null;
 
+function getRequiredEnvironmentValue(name) {
+  const value = String(process.env[name] || '').trim();
+  if (!value) {
+    const error = new Error(`${name} must be configured before cryptographic operations can run.`);
+    error.code = 'SECURITY_CONFIGURATION_ERROR';
+    throw error;
+  }
+  return value;
+}
+
+function assertCryptoConfiguration() {
+  getRequiredEnvironmentValue('ENCRYPTION_SECRET');
+  getRequiredEnvironmentValue('ENCRYPTION_SALT');
+}
+
 function getDerivedKey() {
   if (derivedKey) return derivedKey;
-  derivedKey = crypto.pbkdf2Sync(SECRET, SALT, PBKDF2_ITERATIONS, KEY_LENGTH, 'sha256');
+  const secret = getRequiredEnvironmentValue('ENCRYPTION_SECRET');
+  const salt = getRequiredEnvironmentValue('ENCRYPTION_SALT');
+  derivedKey = crypto.pbkdf2Sync(secret, salt, PBKDF2_ITERATIONS, KEY_LENGTH, 'sha256');
   return derivedKey;
 }
 
@@ -119,7 +135,7 @@ function generateSecureToken(bytes = 32) {
  * @returns {string} Hex-encoded HMAC
  */
 function sign(data, secret) {
-  const key = secret || SECRET;
+  const key = secret || getRequiredEnvironmentValue('ENCRYPTION_SECRET');
   return crypto.createHmac('sha256', key).update(data, 'utf8').digest('hex');
 }
 
@@ -132,7 +148,9 @@ function sign(data, secret) {
  * @returns {boolean} True if valid
  */
 function verifySignature(data, signature, secret) {
-  return sign(data, secret) === signature;
+  const expected = Buffer.from(sign(data, secret), 'hex');
+  const received = Buffer.from(String(signature || ''), 'hex');
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
 /**
@@ -173,6 +191,7 @@ function verifyTimedToken(token) {
 }
 
 module.exports = {
+  assertCryptoConfiguration,
   encrypt,
   decrypt,
   encryptObject,

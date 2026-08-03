@@ -239,6 +239,14 @@ exports.update = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.syncOdooReceipt = async (req, res, next) => {
+  try {
+    const item = await delivery_ordersService.syncOdooReceipt(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json(item);
+  } catch (err) { next(err); }
+};
+
 exports.receiveLot = async (req, res, next) => {
   try {
     const { deliveryOrderId, storageLot } = req.body;

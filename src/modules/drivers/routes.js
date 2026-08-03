@@ -15,9 +15,12 @@ router.use(requireRoles(
   'vendor',
   'operator_quarry',
   'operator_site',
+  'operator_warehouse',
 ));
 
 router.get('/national-id/:nationalId', requireManagementAccess({ allowLite: true }), driversController.checkNationalId);
+router.post('/sync/odoo', requireManagementAccess({ write: true }), driversController.syncFromOdoo);
+router.get('/sync/odoo', requireManagementAccess({ allowLite: true }), driversController.getOdooSyncStatus);
 router.get('/', driversController.findAll);
 router.get('/:id', driversController.findById);
 router.post('/', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), driversController.create);

@@ -4,6 +4,7 @@ const createResourceController = require('../../utils/resourceControllerFactory'
 const createResourceService = require('../../utils/resourceServiceFactory');
 const { normalizeQuarryLocation } = require('../../utils/quarryLocations');
 const { MANAGEMENT_ROLES, normalizeRole } = require('../../middleware/authorizationMiddleware');
+const { assertStrongPassword } = require('../../utils/passwordPolicy');
 
 function isManagementEdit(req) {
   return normalizeRole(req.user?.role) === MANAGEMENT_ROLES.EDIT;
@@ -92,9 +93,7 @@ exports.update = async (req, res, next) => {
 exports.resetPassword = async (req, res, next) => {
   try {
     const { password } = req.body;
-    if (!password || password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
+    assertStrongPassword(password);
     const existing = await db.collection('users').doc(req.params.id).get();
     if (!existing.exists) return res.status(404).json({ error: 'Not found' });
     const current = existing.data();
@@ -103,6 +102,7 @@ exports.resetPassword = async (req, res, next) => {
     }
     const uid = current.uid || current.authUid || req.params.id;
     await getAuth().updateUser(uid, { password });
+    await getAuth().revokeRefreshTokens(uid);
     await existing.ref.update({
       passwordChangedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

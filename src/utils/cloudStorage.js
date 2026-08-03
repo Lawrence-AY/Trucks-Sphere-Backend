@@ -23,8 +23,8 @@ const bucket = admin.storage().bucket(process.env.STORAGE_BUCKET || 'trucksphere
  * @param {string}  [entityId]    - Optional entity ID to prefix the filename
  * @returns {Promise<{ url: string; path: string }>}
  */
-async function uploadFile(buffer, originalName, folder, entityId) {
-  const ext = path.extname(originalName).toLowerCase() || '.jpg';
+async function uploadFile(buffer, originalName, folder, entityId, mimetype) {
+  const ext = extensionForMimeType(mimetype) || path.extname(originalName).toLowerCase() || '.bin';
   const prefix = entityId ? `${entityId}-` : '';
   const baseName = `${prefix}${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
   const fileName = `${baseName}${ext}`;
@@ -69,6 +69,19 @@ function getContentType(ext) {
     '.pdf':  'application/pdf',
   };
   return types[ext] || 'application/octet-stream';
+}
+
+function extensionForMimeType(mimetype) {
+  const extensions = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/bmp': '.bmp',
+    'application/pdf': '.pdf',
+  };
+  return extensions[mimetype] || '';
 }
 
 module.exports = { uploadFile, deleteFile };

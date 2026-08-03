@@ -47,7 +47,8 @@ router.get('/job/*', delivery_ordersController.findByJobId);
 router.get('/po/*', delivery_ordersController.findByPurchaseOrderId);
 router.get('/:id', delivery_ordersController.findById);
 router.post('/', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.create);
-router.post('/receive-lot', requireManagementAccess({ write: true }), delivery_ordersController.receiveLot);
+router.post('/receive-lot', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.receiveLot);
+router.post('/:id/sync-odoo', requireManagementAccess({ write: true }), delivery_ordersController.syncOdooReceipt);
 router.put('/:id', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.update);
 router.delete('/:id', requireManagementAccess({ write: true }), delivery_ordersController.delete);
 

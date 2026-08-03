@@ -14,7 +14,8 @@
     "seed-compliance": "node scripts/seed-compliance.js",
     "seed-compliance:dry": "node scripts/seed-compliance.js --dry-run",
     "add-national-ids": "node scripts/add-national-id-to-drivers.js",
-    "add-national-ids:dry": "node scripts/add-national-id-to-drivers.js --dry-run"
+    "add-national-ids:dry": "node scripts/add-national-id-to-drivers.js --dry-run",
+    "test": "node --test"
   },
   "dependencies": {
     "axios": "^1.18.1",
