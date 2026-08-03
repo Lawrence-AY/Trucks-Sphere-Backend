@@ -33,7 +33,7 @@ function formatEAT(value) {
       hour12: false,
       timeZoneName: 'short',
     });
-  } catch {
+  } catch { 
     return '';
   }
 }
