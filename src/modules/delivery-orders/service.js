@@ -43,7 +43,20 @@ async function findActiveAssignmentConflict(data) {
   };
 
   const cachedConflict = snapshotStore.getAll(COLLECTION_NAME).find(isConflict);
-  if (cachedConflict) return cachedConflict;
+  if (cachedConflict) {
+    // Verify against Firestore in case the in-memory snapshot is stale
+    try {
+      const doc = await collectionRef.doc(cachedConflict.id).get();
+      if (doc.exists) {
+        const remote = { id: doc.id, ...doc.data() };
+        if (isConflict(remote) && isActiveJob(remote.status)) return cachedConflict;
+        // If remote is no longer an active conflict, fall through to full checks
+      }
+    } catch (err) {
+      // If verification fails, fall back to cached result to be safe
+      return cachedConflict;
+    }
+  }
 
   // The snapshot is normally current, but confirm against Firestore before a
   // safety-critical create in case the process has only just started.
@@ -113,6 +126,23 @@ function enrichWithPurchaseOrderContext(item) {
     siteId: item.siteId || po.siteId || '',
     siteName: item.siteName || po.siteName || '',
   };
+}
+
+/**
+ * Add the quarry location assigned to the operator who dispatched the load.
+ * Existing deliveries may predate the denormalized `quarryLocation` field, so
+ * resolve it from the cached users collection for the Site Schedule as well.
+ */
+function enrichWithQuarryOperatorLocation(item) {
+  if (!item || item.quarryLocation) return item;
+  const operatorId = item.quarryOperatorUid || item.weighOutByUid || item.createdByUid;
+  if (!operatorId) return item;
+  // Firebase Auth UIDs are normally the user document IDs, but legacy user
+  // documents can have a separate ID and retain the UID as a field.
+  const operator = snapshotStore.getById('users', operatorId)
+    || snapshotStore.getAll('users').find((user) => user.uid === operatorId);
+  if (!operator?.quarryLocation) return item;
+  return { ...item, quarryLocation: operator.quarryLocation };
 }
 
 /**
@@ -188,7 +218,9 @@ const delivery_ordersService = {
     });
 
     // Enrich with PO context from the snapshot cache (purchaseOrders rarely change)
-    results = results.map(enrichWithPurchaseOrderContext);
+    results = results
+      .map(enrichWithPurchaseOrderContext)
+      .map(enrichWithQuarryOperatorLocation);
 
     // Post-filter by status
     if (status) {
@@ -251,7 +283,7 @@ const delivery_ordersService = {
   findById(id) {
     const doc = snapshotStore.getById(COLLECTION_NAME, id);
     if (!doc) return null;
-    return enrichWithPurchaseOrderContext(doc);
+    return enrichWithQuarryOperatorLocation(enrichWithPurchaseOrderContext(doc));
   },
 
   /**
@@ -458,6 +490,44 @@ const delivery_ordersService = {
           }
         }
       }
+
+        // Release assigned driver/vehicle when a job moves into a terminal state
+        if (!wasCompleted && isNowCompleted) {
+          try {
+            const releaseDriverId = persisted.driverId || existing.driverId;
+            const releaseVehicleId = persisted.vehicleId || existing.vehicleId;
+            const now = new Date().toISOString();
+
+            if (releaseDriverId) {
+              try {
+                await db.collection('drivers').doc(String(releaseDriverId)).update({
+                  currentVehicleId: undefined,
+                  currentVehiclePlate: undefined,
+                  availability: true,
+                  updatedAt: now,
+                });
+                console.log(`[DeliveryOrder] Released driver ${releaseDriverId} from job ${id}`);
+              } catch (dErr) {
+                console.error(`[DeliveryOrder] Failed to release driver ${releaseDriverId}:`, dErr);
+              }
+            }
+
+            if (releaseVehicleId) {
+              try {
+                await db.collection('vehicles').doc(String(releaseVehicleId)).update({
+                  currentDriverId: undefined,
+                  currentDriverName: undefined,
+                  updatedAt: now,
+                });
+                console.log(`[DeliveryOrder] Released vehicle ${releaseVehicleId} from job ${id}`);
+              } catch (vErr) {
+                console.error(`[DeliveryOrder] Failed to release vehicle ${releaseVehicleId}:`, vErr);
+              }
+            }
+          } catch (err) {
+            console.error('[DeliveryOrder] Resource release failed:', err);
+          }
+        }
 
       let syncedBackorder = null;
       if (shouldSyncOdooReceipt) {

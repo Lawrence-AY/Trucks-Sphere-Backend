@@ -5,7 +5,7 @@
  * Used by vendor account users to download their own reports.
  */
 const snapshotStore = require('../../utils/snapshotStore');
-const { formatEAT, formatJobStatus, getInsuranceDetails, getReportMaterialSource } = require('./service');
+const { formatEAT, formatJobStatus, getInsuranceDetails, getQuarryLocation, getReportMaterialSource } = require('./service');
 
 function withinTimeframe(dateStr, options) {
   if (!dateStr) return false;
@@ -92,6 +92,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
   const vehicles = buildMap(snapshotStore.getAll('vehicles'));
   const pos = buildMap(snapshotStore.getAll('purchaseOrders'));
   const materials = buildMap(snapshotStore.getAll('materials'));
+  const users = buildMap(snapshotStore.getAll('users'));
   const allFuel = snapshotStore.getAll('fuelRecords');
 
   return deliveries.map((d) => {
@@ -100,6 +101,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
     const vehicle = vehicles[d.vehicleId] || {};
     const po = pos[d.purchaseOrderId] || {};
     const material = materials[d.materialId] || {};
+    const quarryLocation = getQuarryLocation(d, users);
     const vendorInsurance = getInsuranceDetails(vendor);
     const jobFuel = allFuel.filter((f) => f.jobId === d.jobId);
     const totalFuelLitres = jobFuel.reduce(
@@ -131,7 +133,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
       truckMake: vehicle.make || '',
       truckModel: vehicle.model || '',
       materialName: d.materialName || material.name || '',
-      materialSource: getReportMaterialSource(d),
+      materialSource: getReportMaterialSource(d, quarryLocation),
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       quantityDelivered: effectiveSiteNet > 0 ? effectiveSiteNet : Number(d.netWeight || d.quantityDelivered || 0),
       quarryInTime: formatEAT(d.weighInAt),

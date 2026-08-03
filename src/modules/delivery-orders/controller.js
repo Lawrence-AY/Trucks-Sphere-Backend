@@ -58,6 +58,12 @@ function withRoleDefaults(payload, user, userEntity, { isCreate = false } = {}) 
     nextPayload.siteId = userEntity.siteId;
   }
 
+  // Keep the assigned quarry location on the delivery so reports retain the
+  // source that applied when the quarry operator handled the job.
+  if (user?.role === 'operator_quarry' && userEntity?.quarryLocation) {
+    nextPayload.quarryLocation = userEntity.quarryLocation;
+  }
+
   if (isCreate && user?.role === 'vendor' && userEntity?.vendorId) {
     nextPayload.vendorId = userEntity.vendorId;
   }

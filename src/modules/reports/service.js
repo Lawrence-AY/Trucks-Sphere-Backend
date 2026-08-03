@@ -38,8 +38,16 @@ function formatEAT(value) {
   }
 }
 
+/** The quarry operator's assigned location is the reporting source of truth. */
+function getQuarryLocation(delivery, usersById = {}) {
+  const operatorId = delivery.quarryOperatorUid || delivery.weighOutByUid || delivery.createdByUid;
+  const operator = usersById[operatorId] || {};
+  return String(delivery.quarryLocation || operator.quarryLocation || '').trim();
+}
+
 /** Human-readable operational origin; never lead a report with raw GPS. */
-function getReportOrigin(delivery) {
+function getReportOrigin(delivery, quarryLocation = '') {
+  if (quarryLocation) return quarryLocation;
   const geo = delivery.weighOutGeoLocation || {};
   return delivery.quarryName || geo.town || geo.locality || geo.city || geo.address || delivery.weighOutLocation || 'Not captured';
 }
@@ -49,7 +57,8 @@ function getReportOrigin(delivery) {
  * quarry-created jobs use their captured quarry geolocation, while site-created
  * jobs retain the source selected when the job was created at site.
  */
-function getReportMaterialSource(delivery) {
+function getReportMaterialSource(delivery, quarryLocation = '') {
+  if (quarryLocation) return quarryLocation;
   const createdBy = String(delivery.createdBy || '').trim().toLowerCase();
   const wasCreatedAtSite = createdBy === 'operator_site' || createdBy === 'site_operator';
 
@@ -229,6 +238,7 @@ function buildMasterAudit(options = {}) {
   const vehicles = buildMap(snapshotStore.getAll('vehicles'));
   const pos = buildMap(snapshotStore.getAll('purchaseOrders'));
   const materials = buildMap(snapshotStore.getAll('materials'));
+  const users = buildMap(snapshotStore.getAll('users'));
   const allFuel = snapshotStore.getAll('fuelRecords');
 
   return deliveries.map((d) => {
@@ -237,6 +247,7 @@ function buildMasterAudit(options = {}) {
     const vehicle = vehicles[d.vehicleId] || {};
     const po = pos[d.purchaseOrderId] || {};
     const material = materials[d.materialId] || {};
+    const quarryLocation = getQuarryLocation(d, users);
     const vendorInsurance = getInsuranceDetails(vendor);
 
     // Fuel for this job
@@ -274,8 +285,8 @@ function buildMasterAudit(options = {}) {
       truckModel: vehicle.model || '',
       // Material
       materialName: d.materialName || material.name || '',
-      materialSource: getReportMaterialSource(d),
-      origin: getReportOrigin(d),
+      materialSource: getReportMaterialSource(d, quarryLocation),
+      origin: getReportOrigin(d, quarryLocation),
       // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       // Delivered Qty uses site net data only — no fallback to quarry netWeight.
@@ -546,6 +557,7 @@ module.exports = {
   formatEAT,
   formatJobStatus,
   getInsuranceDetails,
+  getQuarryLocation,
   getReportOrigin,
   getReportMaterialSource,
 };

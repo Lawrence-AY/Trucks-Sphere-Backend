@@ -16,8 +16,9 @@ test('crypto utilities require configured key material and round trip values', (
   assert.equal(cryptoUtils.decrypt(encrypted), 'refresh-token');
 });
 
-test('password policy requires a long mixed-character password', () => {
+test('password policy accepts a six-character mixed password', () => {
   assert.equal(assessPassword('Cedar!7MoonLake').valid, true);
+  assert.equal(assessPassword('Aa!7xy').valid, true);
   assert.equal(assessPassword('password123!').valid, false);
   assert.equal(assessPassword('Password123456').valid, false);
   assert.equal(assessPassword('Password123!').valid, false);
