@@ -1,11 +1,11 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
 const { JOB_STATUS } = require('../../utils/jobLifecycle');
-const { buildWarehouseJobId, buildWarehouseReference, normalizePomatReference } = require('./reference');
+const { buildWarehouseReference, normalizePomatReference } = require('./reference');
+const { generateJobIdForPO } = require('../../utils/jobIdService');
 
 const COLLECTION_NAME = 'warehouseJobs';
 const collectionRef = db.collection(COLLECTION_NAME);
-const counterCollection = db.collection('warehouseJobCounters');
 const deliveryOrdersCollection = db.collection('deliveryOrders');
 
 function normalizeId(value) {
@@ -85,12 +85,28 @@ const warehouseJobsService = {
   },
 
   async create(data = {}) {
-    const pomatReference = normalizePomatReference(data.pomatReference);
+    const purchaseOrder = data.purchaseOrderId
+      ? findEntity('purchaseOrders', data.purchaseOrderId, ['poNumber'])
+      : null;
+    if (!purchaseOrder) {
+      throw createValidationError('Choose a valid warehouse purchase order.');
+    }
+
+    const material = findEntity('materials', purchaseOrder.materialId);
+    if (!material?.isWarehouseMaterial) {
+      throw createValidationError('Choose a purchase order for a warehouse material.');
+    }
+
+    const materialNumber = String(
+      purchaseOrder.materialNumber || material.materialId || material.id || '',
+    ).match(/(\d+)/)?.[1];
+    const pomatReference = normalizePomatReference(purchaseOrder.poNumber) ||
+      (materialNumber ? `POMAT${materialNumber.padStart(3, '0')}` : '');
     if (!pomatReference) {
       throw createValidationError('Enter a valid POMAT reference, for example POMAT077.', 'WAREHOUSE_POMAT_REQUIRED');
     }
 
-    const vendor = findEntity('vendors', data.vendorId, ['vendorId']);
+    const vendor = findEntity('vendors', purchaseOrder?.vendorId || data.vendorId, ['vendorId']);
     if (!vendor) throw createValidationError('Select a valid vendor.');
 
     const driver = findEntity('drivers', data.driverId, ['driverId']);
@@ -104,21 +120,19 @@ const warehouseJobsService = {
     }
 
     const items = normalizeItems(data.items);
-    if (items.length !== 1) {
-      throw createValidationError('Submit one custom product per warehouse delivery.', 'WAREHOUSE_SINGLE_PRODUCT_REQUIRED');
-    }
+    // Warehouse dispatches do not require a manually selected delivery site.
+    // When a PO has one, retain it for downstream routing; otherwise the
+    // warehouse job remains available without being hidden from the operator.
+    const site = purchaseOrder?.siteId
+      ? findEntity('sites', purchaseOrder.siteId, ['siteId'])
+      : null;
 
-    const site = findEntity('sites', data.siteId, ['siteId']);
-    if (!site) throw createValidationError('Select the delivery site.');
-
+    // Share the same atomic per-PO J-number sequence as quarry and site jobs.
+    // This keeps every dispatch for one PO in one continuous J#### series.
     const warehouseReference = buildWarehouseReference(pomatReference, vendor, driver, vehicle);
-    const counterId = warehouseReference.replace(/\//g, '-');
-    const counterRef = counterCollection.doc(counterId);
+    const { jobId } = await generateJobIdForPO(purchaseOrder.id, warehouseReference);
 
     return db.runTransaction(async (transaction) => {
-      const counter = await transaction.get(counterRef);
-      const jobNumber = Number(counter.data()?.nextJobNumber || 0) + 1;
-      const jobId = buildWarehouseJobId(warehouseReference, jobNumber);
       const docRef = collectionRef.doc(jobId.replace(/\//g, '-'));
       const deliveryOrderRef = deliveryOrdersCollection.doc(jobId.replace(/\//g, '-'));
       const existing = await transaction.get(docRef);
@@ -138,14 +152,15 @@ const warehouseJobsService = {
         jobId,
         warehouseReference,
         pomatReference,
+        poNumber: purchaseOrder.poNumber || pomatReference,
         vendorId: vendor.id,
         vendorName: vendor.companyName || vendor.name || '',
         driverId: driver.id,
         driverName: driver.fullName || driver.name || '',
         vehicleId: vehicle.id,
         plateNumber: vehicle.registrationNumber || vehicle.plateNumber || '',
-        siteId: site.id,
-        siteName: site.name || site.location?.address || '',
+        siteId: site?.id || '',
+        siteName: site?.name || site?.location?.address || '',
         items,
         itemCount: items.length,
         status: 'SUBMITTED',
@@ -165,8 +180,8 @@ const warehouseJobsService = {
         deliveryOrigin: 'warehouse',
         warehouseReference,
         pomatReference,
-        purchaseOrderId: '',
-        poNumber: pomatReference,
+        purchaseOrderId: purchaseOrder?.id || '',
+        poNumber: purchaseOrder?.poNumber || pomatReference,
         vendorId: vendor.id,
         vendorName: item.vendorName,
         companyName: item.vendorName,
@@ -179,6 +194,7 @@ const warehouseJobsService = {
         quantityOrdered: product.quantity,
         quantityDelivered: 0,
         unit: product.unit,
+        additionalItems: items.slice(1),
         siteId: item.siteId,
         siteName: item.siteName,
         status: JOB_STATUS.DISPATCHED,
@@ -190,7 +206,6 @@ const warehouseJobsService = {
         updatedAt: now,
       };
 
-      transaction.set(counterRef, { nextJobNumber: jobNumber, updatedAt: now }, { merge: true });
       transaction.set(docRef, item);
       transaction.set(deliveryOrderRef, deliveryOrder);
       return item;

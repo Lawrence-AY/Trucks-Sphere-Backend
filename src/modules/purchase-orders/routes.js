@@ -6,9 +6,9 @@ const { MANAGEMENT_ROLES, requireManagementAccess, requireRoles } = require('../
 
 router.use(verifyToken);
 
-router.get('/', requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'vendor', 'operator_quarry', 'operator_site'), purchase_ordersController.findAll);
+router.get('/', requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'vendor', 'operator_quarry', 'operator_site', 'operator_warehouse'), purchase_ordersController.findAll);
 router.get('/preview-number', requireManagementAccess({ allowLite: true }), purchase_ordersController.previewNumber);
-router.get('/:id', requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'vendor', 'operator_quarry', 'operator_site'), purchase_ordersController.findById);
+router.get('/:id', requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'vendor', 'operator_quarry', 'operator_site', 'operator_warehouse'), purchase_ordersController.findById);
 // Management Lite can create new purchase orders, but cannot alter or delete
 // an order after it has been submitted.
 router.post('/', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true }), purchase_ordersController.create);

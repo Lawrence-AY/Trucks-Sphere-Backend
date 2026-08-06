@@ -17,6 +17,7 @@ router.use(requireRoles(
   'operator_quarry',
   'operator_site',
   'operator_fuel',
+  'operator_warehouse',
 ));
 
 router.get('/', materialsController.findAll);

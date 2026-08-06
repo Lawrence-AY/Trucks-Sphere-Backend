@@ -31,7 +31,7 @@ function canViewPurchaseOrder(item, user, entity) {
   // Purchase orders no longer carry a quarry or site assignment. Both
   // operational teams must be able to select any active PO when creating a
   // job card; job creation records the operator and operational context.
-  if (role === 'operator_quarry' || role === 'operator_site') return true;
+  if (role === 'operator_quarry' || role === 'operator_site' || role === 'operator_warehouse') return true;
   return false;
 }
 

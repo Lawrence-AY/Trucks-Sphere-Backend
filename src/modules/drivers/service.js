@@ -3,6 +3,7 @@ const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
 const vendorsService = require('../vendors/service');
 const { fetchOdooDrivers, odooDriverToDriver } = require('../../integrations/odooDriverService');
+const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('drivers');
 const nationalIdRef = db.collection('driverNationalIds');
 
@@ -301,6 +302,7 @@ const driversService = {
   },
 
   startOdooSync() {
+    if (!isOdooEnabled()) return { status: 'disabled', result: { code: 'ODOO_DISABLED' }, startedAt: null, completedAt: null };
     if (odooSyncJob.status === 'running') return odooSyncJob;
 
     odooSyncJob = { status: 'running', result: null, startedAt: new Date().toISOString(), completedAt: null };

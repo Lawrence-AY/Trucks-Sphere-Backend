@@ -6,6 +6,7 @@ const {
   fetchOdooPurchaseProducts,
   odooProductToMaterial,
 } = require('../../integrations/odooMaterialService');
+const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('materials');
 
 const COLLECTION_NAME = 'materials';
@@ -105,10 +106,7 @@ const materialsService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      // A material created in TruckSphere is also a purchase product in Odoo.
-      // The Odoo product is synchronized first, so a successful local create
-      // always has a corresponding Odoo product record.
-      Object.assign(item, await syncMaterial(item));
+      if (isOdooEnabled()) Object.assign(item, await syncMaterial(item));
       await docRef.set(item);
       return { id: materialId, ...item };
     } catch (error) {
@@ -125,7 +123,7 @@ const materialsService = {
       const material = { id, ...doc.data(), ...data };
       const updates = {
         ...data,
-        ...await syncMaterial(material),
+        ...(isOdooEnabled() ? await syncMaterial(material) : {}),
         updatedAt: new Date().toISOString(),
       };
       await docRef.update(updates);
@@ -147,6 +145,7 @@ const materialsService = {
 
   /** Synchronize the existing TruckSphere catalogue to Odoo sequentially. */
   async syncAllToOdoo() {
+    if (!isOdooEnabled()) return { total: 0, synced: 0, skipped: 0, imported: 0, updatedFromOdoo: 0, failed: 0, errors: [], disabled: true };
     const snapshot = await collectionRef.get();
     const result = { total: snapshot.size, synced: 0, skipped: 0, imported: 0, updatedFromOdoo: 0, failed: 0, errors: [] };
 
@@ -183,6 +182,7 @@ const materialsService = {
   },
 
   startOdooSync() {
+    if (!isOdooEnabled()) return { status: 'disabled', result: { code: 'ODOO_DISABLED' }, startedAt: null, completedAt: null };
     if (odooSyncJob.status === 'running') return odooSyncJob;
 
     odooSyncJob = { status: 'running', result: null, startedAt: new Date().toISOString(), completedAt: null };

@@ -7,7 +7,10 @@ function trailingNumber(value, prefix, fallback = '000') {
 
 function normalizePomatReference(value) {
   const raw = String(value || '').trim().toUpperCase();
-  const match = raw.match(/^(?:PO)?MAT?(\d+)$/) || raw.match(/^POMAT(\d+)$/);
+  // PO numbers may carry the vendor suffix (e.g. POMAT001/V001) or use
+  // separators from an imported system. Only the material number forms the
+  // POMAT portion of a job reference.
+  const match = raw.match(/(?:POMAT|POM|MAT|M)[\s/_-]*(\d+)/);
   if (!match) return '';
   return `POMAT${match[1].padStart(3, '0')}`;
 }

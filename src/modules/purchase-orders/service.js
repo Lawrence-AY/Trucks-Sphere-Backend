@@ -1,6 +1,7 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
 const { syncPurchaseOrder } = require('../../integrations/odooPurchaseService');
+const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('purchaseOrders');
 
 /**
@@ -57,6 +58,17 @@ const purchase_ordersService = {
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
+    // Surface the material's warehouse designation on every PO. Older POs
+    // predate this denormalized field, so resolve it from the material cache
+    // as well; warehouse clients can then list the correct orders reliably.
+    results = results.map((item) => {
+      const material = snapshotStore.getById('materials', item.materialId) ||
+        snapshotStore.getAll('materials').find((entry) =>
+          [entry.id, entry.materialId].filter(Boolean).some((id) => String(id).toLowerCase() === String(item.materialId || '').toLowerCase()),
+        );
+      return { ...item, isWarehouseMaterial: Boolean(item.isWarehouseMaterial || material?.isWarehouseMaterial) };
+    });
+
     results = [...results].sort((a, b) => {
       const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -99,13 +111,6 @@ const purchase_ordersService = {
     try {
       // Retired form fields are deliberately ignored for old clients.
       const { expectedCompletion, notes, ...payload } = data;
-      const quantity = Number(payload.quantity);
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        const error = new Error('Quantity must be a positive number.');
-        error.statusCode = 400;
-        throw error;
-      }
-
       const vendor = findReference('vendors', payload.vendorId);
       const material = findReference('materials', payload.materialId);
       const quarry = payload.quarryId ? findReference('quarries', payload.quarryId) : null;
@@ -113,6 +118,17 @@ const purchase_ordersService = {
       if (!vendor || !material || (payload.quarryId && !quarry) || (payload.siteId && !site)) {
         const missing = !vendor ? 'vendor' : !material ? 'material' : payload.quarryId && !quarry ? 'quarry/source' : 'delivery destination';
         const error = new Error(`A valid ${missing} is required.`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const hasQuantity = payload.quantity !== undefined && payload.quantity !== null && String(payload.quantity).trim() !== '';
+      const quantity = hasQuantity ? Number(payload.quantity) : 0;
+      if ((!material.isWarehouseMaterial && (!Number.isFinite(quantity) || quantity <= 0)) ||
+          (material.isWarehouseMaterial && hasQuantity && (!Number.isFinite(quantity) || quantity < 0))) {
+        const error = new Error(material.isWarehouseMaterial
+          ? 'Quantity must be zero or a positive number when supplied.'
+          : 'Quantity must be a positive number.');
         error.statusCode = 400;
         throw error;
       }
@@ -159,6 +175,7 @@ const purchase_ordersService = {
         materialId: material.id,
         materialNumber: displayNumber(material.id, 'MAT'),
         materialName: material.name || '',
+        isWarehouseMaterial: Boolean(material.isWarehouseMaterial),
         ...(quarry ? { quarryId: quarry.id, quarryName: quarry.name || quarry.location?.address || '' } : {}),
         ...(site ? { siteId: site.id, siteName: site.name || site.location?.address || '' } : {}),
         quantity,
@@ -167,11 +184,10 @@ const purchase_ordersService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      // Odoo is synchronized before the local record is committed. This keeps
-      // a successful TruckSphere creation coupled to a successful Odoo entry;
-      // the Odoo client reference makes a retry safe after an interrupted call.
-      const odooFields = await syncPurchaseOrder({ purchaseOrder: item, vendor, material });
-      Object.assign(item, odooFields);
+      if (isOdooEnabled()) {
+        const odooFields = await syncPurchaseOrder({ purchaseOrder: item, vendor, material });
+        Object.assign(item, odooFields);
+      }
       await docRef.set(item);
       return { id: docId, ...item };
     } catch (error) {

@@ -9,6 +9,7 @@ const snapshotStore = require('../../utils/snapshotStore');
 const { JOB_STATUS, normalizeJobStatus, isActiveJob } = require('../../utils/jobLifecycle');
 const { buildBackorder, planSiteNetBackorder } = require('./backorder');
 const { syncSiteReceipt } = require('../../integrations/odooReceiptService');
+const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('deliveryOrders');
 const purchaseOrdersCollection = db.collection('purchaseOrders');
 
@@ -393,7 +394,7 @@ const delivery_ordersService = {
         .includes(normalizeJobStatus(existing.status));
       const isNowCompleted = [JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED]
         .includes(normalizeJobStatus(updates.status, normalizeJobStatus(existing.status)));
-      const shouldSyncOdooReceipt = !wasCompletedAtStart && isNowCompleted;
+      const shouldSyncOdooReceipt = isOdooEnabled() && !wasCompletedAtStart && isNowCompleted;
       if (shouldSyncOdooReceipt) {
         // A site completion must never be rolled back merely because Odoo is
         // unavailable. Persist an observable status, then complete the Odoo
@@ -604,6 +605,12 @@ const delivery_ordersService = {
    * original completion. It never changes the local delivery/backorder data.
    */
   async syncOdooReceipt(id) {
+    if (!isOdooEnabled()) {
+      const error = new Error('Odoo integration is currently disabled.');
+      error.statusCode = 503;
+      error.code = 'ODOO_DISABLED';
+      throw error;
+    }
     const docRef = collectionRef.doc(id);
     const cached = snapshotStore.getById(COLLECTION_NAME, id);
     const snapshot = cached ? null : await docRef.get();

@@ -4,6 +4,7 @@ const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
 const { assertStrongPassword } = require('../../utils/passwordPolicy');
 const { fetchOdooVendors, odooPartnerToVendor } = require('../../integrations/odooVendorService');
+const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('vendors');
 
 const COLLECTION_NAME = 'vendors';
@@ -282,6 +283,7 @@ const vendorsService = {
   },
 
   startOdooSync() {
+    if (!isOdooEnabled()) return { status: 'disabled', result: { code: 'ODOO_DISABLED' }, startedAt: null, completedAt: null };
     if (odooSyncJob.status === 'running') return odooSyncJob;
 
     odooSyncJob = { status: 'running', result: null, startedAt: new Date().toISOString(), completedAt: null };
