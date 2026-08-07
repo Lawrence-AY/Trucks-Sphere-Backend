@@ -28,5 +28,6 @@ router.put('/role', verifyToken, authController.updateRole);
 
 // Change password (authenticated user)
 router.post('/change-password', verifyToken, authController.changePassword);
+router.post('/account-deletion', verifyToken, authController.requestAccountDeletion);
 
 module.exports = router;

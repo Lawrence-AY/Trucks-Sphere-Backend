@@ -1,5 +1,6 @@
 // middleware/auth.js
 const { auth, db } = require('../../config/firebase');
+const { cancelScheduledDeletion } = require('../modules/auth/accountDeletionService');
 
 const ENTITY_BY_ROLE = {
   vendor: ['vendorId', 'vendor'],
@@ -66,6 +67,11 @@ const authenticate = async (req, res, next) => {
   const idToken = authHeader.split('Bearer ')[1];
   try {
     const decodedToken = await auth.verifyIdToken(idToken);
+    if (!req.path.endsWith('/account-deletion')) {
+      cancelScheduledDeletion(decodedToken.uid).catch((error) => {
+        console.warn('[Account deletion] Could not cancel scheduled deletion:', error.message);
+      });
+    }
     const actor = await resolveActor(decodedToken);
     req.user = { ...decodedToken, ...actor }; // attach token claims plus trusted profile data
     attachActorToWrite(req, actor);

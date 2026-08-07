@@ -6,6 +6,7 @@ const refreshTokenService = require('./refreshTokenService');
 const { logAudit } = require('../../middleware/auditMiddleware');
 const { MANAGEMENT_ROLES, normalizeRole } = require('../../middleware/authorizationMiddleware');
 const { normalizeQuarryLocation } = require('../../utils/quarryLocations');
+const { scheduleAccountDeletion, cancelScheduledDeletion } = require('./accountDeletionService');
 
 const VALID_ROLES = [
   MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.EDIT, MANAGEMENT_ROLES.LITE,
@@ -210,6 +211,30 @@ exports.changePassword = async (req, res, next) => {
   } catch (err) {
     console.error('Change password error:', err);
     next(err);
+  }
+};
+
+/** Start or restart the 21-day account-deletion grace period for the caller. */
+exports.requestAccountDeletion = async (req, res, next) => {
+  try {
+    if (req.body?.confirm !== true) {
+      return res.status(400).json({ error: 'Account deletion must be explicitly confirmed.' });
+    }
+    const deletion = await scheduleAccountDeletion(req.user.uid);
+    logAudit({
+      action: 'user.account_deletion_requested',
+      entityType: 'user',
+      entityId: req.user.uid,
+      severity: 'warning',
+      metadata: { scheduledFor: deletion.scheduledFor },
+      req,
+    }).catch(() => {});
+    return res.json({
+      message: 'Your account is scheduled for deletion. Signing in again before the scheduled date will cancel this request.',
+      ...deletion,
+    });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -422,6 +447,7 @@ exports.login = async (req, res, next) => {
     }
 
     const userRecord = await getAuth().getUser(data.localId);
+    const deletionCancelled = await cancelScheduledDeletion(userRecord.uid);
     const role = userRecord.customClaims?.role || 'management';
 
     // Resolve vendorId / quarryId / siteId based on role + email
@@ -459,6 +485,9 @@ exports.login = async (req, res, next) => {
       metadata: { email: userRecord.email, role },
       req,
     }).catch(() => {});
+    if (deletionCancelled) {
+      logAudit({ action: 'user.account_deletion_cancelled', entityType: 'user', entityId: userRecord.uid, severity: 'info', metadata: { reason: 'login' }, req }).catch(() => {});
+    }
 
     res.json({
       user: {
