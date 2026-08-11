@@ -214,7 +214,12 @@ exports.changePassword = async (req, res, next) => {
   }
 };
 
-/** Start or restart the 21-day account-deletion grace period for the caller. */
+/**
+ * Start or restart the 21-day account-deletion recovery period for the caller.
+ * The due-job removes the Firebase identity and the user's Truck Sphere profile.
+ * Operational records are governed by the organisation's documented retention
+ * obligations and are not treated as an active account after profile deletion.
+ */
 exports.requestAccountDeletion = async (req, res, next) => {
   try {
     if (req.body?.confirm !== true) {
@@ -230,7 +235,7 @@ exports.requestAccountDeletion = async (req, res, next) => {
       req,
     }).catch(() => {});
     return res.json({
-      message: 'Your account is scheduled for deletion. Signing in again before the scheduled date will cancel this request.',
+      message: 'Your sign-in credentials and Truck Sphere profile are scheduled for deletion. Signing in again before the scheduled date will cancel this request. Operational records may be retained where required by contractual, tax, safety, or legal obligations.',
       ...deletion,
     });
   } catch (error) {

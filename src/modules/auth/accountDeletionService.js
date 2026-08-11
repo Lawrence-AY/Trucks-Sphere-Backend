@@ -32,7 +32,7 @@ async function cancelScheduledDeletion(uid) {
   return true;
 }
 
-/** Permanently remove account identity/profile after the 21-day grace period. */
+/** Permanently remove the Firebase identity and Truck Sphere user profile after the 21-day recovery period. */
 async function processDueAccountDeletions(now = new Date()) {
   const due = await db.collection('users').where('accountDeletionDueAt', '<=', now.toISOString()).get();
   let deleted = 0;

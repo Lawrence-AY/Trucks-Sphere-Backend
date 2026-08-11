@@ -47,6 +47,9 @@ function getQuarryLocation(delivery, usersById = {}) {
 
 /** Human-readable operational origin; never lead a report with raw GPS. */
 function getReportOrigin(delivery, quarryLocation = '') {
+  if (delivery.isWarehouseDelivery || String(delivery.deliveryOrigin || '').trim().toLowerCase() === 'warehouse') {
+    return 'Warehouse';
+  }
   if (quarryLocation) return quarryLocation;
   const geo = delivery.weighOutGeoLocation || {};
   return delivery.quarryName || geo.town || geo.locality || geo.city || geo.address || delivery.weighOutLocation || 'Not captured';
@@ -58,6 +61,9 @@ function getReportOrigin(delivery, quarryLocation = '') {
  * jobs retain the source selected when the job was created at site.
  */
 function getReportMaterialSource(delivery, quarryLocation = '') {
+  if (delivery.isWarehouseDelivery || String(delivery.deliveryOrigin || '').trim().toLowerCase() === 'warehouse') {
+    return 'Warehouse';
+  }
   if (quarryLocation) return quarryLocation;
   const createdBy = String(delivery.createdBy || '').trim().toLowerCase();
   const wasCreatedAtSite = createdBy === 'operator_site' || createdBy === 'site_operator';
@@ -83,6 +89,28 @@ function getReportMaterialSource(delivery, quarryLocation = '') {
   }
 
   return city || location || 'Not captured';
+}
+
+/** Keep every line of a warehouse shipment together in its report row. */
+function formatWarehouseItems(delivery) {
+  if (!delivery.isWarehouseDelivery && String(delivery.deliveryOrigin || '').trim().toLowerCase() !== 'warehouse') {
+    return '';
+  }
+
+  const primaryItem = delivery.materialName
+    ? [{ materialName: delivery.materialName, quantity: delivery.quantityOrdered, unit: delivery.unit }]
+    : [];
+  const items = [...primaryItem, ...(Array.isArray(delivery.additionalItems) ? delivery.additionalItems : [])];
+  return items
+    .map((item) => {
+      const name = String(item?.materialName || item?.productName || '').trim();
+      if (!name) return '';
+      const quantity = item?.quantity ?? '';
+      const unit = String(item?.unit || '').trim();
+      return `${name}${quantity !== '' ? ` (${quantity}${unit ? ` ${unit}` : ''})` : ''}`;
+    })
+    .filter(Boolean)
+    .join(' | ');
 }
 
 /** Turn internal lifecycle codes into clear, report-ready status text. */
@@ -287,6 +315,7 @@ function buildMasterAudit(options = {}) {
       materialName: d.materialName || material.name || '',
       materialSource: getReportMaterialSource(d, quarryLocation),
       origin: getReportOrigin(d, quarryLocation),
+      warehouseItems: formatWarehouseItems(d),
       // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       // Delivered Qty uses site net data only — no fallback to quarry netWeight.

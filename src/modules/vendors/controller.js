@@ -32,6 +32,16 @@ exports.create = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.findDocuments = async (req, res, next) => {
+  try {
+    const item = await vendorsService.findById(req.params.id);
+    if (!item || (vendorScope(req) && item.id !== vendorScope(req) && item.vendorId !== vendorScope(req))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    res.json(Array.isArray(item.documents) ? item.documents : []);
+  } catch (err) { next(err); }
+};
+
 exports.previewUsername = async (req, res, next) => {
   try {
     const username = await vendorsService.previewUsername(req.query.contactPerson || req.query.companyName);

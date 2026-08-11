@@ -12,6 +12,7 @@ router.post('/with-account', requireManagementAccess({ allowLite: true, write: t
 router.post('/sync/odoo', requireManagementAccess({ write: true }), vendorsController.syncFromOdoo);
 router.get('/sync/odoo', requireManagementAccess({ allowLite: true }), vendorsController.getOdooSyncStatus);
 router.get('/', vendorsController.findAll);
+router.get('/:id/documents', vendorsController.findDocuments);
 router.get('/:id', vendorsController.findById);
 router.post('/', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), vendorsController.create);
 router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), vendorsController.update);

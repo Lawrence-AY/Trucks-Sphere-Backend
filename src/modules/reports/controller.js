@@ -224,6 +224,38 @@ exports.exportCategoryCSV = async (req, res, next) => {
         rows = reportsService.buildMasterAudit(options).filter(r => r.siteInTimeEAT);
         filename = `SiteOps_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
+      case 'warehouse':
+        // Warehouse shipments do not pass through quarry operations. Export a
+        // focused record rather than the master-audit shape, which includes
+        // quarry, fuel, creation-location, and vendor-insurance fields that
+        // are not relevant to warehouse reporting.
+        rows = reportsService.buildMasterAudit(options)
+          .filter(r => r.origin === 'Warehouse')
+          .map((r) => ({
+            jobId: r.jobId,
+            poNumber: r.poNumber,
+            jobStatus: r.jobStatus,
+            vendorName: r.vendorName,
+            driverName: r.driverName,
+            driverLicense: r.driverLicense,
+            plateNumber: r.plateNumber,
+            truckMake: r.truckMake,
+            truckModel: r.truckModel,
+            materialName: r.materialName,
+            items: r.warehouseItems,
+            origin: r.origin,
+            quantityOrdered: r.quantityOrdered,
+            quantityDelivered: r.quantityDelivered,
+            siteInTimeEAT: r.siteInTimeEAT,
+            siteOutTimeEAT: r.siteOutTimeEAT,
+            siteWeighIn: r.siteWeighIn,
+            siteWeighOut: r.siteWeighOut,
+            siteNet: r.siteNet,
+            lotNumber: r.lotNumber,
+            grnNumber: r.grnNumber,
+          }));
+        filename = `Warehouse_${new Date().toISOString().slice(0, 10)}.csv`;
+        break;
       default:
         return res.status(400).json({ error: `Unknown category: ${category}` });
     }

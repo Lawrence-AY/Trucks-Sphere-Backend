@@ -178,6 +178,10 @@ const warehouseJobsService = {
         warehouseJobId: docRef.id,
         isWarehouseDelivery: true,
         deliveryOrigin: 'warehouse',
+        // Populate the shared source fields used by downstream job views and
+        // reports, which otherwise fall back to a quarry origin.
+        materialSource: 'Warehouse',
+        quarryName: 'Warehouse',
         warehouseReference,
         pomatReference,
         purchaseOrderId: purchaseOrder?.id || '',
