@@ -24,8 +24,8 @@ router.get('/', materialsController.findAll);
 router.post('/sync/odoo', requireManagementAccess({ write: true }), materialsController.syncToOdoo);
 router.get('/sync/odoo', requireManagementAccess({ allowLite: true }), materialsController.getOdooSyncStatus);
 router.get('/:id', materialsController.findById);
-router.post('/', requireManagementAccess({ write: true }), materialsController.create);
-router.put('/:id', requireManagementAccess({ write: true }), materialsController.update);
-router.delete('/:id', requireManagementAccess({ write: true }), materialsController.delete);
+router.post('/', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true, allowAdminWrite: true }), materialsController.create);
+router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true, allowAdminWrite: true }), materialsController.update);
+router.delete('/:id', requireManagementAccess({ write: true, allowAdminWrite: true }), materialsController.delete);
 
 module.exports = router;
