@@ -37,6 +37,8 @@ exports.exportExcel = async (req, res, next) => {
     // Build all report data
     const data = {
       masterAudit: reportsService.buildMasterAudit(options),
+      materialInspections: reportsService.buildMaterialInspectionReport(options),
+      flagged: reportsService.buildFlaggedReport(options),
       drivers: reportsService.buildDriverReport(),
       fuel: reportsService.buildFuelReport(options),
       trucks: reportsService.buildTruckReport(),
@@ -224,6 +226,10 @@ exports.exportCategoryCSV = async (req, res, next) => {
         rows = reportsService.buildMasterAudit(options).filter(r => r.siteInTimeEAT);
         filename = `SiteOps_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
+      case 'inspections':
+        rows = reportsService.buildMaterialInspectionReport(options);
+        filename = `Material_Inspections_${new Date().toISOString().slice(0, 10)}.csv`;
+        break;
       case 'warehouse':
         // Warehouse shipments do not pass through quarry operations. Export a
         // focused record rather than the master-audit shape, which includes
@@ -244,6 +250,7 @@ exports.exportCategoryCSV = async (req, res, next) => {
             materialName: r.materialName,
             items: r.warehouseItems,
             origin: r.origin,
+            banker: r.banker,
             quantityOrdered: r.quantityOrdered,
             quantityDelivered: r.quantityDelivered,
             siteInTimeEAT: r.siteInTimeEAT,

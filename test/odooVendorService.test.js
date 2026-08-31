@@ -33,3 +33,47 @@ test('Odoo vendor mapping marks archived Contacts inactive and uses mobile as a 
   assert.equal(vendor.status, 'inactive');
   assert.equal(vendor.email, undefined);
 });
+
+test('TruckSphere vendors map to Odoo supplier Contacts for Fleet and Purchase', () => {
+  const values = __testables.vendorToPartnerValues({
+    id: 'V001',
+    companyName: 'Atlas Hauliers Ltd',
+    phone: '+254700000000',
+    email: 'dispatch@atlas.example',
+    kraPin: 'P051234567A',
+    status: 'active',
+  });
+
+  assert.equal(values.ref, 'TruckSphere:vendor:V001');
+  assert.equal(values.is_company, true);
+  assert.equal(values.supplier_rank, 1);
+  assert.equal(values.active, true);
+  assert.equal(values.vat, 'P051234567A');
+});
+
+test('TruckSphere vendor contact people map to child Odoo Contacts', () => {
+  const values = __testables.contactToPartnerValues({
+    companyName: 'Atlas Hauliers Ltd',
+    contactPerson: 'Jane Wanjiku',
+    phone: '+254700000000',
+    email: 'jane@atlas.example',
+  }, 51);
+
+  assert.equal(values.name, 'Jane Wanjiku');
+  assert.equal(values.parent_id, 51);
+  assert.equal(values.type, 'contact');
+  assert.equal(values.email, 'jane@atlas.example');
+});
+
+test('Odoo supplier Contact people are imported into their TruckSphere vendor', () => {
+  const vendor = __testables.odooPartnerToVendor({
+    id: 31,
+    name: 'Atlas Hauliers Ltd',
+    trucksphereContact: { id: 41, name: 'Jane Wanjiku', email: 'jane@atlas.example', mobile: '+254711111111' },
+  });
+
+  assert.equal(vendor.contactPerson, 'Jane Wanjiku');
+  assert.equal(vendor.odooContactPartnerId, 41);
+  assert.equal(vendor.email, 'jane@atlas.example');
+  assert.equal(vendor.phone, '+254711111111');
+});

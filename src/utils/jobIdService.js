@@ -54,10 +54,13 @@ async function generateJobIdForPO(purchaseOrderId, jobKey) {
     // to ensure we never issue a duplicate number (handles counter resets / migrations)
     let maxExistingNumber = 0;
     try {
+      // No ordering is needed—we scan these records only to find the highest
+      // J number. Avoiding orderBy keeps this safety check on Firestore's
+      // single-field index and prevents job creation from needing a composite
+      // index before it can proceed.
       const existingSnapshot = await transaction.get(
         db.collection('deliveryOrders')
           .where('purchaseOrderId', '==', purchaseOrderId)
-          .orderBy('createdAt', 'desc')
           .limit(100)
       );
       existingSnapshot.forEach((existingDoc) => {

@@ -5,7 +5,7 @@
  * Used by vendor account users to download their own reports.
  */
 const snapshotStore = require('../../utils/snapshotStore');
-const { formatEAT, formatJobStatus, getInsuranceDetails, getQuarryLocation, getReportMaterialSource } = require('./service');
+const { formatEAT, formatJobStatus, getInsuranceDetails, getQuarryLocation, getReportMaterialSource, getReportBanker } = require('./service');
 
 function withinTimeframe(dateStr, options) {
   if (!dateStr) return false;
@@ -134,6 +134,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
       truckModel: vehicle.model || '',
       materialName: d.materialName || material.name || '',
       materialSource: getReportMaterialSource(d, quarryLocation),
+      banker: getReportBanker(d),
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
       quantityDelivered: effectiveSiteNet > 0 ? effectiveSiteNet : Number(d.netWeight || d.quantityDelivered || 0),
       quarryInTime: formatEAT(d.weighInAt),
@@ -236,7 +237,7 @@ function buildVendorPOReport(vendorId, options = {}) {
   const allDeliveries = snapshotStore.getAll('deliveryOrders');
   const periodDeliveries = getFilteredDeliveries(vendorId, options);
 
-  return poDocs.map((po) => {
+  return poDocs.flatMap((po) => {
     const allPoDeliveries = allDeliveries.filter((d) => d.purchaseOrderId === po.id);
     // Use site net weight as the delivered quantity (site data is the verified receiving weight).
     // Compute siteNet per delivery: siteWeighIn - siteWeighOut, falling back to stored siteNetWeight or netWeight.
@@ -248,24 +249,32 @@ function buildVendorPOReport(vendorId, options = {}) {
       },
       0,
     );
-    const targetQty = Number(po.quantity || 0);
-    const progress =
-      targetQty > 0 ? Math.min(100, Math.round((totalDeliveredQty / targetQty) * 100)) : 0;
-
     const periodPoDeliveries = periodDeliveries.filter((d) => d.purchaseOrderId === po.id);
-
-    return {
+    const lines = Array.isArray(po.materials) && po.materials.length
+      ? po.materials
+      : [{ materialId: po.materialId, materialName: po.materialName, quantity: po.quantity, unit: po.unit }];
+    return lines.map((line) => {
+      const lineDeliveries = allPoDeliveries.filter((delivery) => !line.materialId || delivery.materialId === line.materialId);
+      const deliveredQuantity = lineDeliveries.reduce((sum, delivery) => {
+        const siteNet = Number(delivery.siteWeighInWeight || 0) - Number(delivery.siteWeighOutWeight || 0);
+        return sum + (siteNet > 0 ? siteNet : Number(delivery.siteNetWeight || delivery.netWeight || 0));
+      }, 0);
+      const targetQty = Number(line.quantity || 0);
+      const progress = targetQty > 0 ? Math.min(100, Math.round((deliveredQuantity / targetQty) * 100)) : 0;
+      return {
       poNumber: po.poNumber || '',
       vendorName: po.vendorName || '',
-      materialName: po.materialName || '',
+      materialName: line.materialName || '',
+      materialId: line.materialId || '',
+      unit: line.unit || 'units',
       targetQuantity: targetQty,
-      deliveredQuantity: totalDeliveredQty,
-      remainingQuantity: Math.max(0, targetQty - totalDeliveredQty),
+      deliveredQuantity,
+      remainingQuantity: Math.max(0, targetQty - deliveredQuantity),
       progressPercent: progress,
       status: po.status || '',
-      deliveryCount: periodPoDeliveries.length,
       createdAt: formatEAT(po.createdAt),
-    };
+      };
+    });
   });
 }
 

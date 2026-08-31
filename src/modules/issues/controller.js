@@ -56,14 +56,13 @@ exports.findAll = async (req, res, next) => {
     );
 
     // Enrich with submitter names
+    // The snapshot is kept current by snapshotStore and avoids a full
+    // Firestore users collection scan on every Issues screen load.
     const userMap = {};
-    try {
-      const userSnap = await db.collection('users').get();
-      userSnap.forEach((doc) => {
-        const d = doc.data();
-        userMap[doc.id] = d.displayName || d.name || '';
-      });
-    } catch {}
+    snapshotStore.getAll('users').forEach((user) => {
+      userMap[user.id] = user.displayName || user.name || '';
+      if (user.uid) userMap[user.uid] = user.displayName || user.name || '';
+    });
 
     const enriched = issues.map((issue) => ({
       ...issue,

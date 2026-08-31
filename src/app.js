@@ -356,10 +356,13 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.message, err.stack);
   const statusCode = err.statusCode || 500;
   const rawCode = String(err.code || '').trim().toUpperCase();
   const code = /^[A-Z0-9_:-]+$/.test(rawCode) ? rawCode : `HTTP_${statusCode}`;
+  // Validation and identity mismatches are expected user-facing outcomes, not
+  // unhandled server faults. Keep stack traces for genuine server failures.
+  if (statusCode >= 500) console.error('Unhandled error:', err.message, err.stack);
+  else console.info('Request rejected:', code);
   res.status(statusCode).json({ code });
 });
 

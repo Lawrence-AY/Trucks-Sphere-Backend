@@ -23,6 +23,13 @@ const LEGACY_ROLES = Object.freeze({
   'operator-fuel': 'operator_fuel',
   warehouse_operator: 'operator_warehouse',
   'operator-warehouse': 'operator_warehouse',
+  // Inspector account labels used by earlier setup screens and imports.
+  material_inspector: 'inspector',
+  quality_inspector: 'inspector',
+  site_inspector: 'inspector',
+  'material-inspector': 'inspector',
+  'quality-inspector': 'inspector',
+  'site-inspector': 'inspector',
 });
 
 function normalizeRole(role) {

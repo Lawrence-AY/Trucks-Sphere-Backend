@@ -1,0 +1,35 @@
+[debug] [2026-08-25T08:35:59.614Z] ----------------------------------------------------------------------
+[debug] [2026-08-25T08:35:59.623Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\bin\firebase.js deploy trucksphere-demo
+[debug] [2026-08-25T08:35:59.624Z] CLI Version:   15.28.1
+[debug] [2026-08-25T08:35:59.624Z] Platform:      win32
+[debug] [2026-08-25T08:35:59.625Z] Node Version:  v24.15.0
+[debug] [2026-08-25T08:35:59.627Z] Detected Agent: codex_cli
+[debug] [2026-08-25T08:35:59.628Z] Time:          Tue Aug 25 2026 11:35:59 GMT+0300 (East Africa Time)
+[debug] [2026-08-25T08:35:59.629Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-08-25T08:35:59.688Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[error] 
+[error] Error: Too many arguments. Run firebase help deploy for usage instructions
+[debug] [2026-08-25T08:35:59.615Z] ----------------------------------------------------------------------
+[debug] [2026-08-25T08:35:59.624Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\bin\firebase.js deploy --only firestore:indexes --project trucksphere-demo
+[debug] [2026-08-25T08:35:59.625Z] CLI Version:   15.28.1
+[debug] [2026-08-25T08:35:59.626Z] Platform:      win32
+[debug] [2026-08-25T08:35:59.627Z] Node Version:  v24.15.0
+[debug] [2026-08-25T08:35:59.628Z] Detected Agent: codex_cli
+[debug] [2026-08-25T08:35:59.628Z] Time:          Tue Aug 25 2026 11:35:59 GMT+0300 (East Africa Time)
+[debug] [2026-08-25T08:35:59.630Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-08-25T08:35:59.688Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-08-25T08:37:44.113Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-08-25T08:37:44.308Z] Error: Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+    at GoogleAuth.getApplicationDefaultAsync (C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\google-auth-library\build\src\auth\googleauth.js:287:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async GoogleAuth._GoogleAuth_determineClient (C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\google-auth-library\build\src\auth\googleauth.js:834:32)
+    at async GoogleAuth.getClient (C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\google-auth-library\build\src\auth\googleauth.js:698:20)
+    at async GoogleAuth.getAccessToken (C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\google-auth-library\build\src\auth\googleauth.js:722:24)
+    at async autoAuth (C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\requireAuth.js:38:19)
+    at async requireAuth (C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\requireAuth.js:100:20)
+    at async requirePermissions (C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\requirePermissions.js:12:5)
+    at async C:\Users\Wallace Owili\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\command.js:278:17
+[error] 
+[error] Error: Failed to authenticate, have you run firebase login?

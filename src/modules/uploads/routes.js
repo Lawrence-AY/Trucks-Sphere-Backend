@@ -3,6 +3,7 @@ const router = express.Router();
 const controller = require('./controller');
 const uploadController = require('./uploadController');
 const { verifyToken } = require('../../middleware/authMiddleware');
+const { MANAGEMENT_ROLES, requireRoles } = require('../../middleware/authorizationMiddleware');
 const { multerErrorHandler } = require('./uploadMiddleware');
 
 // All upload routes require authentication
@@ -23,6 +24,9 @@ router.post('/driver-photo/:driverId', uploadController.uploadDriverPhoto);
 router.post('/delivery-note/:deliveryOrderId', uploadController.uploadDeliveryNote);
 router.post('/warehouse-packaging/:warehouseJobId', uploadController.uploadWarehousePackagingPhoto);
 router.post('/receipt-note/:weighRecordId', uploadController.uploadReceiptNote);
+router.post('/inspection-photo/:deliveryOrderId', requireRoles(
+  MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'inspector'
+), uploadController.uploadInspectionPhoto);
 
 // Wildcard route for driver-photo-weigh-out to handle jobIds with slashes
 // (e.g., POMAT006/V003/D033/T033/J0001). Express would normally split on /

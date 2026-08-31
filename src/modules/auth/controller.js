@@ -10,7 +10,7 @@ const { scheduleAccountDeletion, cancelScheduledDeletion } = require('./accountD
 
 const VALID_ROLES = [
   MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.EDIT, MANAGEMENT_ROLES.LITE,
-  'operator_quarry', 'operator_site', 'vendor', 'operator_fuel', 'operator_warehouse',
+  'operator_quarry', 'operator_site', 'vendor', 'operator_fuel', 'operator_warehouse', 'inspector',
   'quarry_operator', 'site_operator', 'fuel_operator', 'warehouse_operator', 'weighbridge_operator', 'viewer',
 ];
 

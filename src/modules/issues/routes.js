@@ -6,7 +6,7 @@ const { MANAGEMENT_ROLES, requireRoles } = require('../../middleware/authorizati
 
 // All routes require authentication
 router.use(verifyToken);
-router.use(requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, 'vendor', 'operator_quarry', 'operator_site', 'operator_fuel'));
+router.use(requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, 'vendor', 'operator_quarry', 'operator_site', 'operator_fuel', 'inspector'));
 
 router.get('/', controller.findAll);
 router.get('/:id', controller.findById);

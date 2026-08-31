@@ -235,28 +235,29 @@ async function confirmPurchaseOrder(id) {
  * Create the matching Odoo purchase order. Supplier and product references are
  * stable TruckSphere-owned keys, so retries reuse their prior Odoo records.
  */
-async function syncPurchaseOrder({ purchaseOrder, vendor, material }) {
+async function syncPurchaseOrder({ purchaseOrder, vendor, materials }) {
   const reference = purchaseOrderReference(purchaseOrder);
   let remoteOrder = await findExistingPurchaseOrder(reference);
 
   if (!remoteOrder?.id) {
-    const [partnerId, product] = await Promise.all([
-      findOrCreateSupplier(vendor),
-      findOrCreateProduct(material, purchaseOrder.unit),
-    ]);
-    const unitPrice = Number(material.unitPrice);
+    const partnerId = await findOrCreateSupplier(vendor);
+    const orderLines = await Promise.all((materials || []).map(async (line) => {
+      const material = line.material || line;
+      const product = await findOrCreateProduct(material, line.unit || purchaseOrder.unit);
+      const unitPrice = Number(material.unitPrice);
+      return [0, 0, {
+        product_id: product.id,
+        name: material.name || line.materialName || material.id,
+        product_qty: Number(line.quantity),
+        uom_id: product.uomId,
+        price_unit: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0,
+      }];
+    }));
     const orderId = await createOne('purchase.order', {
       partner_id: partnerId,
       partner_ref: reference,
       origin: purchaseOrder.poNumber,
-      order_line: [[0, 0, {
-        product_id: product.id,
-        name: material.name || purchaseOrder.materialName || material.id,
-        product_qty: Number(purchaseOrder.quantity),
-        // This Odoo instance exposes the purchase-line UoM as `uom_id`.
-        uom_id: product.uomId,
-        price_unit: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0,
-      }]],
+      order_line: orderLines,
     });
     remoteOrder = { id: orderId };
   }

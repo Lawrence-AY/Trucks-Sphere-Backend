@@ -107,6 +107,10 @@ function canAccessDelivery(item, user, userEntity) {
     return true;
   }
 
+  // Inspectors work at the receiving site before site weigh-out. They may
+  // read the site queue and save only the inspection fields (enforced below).
+  if (normalizedRole === 'inspector') return true;
+
   // A vendor can view its own delivery jobs regardless of which quarry or
   // site operator created or updated them.  This is deliberately based on
   // the authenticated profile, never a value supplied by the client.
@@ -238,6 +242,14 @@ exports.update = async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const entity = await getUserEntity(req.user);
     if (!canAccessDelivery(existing, req.user, entity)) return res.status(404).json({ error: 'Not found' });
+    if (normalizeRole(req.user?.role) === 'inspector') {
+      // The write middleware adds updatedBy for audit purposes before this
+      // controller runs, so allow that server-controlled companion field.
+      const permitted = new Set(['materialInspection', 'updatedBy']);
+      if (Object.keys(req.body || {}).some((key) => !permitted.has(key))) {
+        return res.status(403).json({ error: 'Inspectors can only submit material inspections.' });
+      }
+    }
     const payload = withRoleDefaults(req.body, req.user, entity);
     const item = await delivery_ordersService.update(req.params.id, payload);
     if (!item) return res.status(404).json({ error: 'Not found' });

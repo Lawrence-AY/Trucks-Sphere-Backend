@@ -9,7 +9,7 @@
  *   J   = Job               (J001, J002, ...)
  *   RN  = Receipt Note      (RN001, RN002, ...)
  *   DN  = Delivery Note     (DN001, DN002, ...)
- *   POMAT = Purchase Order  (POMAT001, POMAT002, ...)
+ *   PO    = Purchase Order  (PO0001, PO0002, ...)
  */
 const { db } = require('../../config/firebase');
 
@@ -24,14 +24,15 @@ const PREFIX_MAP = {
   job: 'J',
   receipt_note: 'RN',
   delivery_note: 'DN',
-  purchase_order: 'POMAT',
+  purchase_order: 'PO',
+  purchase_order_v2: 'PO',
   fuel: 'FUEL',
   material: 'MAT',
 };
 
 /**
  * Atomically increment and return the next ID for a given entity type.
- * Returns e.g. "V005", "D012", "J001", "POMAT003"
+ * Returns e.g. "V005", "D012", "J001", "PO0003"
  *
  * Auto-detects existing collection max IDs to prevent overwriting
  * seeded or manually-inserted documents.
@@ -53,6 +54,7 @@ async function getNextId(entityType) {
     receipt_note: 'receiptNotes',
     delivery_note: 'deliveryNotes',
     purchase_order: 'purchaseOrders',
+    purchase_order_v2: 'purchaseOrders',
     fuel: 'fuelRecords',
     material: 'materials',
   };
@@ -97,7 +99,7 @@ async function getNextId(entityType) {
     transaction.set(counterRef, { [fieldName]: nextNumber }, { merge: true });
   });
 
-  return `${prefix}${String(nextNumber).padStart(3, '0')}`;
+  return `${prefix}${String(nextNumber).padStart(entityType.startsWith('purchase_order') ? 4 : 3, '0')}`;
 }
 
 /**
@@ -117,7 +119,7 @@ async function peekNextId(entityType) {
     current = doc.data()[fieldName];
   }
   const next = current + 1;
-  return `${prefix}${String(next).padStart(3, '0')}`;
+  return `${prefix}${String(next).padStart(entityType.startsWith('purchase_order') ? 4 : 3, '0')}`;
 }
 
 async function resetAllCounters() {

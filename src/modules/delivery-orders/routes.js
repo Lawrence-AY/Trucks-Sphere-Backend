@@ -28,7 +28,7 @@ const DELIVERY_READ_ROLES = [
   MANAGEMENT_ROLES.ADMIN,
   MANAGEMENT_ROLES.ADMIN_LITE,
   'vendor',
-  'operator_quarry',
+  'operator_quarry', 'inspector',
   'operator_site',
 ];
 
@@ -36,7 +36,7 @@ const DELIVERY_WRITE_ROLES = [
   MANAGEMENT_ROLES.SUPER_ADMIN,
   MANAGEMENT_ROLES.ADMIN,
   MANAGEMENT_ROLES.ADMIN_LITE,
-  'operator_quarry',
+  'operator_quarry', 'inspector',
   'operator_site',
 ];
 

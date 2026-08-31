@@ -19,6 +19,13 @@ test('receipt lookup references prefer the Odoo PO number and do not duplicate v
   );
 });
 
+test('job receipts use the planned job quantity before a site weight is recorded', () => {
+  assert.equal(__testables.plannedQuantity({ quantityOrdered: 42 }, { quantity: 50 }), 42);
+  assert.equal(__testables.plannedQuantity({ quantity: 42 }, { quantity: 50 }), 42);
+  assert.equal(__testables.plannedQuantity({}, { quantity: 50 }), 50);
+  assert.equal(__testables.plannedQuantity({ quantity: 0 }, { quantity: 50 }), null);
+});
+
 test('the native Odoo backorder confirmation action is recognized', () => {
   assert.equal(__testables.isBackorderConfirmation({ res_model: 'stock.backorder.confirmation' }), true);
   assert.equal(__testables.isBackorderConfirmation({ res_model: 'stock.immediate.transfer' }), false);

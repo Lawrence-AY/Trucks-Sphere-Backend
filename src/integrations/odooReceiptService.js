@@ -70,14 +70,18 @@ async function callOdoo(model, method, body) {
   } catch (error) {
     const cause = error.code === 'ECONNABORTED' ? 'request timed out' : 'network request failed';
     console.error(`[Odoo] ${model}.${method} ${cause}`);
-    throw integrationError('Unable to synchronize the site receipt with Odoo.');
+    throw integrationError(
+      error.code === 'ECONNABORTED'
+        ? 'Odoo is taking longer than expected. TruckSphere saved this delivery; its Odoo confirmation is pending and can be retried safely.'
+        : 'TruckSphere saved this delivery, but it could not reach Odoo to confirm the receipt. Please retry the Odoo confirmation when the connection is available.',
+    );
   }
 
   if (response.status < 200 || response.status >= 300) {
     // Do not log response bodies or headers: they can contain supplier data
     // and the authorization key.
     console.error(`[Odoo] ${model}.${method} failed (${response.status}): ${responseErrorMessage(response)}`);
-    throw integrationError('Unable to synchronize the site receipt with Odoo.');
+    throw integrationError('TruckSphere saved this delivery, but Odoo could not confirm the receipt yet. Please retry the Odoo confirmation; no duplicate receipt will be created.');
   }
 
   return response.data;
@@ -131,6 +135,24 @@ const RECEIPT_FIELDS = [
 ];
 
 async function findOpenIncomingReceipt(purchaseOrder, deliveryOrder) {
+  const linkedReceiptId = Number(deliveryOrder?.odooReceiptId);
+  if (Number.isInteger(linkedReceiptId)) {
+    const linkedReceipt = await readOne('stock.picking', linkedReceiptId, RECEIPT_FIELDS);
+    if (linkedReceipt?.id && linkedReceipt.picking_type_code === 'incoming' && !['done', 'cancel'].includes(linkedReceipt.state)) {
+      return linkedReceipt;
+    }
+  }
+
+  const jobId = String(deliveryOrder?.jobId || '').trim();
+  if (jobId) {
+    const records = await searchRead('stock.picking', [
+      ['origin', '=', jobId],
+      ['picking_type_code', '=', 'incoming'],
+      ['state', 'not in', ['done', 'cancel']],
+    ], RECEIPT_FIELDS);
+    if (records.length) return records[0];
+  }
+
   const odooPurchaseOrderId = Number(purchaseOrder?.odooPurchaseOrderId);
   if (Number.isInteger(odooPurchaseOrderId)) {
     // Purchase Stock links an incoming picking to its purchase order. This is
@@ -163,6 +185,182 @@ async function findOpenIncomingReceipt(purchaseOrder, deliveryOrder) {
     409,
     'ODOO_RECEIPT_NOT_FOUND',
   );
+}
+
+function plannedQuantity(deliveryOrder = {}, purchaseOrder = {}) {
+  const quantity = Number(
+    deliveryOrder.quantityOrdered ??
+    deliveryOrder.quantity ??
+    purchaseOrder.quantity ??
+    0,
+  );
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : null;
+}
+
+function withoutUndefined(values) {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
+}
+
+function numberOrUndefined(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+async function findFleetTruckId(deliveryOrder = {}, vehicle = {}) {
+  const linkedId = Number(deliveryOrder.odooFleetVendorId || deliveryOrder.odooTruckId || vehicle.odooFleetVendorId || vehicle.odooTruckId);
+  if (Number.isInteger(linkedId)) return linkedId;
+  const registration = String(deliveryOrder.plateNumber || vehicle.registrationNumber || vehicle.plateNumber || '').trim();
+  if (!registration) return undefined;
+  const fields = ['id'];
+  const byRegistration = await searchRead('x_fleet_vendors', [['x_studio_registration_number', '=', registration]], fields);
+  if (byRegistration[0]?.id) return byRegistration[0].id;
+  const byFleetRegistration = await searchRead('x_fleet_vendors', [['x_name', '=', registration]], fields);
+  return byFleetRegistration[0]?.id;
+}
+
+async function ensureOdooDriverId(deliveryOrder = {}, driver = {}, vendorId) {
+  const linkedId = Number(driver.odooDriverId || deliveryOrder.odooDriverId);
+  if (Number.isInteger(linkedId)) return linkedId;
+
+  const nationalId = String(driver.nationalId || deliveryOrder.driverNationalId || '').trim();
+  const name = String(driver.fullName || driver.name || deliveryOrder.driverName || '').trim();
+  if (!nationalId && !name) return undefined;
+
+  const domain = nationalId
+    ? [['x_studio_national_id', '=', nationalId]]
+    : [['x_name', '=', name]];
+  const existing = await searchRead('x_authorized_driver', domain, ['id']);
+  if (existing[0]?.id) return existing[0].id;
+
+  // A job must not leave an otherwise valid receipt without its driver just
+  // because the driver was created first in TruckSphere. National ID is the
+  // stable de-duplication key shared by both systems.
+  return createOne('x_authorized_driver', withoutUndefined({
+    x_name: name || nationalId,
+    x_studio_national_id: nationalId || undefined,
+    x_studio_driving_licence: String(driver.licenseNumber || driver.license || '').trim() || undefined,
+    x_studio_vendor: Number.isInteger(vendorId) ? vendorId : undefined,
+  }));
+}
+
+async function ensureOdooTruckId(deliveryOrder = {}, vehicle = {}, vendorId) {
+  const foundId = await findFleetTruckId(deliveryOrder, vehicle);
+  if (Number.isInteger(foundId)) return foundId;
+
+  const registration = String(deliveryOrder.plateNumber || vehicle.registrationNumber || vehicle.plateNumber || '').trim();
+  if (!registration) return undefined;
+
+  // The Fleet Vendors model uses Fleet Registration as its required name;
+  // retain the actual plate in its dedicated registration-number field too.
+  return createOne('x_fleet_vendors', withoutUndefined({
+    x_name: registration,
+    x_studio_registration_number: registration,
+    x_studio_vendor: Number.isInteger(vendorId) ? vendorId : undefined,
+  }));
+}
+
+async function receiptContextValues({ deliveryOrder = {}, purchaseOrder = {}, vendor = {}, driver = {}, vehicle = {} }) {
+  const vendorId = Number(vendor.odooPartnerId || deliveryOrder.odooVendorPartnerId);
+  const purchaseOrderId = Number(purchaseOrder.odooPurchaseOrderId || deliveryOrder.odooPurchaseOrderId);
+  const [driverId, truckId] = await Promise.all([
+    ensureOdooDriverId(deliveryOrder, driver, vendorId),
+    ensureOdooTruckId(deliveryOrder, vehicle, vendorId),
+  ]);
+  const originWeight = numberOrUndefined(
+    deliveryOrder.originWeighbridgeReading ??
+    deliveryOrder.weighOutWeight ??
+    deliveryOrder.quarryWeighOutWeight ??
+    deliveryOrder.weighInWeight,
+  );
+  return withoutUndefined({
+    x_studio_purchase_order: Number.isInteger(purchaseOrderId) ? purchaseOrderId : undefined,
+    x_studio_vendor: Number.isInteger(vendorId) ? vendorId : undefined,
+    x_studio_driver: Number.isInteger(driverId) ? driverId : undefined,
+    x_studio_truck: truckId,
+    x_studio_origin_weighbridge_reading: originWeight,
+  });
+}
+
+async function findIncomingPickingType() {
+  const records = await searchRead(
+    'stock.picking.type',
+    [['code', '=', 'incoming'], ['active', '=', true]],
+    ['id', 'default_location_src_id', 'default_location_dest_id'],
+  );
+  const pickingType = records[0];
+  if (!pickingType?.id || !odooMany2oneId(pickingType.default_location_src_id) || !odooMany2oneId(pickingType.default_location_dest_id)) {
+    throw integrationError('Odoo does not have an active incoming receipt operation type.', 409, 'ODOO_RECEIPT_TYPE_NOT_FOUND');
+  }
+  return pickingType;
+}
+
+/**
+ * Create one incoming receipt per TruckSphere job. Purchase orders in this
+ * Odoo database do not automatically generate stock pickings, so relying on
+ * a PO-origin lookup leaves a completed site delivery with nothing to update.
+ */
+async function createJobReceipt({ deliveryOrder, purchaseOrder, material, vendor, driver, vehicle }) {
+  const jobId = String(deliveryOrder?.jobId || deliveryOrder?.id || '').trim();
+  const quantity = plannedQuantity(deliveryOrder, purchaseOrder);
+  if (!jobId || quantity === null) {
+    throw integrationError('A job ID and planned quantity are required to create the Odoo receipt.', 409, 'ODOO_JOB_RECEIPT_DATA_MISSING');
+  }
+
+  const existing = await searchRead('stock.picking', [
+    ['origin', '=', jobId],
+    ['picking_type_code', '=', 'incoming'],
+  ], RECEIPT_FIELDS);
+
+  const [pickingType, productId] = await Promise.all([
+    findIncomingPickingType(),
+    findProductVariantId(material, deliveryOrder),
+  ]);
+  if (!productId) {
+    throw integrationError('The job material is not linked to an Odoo product.', 409, 'ODOO_RECEIPT_PRODUCT_NOT_FOUND');
+  }
+  const product = await readOne('product.product', productId, ['id', 'uom_id']);
+  const uomId = odooMany2oneId(product?.uom_id);
+  if (!uomId) {
+    throw integrationError('The Odoo product has no usable unit of measure.', 409, 'ODOO_RECEIPT_UOM_NOT_FOUND');
+  }
+
+  const sourceLocationId = odooMany2oneId(pickingType.default_location_src_id);
+  const destinationLocationId = odooMany2oneId(pickingType.default_location_dest_id);
+  const contextValues = await receiptContextValues({ deliveryOrder, purchaseOrder, vendor, driver, vehicle });
+  const receiptId = existing[0]?.id || await createOne('stock.picking', {
+    picking_type_id: pickingType.id,
+    location_id: sourceLocationId,
+    location_dest_id: destinationLocationId,
+    origin: jobId,
+    ...contextValues,
+  });
+  if (existing[0]?.id && Object.keys(contextValues).length) await writeOne('stock.picking', receiptId, contextValues);
+  const moves = await searchRead('stock.move', [['picking_id', '=', receiptId]], ['id'], 2);
+  if (!moves.length) {
+    await createOne('stock.move', {
+      // Odoo 19 exposes the picking description field instead of the legacy
+      // stock.move.name field used by older Odoo releases.
+      description_picking: material?.name || deliveryOrder?.materialName || jobId,
+      reference: jobId,
+      picking_id: receiptId,
+      product_id: productId,
+      product_uom_qty: quantity,
+      uom_id: uomId,
+      location_id: sourceLocationId,
+      location_dest_id: destinationLocationId,
+    });
+    await callOdoo('stock.picking', 'action_confirm', { ids: [receiptId] });
+  }
+  const receipt = await readOne('stock.picking', receiptId, RECEIPT_FIELDS);
+  if (!receipt?.id) throw integrationError('Odoo did not return the job receipt after creation.');
+
+  return {
+    odooReceiptId: receipt.id,
+    odooReceiptNumber: receipt.name || '',
+    odooReceiptState: receipt.state || '',
+    odooReceiptSyncStatus: 'synced',
+    odooReceiptSyncedAt: new Date().toISOString(),
+  };
 }
 
 async function findProductVariantId(material = {}, deliveryOrder = {}) {
@@ -253,13 +451,29 @@ function withDeliveryNote(existingNote, deliveryOrder) {
  * receipt's actual quantity and validates it; Odoo then creates its native
  * stock.picking backorder, visible directly under Inventory > Receipts.
  */
-async function syncSiteReceipt({ deliveryOrder, purchaseOrder, material }) {
+async function syncSiteReceipt({ deliveryOrder, purchaseOrder, material, vendor, driver, vehicle }) {
   const quantity = deliveredQuantity(deliveryOrder);
   if (quantity === null) {
     throw integrationError('A positive delivered quantity is required to synchronize an Odoo receipt.', 409, 'ODOO_RECEIPT_QUANTITY_MISSING');
   }
 
-  const receipt = await findOpenIncomingReceipt(purchaseOrder, deliveryOrder);
+  let receipt;
+  try {
+    receipt = await findOpenIncomingReceipt(purchaseOrder, deliveryOrder);
+  } catch (error) {
+    // Jobs created before the job-receipt integration have no Odoo receipt.
+    // Create the same deterministic job receipt on retry, then continue with
+    // the normal site-weight posting flow.
+    if (error.code !== 'ODOO_RECEIPT_NOT_FOUND') throw error;
+    const createdReceipt = await createJobReceipt({ deliveryOrder, purchaseOrder, material, vendor, driver, vehicle });
+    receipt = await readOne('stock.picking', createdReceipt.odooReceiptId, RECEIPT_FIELDS);
+    if (!receipt?.id) throw integrationError('Odoo did not return the created job receipt.');
+  }
+  const contextValues = await receiptContextValues({ deliveryOrder, purchaseOrder, vendor, driver, vehicle });
+  if (Object.keys(contextValues).length) await writeOne('stock.picking', receipt.id, contextValues);
+  // An earlier failed job receipt may exist without a move. Re-run the
+  // idempotent setup before applying the final site quantity.
+  await createJobReceipt({ deliveryOrder, purchaseOrder, material, vendor, driver, vehicle });
   const move = await findReceiptMove(receipt.id, material, deliveryOrder);
   await writeOne('stock.move', move.id, { quantity });
 
@@ -304,12 +518,17 @@ async function syncSiteReceipt({ deliveryOrder, purchaseOrder, material }) {
 
 module.exports = {
   syncSiteReceipt,
+  createJobReceipt,
   __testables: {
     extractId,
     odooMany2oneId,
     deliveredQuantity,
+    plannedQuantity,
+    receiptContextValues,
     receiptReferences,
     isBackorderConfirmation,
     withDeliveryNote,
+    ensureOdooDriverId,
+    ensureOdooTruckId,
   },
 };

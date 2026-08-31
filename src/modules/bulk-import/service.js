@@ -3,6 +3,7 @@ const ExcelJS = require('exceljs');
 const driversService = require('../drivers/service');
 const vehiclesService = require('../vehicles/service');
 const vendorsService = require('../vendors/service');
+const { verifyDriverIdentity } = require('../../integrations/iprsService');
 
 const IMPORT_TYPES = new Set(['drivers', 'vehicles', 'vendors']);
 
@@ -173,9 +174,13 @@ function labelFor(type, item) {
 
 function buildDriver(row, vendors) {
   const vendor = resolveVendor(row, vendors);
+  const firstName = column(row, ['first_name', 'firstname']);
+  const surname = column(row, ['surname', 'last_name', 'lastname']);
   const driver = {
     vendorId: vendor?.id || '',
-    fullName: column(row, ['full_name', 'driver_name', 'name']),
+    firstName,
+    surname,
+    fullName: [firstName, surname].filter(Boolean).join(' '),
     phone: column(row, ['phone', 'phone_number', 'mobile']),
     email: column(row, ['email', 'email_address']) || undefined,
     nationalId: normaliseNationalId(column(row, ['national_id', 'nationalid', 'id_number', 'identity_number'])),
@@ -187,7 +192,8 @@ function buildDriver(row, vendors) {
   };
   const item = omitUndefinedFields(driver);
   if (!vendor) return { ...missing('VENDOR_NOT_FOUND'), item };
-  if (!driver.fullName) return { ...missing('MISSING_DRIVER_NAME'), item };
+  if (!driver.firstName) return { ...missing('MISSING_DRIVER_FIRST_NAME'), item };
+  if (!driver.surname) return { ...missing('MISSING_DRIVER_SURNAME'), item };
   if (!driver.phone) return { ...missing('MISSING_DRIVER_PHONE'), item };
   if (!driver.nationalId) return { ...missing('MISSING_NATIONAL_ID'), item };
   if (!driver.licenseNumber) return { ...missing('MISSING_LICENSE_NUMBER'), item };
@@ -290,7 +296,14 @@ function assertImportType(type) {
 }
 
 async function runCreate(type, item) {
-  if (type === 'drivers') return driversService.create(item);
+  if (type === 'drivers') {
+    await verifyDriverIdentity({
+      nationalId: item.nationalId,
+      firstName: item.firstName,
+      surname: item.surname,
+    });
+    return driversService.create(item);
+  }
   if (type === 'vehicles') return vehiclesService.create(item);
   return vendorsService.create(item);
 }

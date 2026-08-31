@@ -1,24 +1,47 @@
 /**
  * trucks-Sphere-Backend src/delivery-orders/service.js
  * **/
-const { db } = require('../../../config/firebase');
+const { db, admin } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
 const { generateJobIdForPO } = require('../../utils/jobIdService');
 const { generateTrackingId } = require('../../utils/trackingUtils');
 const snapshotStore = require('../../utils/snapshotStore');
 const { JOB_STATUS, normalizeJobStatus, isActiveJob } = require('../../utils/jobLifecycle');
-const { buildBackorder, planSiteNetBackorder } = require('./backorder');
-const { syncSiteReceipt } = require('../../integrations/odooReceiptService');
+const { buildBackorder, isBackorderCreationEnabled, planSiteNetBackorder } = require('./backorder');
+const { syncSiteReceipt, createJobReceipt } = require('../../integrations/odooReceiptService');
 const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('deliveryOrders');
 const purchaseOrdersCollection = db.collection('purchaseOrders');
 
 const COLLECTION_NAME = 'deliveryOrders';
 
+function linkedSnapshotRecord(collectionName, id) {
+  if (!id) return null;
+  return snapshotStore.getById(collectionName, id)
+    || snapshotStore.getAll(collectionName).find((item) =>
+      [item.id, item.vendorId, item.driverId, item.vehicleId]
+        .filter(Boolean)
+        .some((candidate) => String(candidate) === String(id)),
+    )
+    || null;
+}
+
 function normalizeMaterialSource(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+function normalizeBanker(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function isWarehouseDelivery(data = {}) {
+  return Boolean(data.isWarehouseDelivery)
+    || String(data.deliveryOrigin || '').trim().toLowerCase() === 'warehouse'
+    || String(data.materialSource || '').trim().toLowerCase() === 'warehouse';
 }
 
 function normalizeResourceId(value) {
@@ -156,6 +179,11 @@ async function applyUpdateWithBackorder(docRef, id, updates) {
   return db.runTransaction(async (transaction) => {
     const sourceSnapshot = await transaction.get(docRef);
     if (!sourceSnapshot.exists) return { backorder: null };
+
+    if (!isBackorderCreationEnabled()) {
+      transaction.update(docRef, updates);
+      return { backorder: null };
+    }
 
     const source = { id, ...sourceSnapshot.data() };
     if (source.backorderDeliveryOrderId) {
@@ -340,15 +368,49 @@ const delivery_ordersService = {
         id: docId,
         jobId,
         materialSource: normalizeMaterialSource(data.materialSource),
+        banker: isWarehouseDelivery(data) ? 'Warehouse-banker' : normalizeBanker(data.banker),
         quarryId: data.quarryId || purchaseOrderContext?.quarryId || '',
         quarryName: data.quarryName || purchaseOrderContext?.quarryName || '',
         siteId: data.siteId || purchaseOrderContext?.siteId || '',
         siteName: data.siteName || purchaseOrderContext?.siteName || '',
+        materials: Array.isArray(data.materials) && data.materials.length
+          ? data.materials
+          : (Array.isArray(purchaseOrderContext?.materials) && purchaseOrderContext.materials.length
+            ? purchaseOrderContext.materials
+            : [{ materialId: data.materialId, materialName: data.materialName, quantity: data.quantityOrdered, unit: data.unit }]),
         status: normalizeJobStatus(data.status, JOB_STATUS.CREATED),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
+      if (isOdooEnabled()) {
+        // The delivery exists once persisted. Odoo is intentionally handled
+        // in the background so a slow remote ERP can never make the mobile
+        // POST time out or encourage an operator to submit a duplicate job.
+        void (async () => {
+          const purchaseOrder = purchaseOrderContext || await db.collection('purchaseOrders').doc(String(item.purchaseOrderId || '')).get()
+            .then((doc) => doc.exists ? { id: doc.id, ...doc.data() } : null);
+          const material = snapshotStore.getById('materials', item.materialId)
+            || await db.collection('materials').doc(String(item.materialId || '')).get()
+              .then((doc) => doc.exists ? { id: doc.id, ...doc.data() } : null);
+          const vendor = linkedSnapshotRecord('vendors', item.vendorId);
+          const driver = linkedSnapshotRecord('drivers', item.driverId);
+          const vehicle = linkedSnapshotRecord('vehicles', item.vehicleId);
+          const odooFields = await createJobReceipt({
+            deliveryOrder: item,
+            purchaseOrder: purchaseOrder || {},
+            material: material || {},
+            vendor,
+            driver,
+            vehicle,
+          });
+          await docRef.update(odooFields);
+        })().catch(async (error) => {
+          const odooFailure = { odooReceiptSyncStatus: 'failed', odooReceiptLastAttemptAt: new Date().toISOString(), odooReceiptSyncError: error.code || 'ODOO_JOB_RECEIPT_SYNC_FAILED' };
+          await docRef.update(odooFailure).catch(() => {});
+          console.error(`[Odoo] Failed to create receipt for job ${jobId}: ${error.message}`);
+        });
+      }
       // Cache is updated via onSnapshot
       return { id: docId, ...item };
     } catch (error) {
@@ -385,9 +447,51 @@ const delivery_ordersService = {
   async _applyUpdate(docRef, id, existing, data) {
     try {
       const updates = { ...data, updatedAt: new Date().toISOString() };
+      // MIF identifiers are generated on the server so offline/retried mobile
+      // submissions cannot create duplicate inspection numbers.
+      if (data.materialInspection && typeof data.materialInspection === 'object') {
+        const inspection = { ...data.materialInspection };
+        if (!existing.materialInspection?.mrfNumber) {
+          const counterRef = db.collection('counters').doc('materialInspectionReceiptForm');
+          const sequence = await db.runTransaction(async (transaction) => {
+            const counter = await transaction.get(counterRef);
+            const next = Number(counter.data()?.value || 0) + 1;
+            transaction.set(counterRef, { value: next, updatedAt: new Date().toISOString() }, { merge: true });
+            return next;
+          });
+          // MIF is an extension of the delivery job identifier, with a
+          // globally incremental receipt suffix for clear audit tracing.
+          const jobReference = String(existing.jobId || id).replace(/-/g, '/');
+          inspection.mrfNumber = `${jobReference}/MIF${String(sequence).padStart(4, '0')}`;
+          inspection.inspectedAt = inspection.inspectedAt || new Date().toISOString();
+        } else {
+          inspection.mrfNumber = existing.materialInspection.mrfNumber;
+        }
+        updates.materialInspection = { ...existing.materialInspection, ...inspection };
+      }
       if (updates.status) updates.status = normalizeJobStatus(updates.status, normalizeJobStatus(existing.status));
       if (Object.prototype.hasOwnProperty.call(data, 'materialSource')) {
         updates.materialSource = normalizeMaterialSource(data.materialSource);
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'banker')) {
+        updates.banker = isWarehouseDelivery({ ...existing, ...updates })
+          ? 'Warehouse-banker'
+          : normalizeBanker(data.banker);
+      } else if (isWarehouseDelivery({ ...existing, ...updates })) {
+        updates.banker = 'Warehouse-banker';
+      }
+      // A security stop is intentionally enforced server-side. A client must
+      // never be able to move a flagged vehicle into the site weights queue
+      // until an administrator has cleared the flag and unsuspended it.
+      const isEnteringSiteWeighIn = Object.prototype.hasOwnProperty.call(data, 'siteWeighInWeight')
+        && data.siteWeighInWeight !== null
+        && data.siteWeighInWeight !== ''
+        && Number.isFinite(Number(data.siteWeighInWeight));
+      if (isEnteringSiteWeighIn && (existing.securityFlag?.status === 'flagged' || existing.isFlagged === true)) {
+        const error = new Error('This delivery has a security flag and cannot be weighed in until it is cleared and the fleet is unsuspended.');
+        error.statusCode = 409;
+        error.code = 'SECURITY_FLAG_UNRESOLVED';
+        throw error;
       }
       const enteredWeightsQueue = applySiteArrivalWorkflow(data, updates, existing);
       const wasCompletedAtStart = [JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED]
@@ -416,7 +520,9 @@ const delivery_ordersService = {
         payload: updates,
         enteredWeightsQueue,
       });
-      const backorderPlan = planSiteNetBackorder(existing, updates);
+      const backorderPlan = isBackorderCreationEnabled()
+        ? planSiteNetBackorder(existing, updates)
+        : null;
       const backorderResult = backorderPlan
         ? await applyUpdateWithBackorder(docRef, id, updates)
         : (await docRef.update(updates), { backorder: null });
@@ -502,8 +608,8 @@ const delivery_ordersService = {
             if (releaseDriverId) {
               try {
                 await db.collection('drivers').doc(String(releaseDriverId)).update({
-                  currentVehicleId: undefined,
-                  currentVehiclePlate: undefined,
+                  currentVehicleId: admin.firestore.FieldValue.delete(),
+                  currentVehiclePlate: admin.firestore.FieldValue.delete(),
                   availability: true,
                   updatedAt: now,
                 });
@@ -516,8 +622,8 @@ const delivery_ordersService = {
             if (releaseVehicleId) {
               try {
                 await db.collection('vehicles').doc(String(releaseVehicleId)).update({
-                  currentDriverId: undefined,
-                  currentDriverName: undefined,
+                  currentDriverId: admin.firestore.FieldValue.delete(),
+                  currentDriverName: admin.firestore.FieldValue.delete(),
                   updatedAt: now,
                 });
                 console.log(`[DeliveryOrder] Released vehicle ${releaseVehicleId} from job ${id}`);
@@ -544,6 +650,9 @@ const delivery_ordersService = {
             deliveryOrder: { id, ...persisted },
             purchaseOrder,
             material,
+            vendor: linkedSnapshotRecord('vendors', persisted.vendorId),
+            driver: linkedSnapshotRecord('drivers', persisted.driverId),
+            vehicle: linkedSnapshotRecord('vehicles', persisted.vehicleId),
           });
           await docRef.update(odooSync.source);
           Object.assign(persisted, odooSync.source);
@@ -642,6 +751,9 @@ const delivery_ordersService = {
         deliveryOrder: { id, ...existing, ...pending },
         purchaseOrder,
         material,
+        vendor: linkedSnapshotRecord('vendors', existing.vendorId),
+        driver: linkedSnapshotRecord('drivers', existing.driverId),
+        vehicle: linkedSnapshotRecord('vehicles', existing.vehicleId),
       });
       await docRef.update(odooSync.source);
 

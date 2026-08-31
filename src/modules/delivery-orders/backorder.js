@@ -5,6 +5,10 @@ const { isOdooEnabled } = require('../../integrations/odooConfig');
 const SHORTFALL_EPSILON = 0.001;
 const SITE_COMPLETION_STATUSES = new Set([JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED]);
 
+function isBackorderCreationEnabled() {
+  return String(process.env.BACKORDERS_ENABLED || '').trim().toLowerCase() === 'true';
+}
+
 function finiteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -122,6 +126,7 @@ function buildBackorder({ source, plan, id, now }) {
 
 module.exports = {
   SHORTFALL_EPSILON,
+  isBackorderCreationEnabled,
   planSiteNetBackorder,
   deriveBackorderJobKey,
   buildBackorder,

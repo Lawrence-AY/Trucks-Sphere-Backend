@@ -2,6 +2,7 @@ const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
 const { syncPurchaseOrder } = require('../../integrations/odooPurchaseService');
 const { isOdooEnabled } = require('../../integrations/odooConfig');
+const { getNextId, peekNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('purchaseOrders');
 
 /**
@@ -104,28 +105,54 @@ const purchase_ordersService = {
 
   /**
    * Create a Purchase Order.
-   * PO number format: POMAT###/V### = POMAT{MaterialNumber}/{VendorNumber}
-   * Example: POMAT001/V001 (material MAT001, vendor V001)
+   * PO number format: PO#####/V###. Example: PO0001/V002.
    */
   async create(data) {
     try {
       // Retired form fields are deliberately ignored for old clients.
       const { expectedCompletion, notes, ...payload } = data;
       const vendor = findReference('vendors', payload.vendorId);
-      const material = findReference('materials', payload.materialId);
+      const requestedLines = Array.isArray(payload.materials) && payload.materials.length
+        ? payload.materials
+        : [{ materialId: payload.materialId, quantity: payload.quantity, unit: payload.unit }];
+      const lines = requestedLines.map((line) => {
+        const material = findReference('materials', line.materialId);
+        const quantity = Number(line.quantity);
+        if (!material || !Number.isFinite(quantity) || quantity <= 0) return null;
+        return {
+          materialId: material.id,
+          materialNumber: displayNumber(material.materialId || material.id, 'MAT'),
+          materialName: material.name || '',
+          isWarehouseMaterial: Boolean(material.isWarehouseMaterial),
+          quantity,
+          unit: line.unit || material.defaultUnit || material.measurementType || 'units',
+          material,
+        };
+      });
+      const material = lines[0]?.material;
       const quarry = payload.quarryId ? findReference('quarries', payload.quarryId) : null;
       const site = payload.siteId ? findReference('sites', payload.siteId) : null;
-      if (!vendor || !material || (payload.quarryId && !quarry) || (payload.siteId && !site)) {
+      if (!vendor || !material || lines.some((line) => !line) || (payload.quarryId && !quarry) || (payload.siteId && !site)) {
         const missing = !vendor ? 'vendor' : !material ? 'material' : payload.quarryId && !quarry ? 'quarry/source' : 'delivery destination';
         const error = new Error(`A valid ${missing} is required.`);
         error.statusCode = 400;
         throw error;
       }
 
+      // A timed-out mobile request can still finish on the server. Reusing a
+      // client request ID makes a retry return that first PO instead of
+      // creating a second one.
+      if (payload.clientRequestId) {
+        const prior = await collectionRef.where('clientRequestId', '==', String(payload.clientRequestId)).limit(1).get();
+        if (!prior.empty) return { id: prior.docs[0].id, ...prior.docs[0].data() };
+      }
+
       const hasQuantity = payload.quantity !== undefined && payload.quantity !== null && String(payload.quantity).trim() !== '';
       const quantity = hasQuantity ? Number(payload.quantity) : 0;
-      if ((!material.isWarehouseMaterial && (!Number.isFinite(quantity) || quantity <= 0)) ||
-          (material.isWarehouseMaterial && hasQuantity && (!Number.isFinite(quantity) || quantity < 0))) {
+      if (!Array.isArray(payload.materials) && (
+        (!material.isWarehouseMaterial && (!Number.isFinite(quantity) || quantity <= 0)) ||
+        (material.isWarehouseMaterial && hasQuantity && (!Number.isFinite(quantity) || quantity < 0))
+      )) {
         const error = new Error(material.isWarehouseMaterial
           ? 'Quantity must be zero or a positive number when supplied.'
           : 'Quantity must be a positive number.');
@@ -141,10 +168,10 @@ const purchase_ordersService = {
       let vendorIdShort = '';
       vendorIdShort = normalizeVendorId(vendor.vendorId || vendor.id || payload.vendorId);
 
-      // Build PO number: POMAT###/V###
-      const poNumber = vendorIdShort
-        ? `${matNum.replace('MAT', 'POMAT')}/${vendorIdShort}`
-        : matNum.replace('MAT', 'POMAT');
+      // Build PO number: PO#####/V###.
+      // New PO numbering deliberately starts at PO0001, independently of
+      // the retired POMAT sequence.
+      const poNumber = `${await getNextId('purchase_order_v2')}/${vendorIdShort}`;
 
       const docId = poNumber.replace(/\//g, '-');
       const docRef = collectionRef.doc(docId);
@@ -178,17 +205,22 @@ const purchase_ordersService = {
         isWarehouseMaterial: Boolean(material.isWarehouseMaterial),
         ...(quarry ? { quarryId: quarry.id, quarryName: quarry.name || quarry.location?.address || '' } : {}),
         ...(site ? { siteId: site.id, siteName: site.name || site.location?.address || '' } : {}),
-        quantity,
-        unit: payload.unit || material.defaultUnit || material.measurementType || 'units',
+        quantity: lines[0].quantity,
+        unit: lines[0].unit,
+        materials: lines.map(({ material: _material, ...line }) => line),
         status: 'approved',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      if (isOdooEnabled()) {
-        const odooFields = await syncPurchaseOrder({ purchaseOrder: item, vendor, material });
-        Object.assign(item, odooFields);
-      }
       await docRef.set(item);
+      // Persist the TruckSphere PO before syncing Odoo. This keeps creation
+      // fast and protects it from mobile request timeouts. Odoo details are
+      // added when the background sync completes.
+      if (isOdooEnabled()) {
+        syncPurchaseOrder({ purchaseOrder: item, vendor, materials: lines })
+          .then((odooFields) => docRef.update({ ...odooFields, updatedAt: new Date().toISOString() }))
+          .catch((syncError) => console.error(`Purchase order ${poNumber} Odoo sync failed:`, syncError.message));
+      }
       return { id: docId, ...item };
     } catch (error) {
       console.error('purchase_ordersService.create error:', error);
@@ -219,20 +251,15 @@ const purchase_ordersService = {
   },
 
   /**
-   * Get the preview of the PO number based on vendor and material.
-   * Format: POMAT###/V### = POMAT{MaterialNumber}/{VendorNumber}
+   * Get the preview of the next PO number based on vendor.
+   * Format: PO#####/V###.
    */
   async previewNumber(vendorId, materialId) {
     try {
-      const materialIdNorm = normalizeMaterialId(materialId);
-      const matNum = materialIdNorm ? materialIdNorm : 'MAT000';
-
       const vendor = findReference('vendors', vendorId);
       const vendorShort = normalizeVendorId(vendor?.vendorId || vendor?.id || vendorId);
-
-      return vendorShort
-        ? `${matNum.replace('MAT', 'POMAT')}/${vendorShort}`
-        : matNum.replace('MAT', 'POMAT');
+      const sequence = await peekNextId('purchase_order_v2');
+      return vendorShort ? `${sequence}/${vendorShort}` : sequence;
     } catch (error) {
       console.error('purchase_ordersService.previewNumber error:', error);
       throw error;

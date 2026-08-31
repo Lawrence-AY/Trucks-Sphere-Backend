@@ -91,12 +91,12 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Vendor Insurance Company', 'Vendor Policy No', 'Vendor Insurance Start',
     'Vendor Insurance Commencing', 'Vendor Insurance Expiry', 'Vendor Insurance Supplier', 'Vendor Insurance Status',
     'Driver', 'License', 'Plate',
-    'Truck Make', 'Truck Model', 'Material', 'Warehouse Items', 'Origin', 'Material Source', 'Qty Ordered (T)',
+    'Truck Make', 'Truck Model', 'Material', 'Warehouse Items', 'Origin', 'Material Source', 'Banker', 'Qty Ordered (T)',
     'Qty Delivered (T)', 'Quarry In (EAT)', 'Quarry Out (EAT)', 'Quarry W.In (T)', 'Quarry W.Out (T)',
     'Quarry Net (T)', 'Site In (EAT)', 'Site Out (EAT)', 'Site W.In (T)',
     'Site W.Out (T)', 'Site Net (T)', 'Fuel (L)',
     'Fuel Attendant', 'Auth PIN', 'Lot/Storage #', 'GRN/Receipt #',
-    'Quarry Operator', 'Geolocation',
+    'Quarry Operator', 'Geolocation', 'MIF #', 'Inspector', 'Inspected At (EAT)', 'Material Inspection Details',
   ], data.masterAudit.map((r) => ({
     'Job ID': r.jobId,
     'PO Number': r.poNumber,
@@ -119,6 +119,7 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Warehouse Items': r.warehouseItems,
     'Origin': r.origin,
     'Material Source': r.materialSource,
+    'Banker': r.banker,
     'Qty Ordered (T)': r.quantityOrdered,
     'Qty Delivered (T)': r.quantityDelivered,
     'Quarry In (EAT)': r.quarryInTimeEAT || r.quarryInTime,
@@ -138,6 +139,10 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'GRN/Receipt #': r.grnNumber,
     'Quarry Operator': r.quarryOperator,
     'Geolocation': r.geolocation,
+    'MIF #': r.mrfNumber,
+    'Inspector': r.inspectorName,
+    'Inspected At (EAT)': r.inspectionAtEAT,
+    'Material Inspection Details': r.inspectionMaterialReceipts,
   })));
 
   // ─── Sheet 2: Drivers ───
@@ -164,14 +169,13 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 3: Materials ───
   addSheet(wb, `Materials${suffix}`, [
-    'Material Name', 'Category', 'Sizes/Grades', 'Unit', 'Total Delivered (T)', 'Delivery Count',
+    'Material Name', 'Category', 'Sizes/Grades', 'Unit', 'Total Delivered (T)',
   ], data.materials.map((r) => ({
     'Material Name': r.materialName,
     'Category': r.category,
     'Sizes/Grades': r.sizes,
     'Unit': r.unit,
     'Total Delivered (T)': r.totalDelivered,
-    'Delivery Count': r.deliveryCount,
   })));
 
   // ─── Sheet 4: Fuel ───
@@ -213,30 +217,68 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
   // ─── Sheet 6: Vendors ───
   addSheet(wb, `Vendors${suffix}`, [
     'Vendor Name', 'Active POs', 'Fulfilled POs', 'Total POs',
-    'Status',
+    'Insurance Company', 'Policy No', 'Insurance Start', 'Insurance Commencing', 'Insurance Expiry', 'Insurance Supplier', 'Insurance Status', 'Status',
   ], data.vendors.map((r) => ({
     'Vendor Name': r.vendorName,
     'Active POs': r.activePOs,
     'Fulfilled POs': r.fulfilledPOs,
     'Total POs': r.totalPOs,
+    'Insurance Company': r.insuranceCompany,
+    'Policy No': r.insuranceNumber,
+    'Insurance Start': r.insuranceStartDate,
+    'Insurance Commencing': r.insuranceCommencingDate,
+    'Insurance Expiry': r.insuranceExpiryDate,
+    'Insurance Supplier': r.insuranceSupplier,
+    'Insurance Status': r.insuranceStatus,
     'Status': r.status,
   })));
 
   // ─── Sheet 7: Purchase Orders ───
   addSheet(wb, `Purchase Orders${suffix}`, [
-    'PO Number', 'Vendor', 'Material', 'Target Qty (T)', 'Delivered Qty (T)',
-    'Remaining (T)', 'Progress %', 'Status', 'Delivery Count', 'Created At (EAT)',
+    'PO Number', 'Vendor', 'Material', 'Unit', 'Target Qty', 'Delivered Qty',
+    'Remaining', 'Progress %', 'Status', 'Created At (EAT)',
   ], data.purchaseOrders.map((r) => ({
     'PO Number': r.poNumber,
     'Vendor': r.vendorName,
     'Material': r.materialName,
-    'Target Qty (T)': r.targetQuantity,
-    'Delivered Qty (T)': r.deliveredQuantity,
-    'Remaining (T)': r.remainingQuantity,
+    'Unit': r.unit,
+    'Target Qty': r.targetQuantity,
+    'Delivered Qty': r.deliveredQuantity,
+    'Remaining': r.remainingQuantity,
     'Progress %': r.progressPercent,
     'Status': r.status,
-    'Delivery Count': r.deliveryCount,
     'Created At (EAT)': r.createdAt,
+  })));
+
+  // ─── Sheet 8: Material Inspection Forms ───
+  addSheet(wb, `Material Inspections${suffix}`, [
+    'MIF #', 'Job ID', 'PO Number', 'Material', 'PO Qty', 'Received Qty',
+    'Unit', 'Result', 'Failure Reason', 'Deficiency', 'Inspector',
+    'Inspected At (EAT)',
+  ], (data.materialInspections || []).map((r) => ({
+    'MIF #': r.mifNumber,
+    'Job ID': r.jobId,
+    'PO Number': r.poNumber,
+    'Material': r.materialName,
+    'PO Qty': r.orderedQuantity,
+    'Received Qty': r.receivedQuantity,
+    'Unit': r.unit,
+    'Result': r.result,
+    'Failure Reason': r.failureReason,
+    'Deficiency': r.deficiency,
+    'Inspector': r.inspectorName,
+    'Inspected At (EAT)': r.inspectedAtEAT,
+  })));
+
+  addSheet(wb, `Flagged${suffix}`, [
+    'Job ID', 'PO Number', 'Vendor', 'Driver', 'Plate', 'Source', 'Status',
+    'Reason', 'Flagged By', 'Flagged At (EAT)', 'Cleared By', 'Cleared At (EAT)', 'Clear Reason',
+  ], (data.flagged || []).map((r) => ({
+    'Job ID': r.jobId, 'PO Number': r.poNumber, 'Vendor': r.vendorName,
+    'Driver': r.driverName, 'Plate': r.plateNumber, 'Source': r.source,
+    'Status': r.status, 'Reason': r.reason, 'Flagged By': r.flaggedBy,
+    'Flagged At (EAT)': r.flaggedAtEAT, 'Cleared By': r.clearedBy,
+    'Cleared At (EAT)': r.clearedAtEAT, 'Clear Reason': r.resolutionReason,
   })));
 
   const buffer = await wb.xlsx.writeBuffer();

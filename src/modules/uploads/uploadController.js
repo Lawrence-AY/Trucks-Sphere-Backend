@@ -244,6 +244,32 @@ exports.uploadReceiptNote = [
   },
 ];
 
+/** Attach evidence to an MIF inspection and retain it against its material line. */
+exports.uploadInspectionPhoto = [
+  upload.single('file'),
+  validateUploadedFile,
+  async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No file provided' });
+      const ref = db.collection('deliveryOrders').doc(req.params.deliveryOrderId);
+      const doc = await ref.get();
+      if (!doc.exists) return res.status(404).json({ error: 'Delivery order not found' });
+      const { url } = await uploadFile(req.file.buffer, req.file.originalname, 'Material inspections', req.params.deliveryOrderId, req.file.mimetype);
+      const inspection = doc.data().materialInspection || {};
+      const photos = Array.isArray(inspection.photoURLs) ? inspection.photoURLs : [];
+      const materialId = String(req.query.materialId || '').trim();
+      const materialReceipts = Array.isArray(inspection.materialReceipts) ? inspection.materialReceipts : [];
+      const updatedReceipts = materialId ? materialReceipts.map((receipt) => (
+        String(receipt.materialId || '') === materialId
+          ? { ...receipt, photoURLs: [...(Array.isArray(receipt.photoURLs) ? receipt.photoURLs : []), url] }
+          : receipt
+      )) : materialReceipts;
+      await ref.update({ materialInspection: { ...inspection, photoURLs: [...photos, url], materialReceipts: updatedReceipts }, updatedAt: new Date().toISOString() });
+      res.json({ success: true, photoURL: url, deliveryOrderId: req.params.deliveryOrderId });
+    } catch (err) { next(err); }
+  },
+];
+
 /**
  * POST /api/uploads/driver-photo-weigh-out/(*)
  *

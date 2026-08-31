@@ -16,7 +16,7 @@ const COLLECTION_NAME = 'deliveryOrders';
  * Only returns the order if it is in an active (in-transit) state.
  *
  * Active states: dispatched, in_transit, en_route
- * Inactive states: assigned, arrived, weighed_in, delivered, completed, cancelled, awaiting_site_weights
+ * Inactive states: assigned, site weighed-in, delivered, completed, cancelled, awaiting_site_weights
  *
  * @param {string} trackingId - e.g., "SA-A1B3C5D"
  * @returns {object|null} The delivery order with tracking-relevant fields, or null
@@ -70,7 +70,21 @@ function sanitizeForPublic(order) {
     // Cargo
     materialName: order.materialName,
     materialId: order.materialId,
-    quantityOrdered: order.quantityOrdered,
+    // The PO can contain several materials. Quantities are intentionally not
+    // exposed here because the actual dispatched load may differ from the PO.
+    materials: (() => {
+      const po = snapshotStore.getById('purchaseOrders', order.purchaseOrderId);
+      const lines = Array.isArray(po?.materials) && po.materials.length
+        ? po.materials
+        : [{ materialId: order.materialId, materialName: order.materialName }];
+      return lines.map((line) => ({
+        materialId: line.materialId || '',
+        materialName: line.materialName || line.name || '',
+      })).filter((line) => line.materialName);
+    })(),
+    securityFlag: order.securityFlag?.status === 'flagged' ? {
+      status: 'flagged', reason: order.securityFlag.reason || '', flaggedAt: order.securityFlag.flaggedAt || '',
+    } : null,
     // Quarry dispatch proof
     quarryName: order.quarryName,
     quarryId: order.quarryId,

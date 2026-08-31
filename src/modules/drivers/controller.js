@@ -1,4 +1,5 @@
 const driversService = require('./service');
+const { verifyDriverIdentity } = require('../../integrations/iprsService');
 
 function scopedQuery(req) {
   return req.user?.role === 'vendor' ? { ...req.query, vendorId: req.user?.entityId || '__none__' } : req.query;
@@ -26,6 +27,11 @@ exports.findById = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
+    await verifyDriverIdentity({
+      nationalId: req.body.nationalId,
+      firstName: req.body.firstName,
+      surname: req.body.surname,
+    });
     const item = await driversService.create(req.body);
     res.status(201).json(item);
   } catch (err) { next(err); }
@@ -38,6 +44,13 @@ exports.checkNationalId = async (req, res, next) => {
       req.query.excludeId,
     );
     res.json({ available });
+  } catch (err) { next(err); }
+};
+
+exports.verifyIdentity = async (req, res, next) => {
+  try {
+    const result = await verifyDriverIdentity(req.body);
+    res.json(result);
   } catch (err) { next(err); }
 };
 

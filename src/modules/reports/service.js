@@ -91,6 +91,14 @@ function getReportMaterialSource(delivery, quarryLocation = '') {
   return city || location || 'Not captured';
 }
 
+function getReportBanker(delivery) {
+  if (delivery.isWarehouseDelivery || String(delivery.deliveryOrigin || '').trim().toLowerCase() === 'warehouse'
+    || String(delivery.materialSource || '').trim().toLowerCase() === 'warehouse') {
+    return 'Warehouse-banker';
+  }
+  return String(delivery.banker || '').trim() || 'Not captured';
+}
+
 /** Keep every line of a warehouse shipment together in its report row. */
 function formatWarehouseItems(delivery) {
   if (!delivery.isWarehouseDelivery && String(delivery.deliveryOrigin || '').trim().toLowerCase() !== 'warehouse') {
@@ -314,6 +322,7 @@ function buildMasterAudit(options = {}) {
       // Material
       materialName: d.materialName || material.name || '',
       materialSource: getReportMaterialSource(d, quarryLocation),
+      banker: getReportBanker(d),
       origin: getReportOrigin(d, quarryLocation),
       warehouseItems: formatWarehouseItems(d),
       // Quantities
@@ -344,6 +353,21 @@ function buildMasterAudit(options = {}) {
       // Lot & GRN
       lotNumber: d.storageLot || d.lotNumber || '',
       grnNumber: d.receiptNoteId || d.grnNumber || '',
+      // Material Inspection Form (MIF)
+      mrfNumber: d.materialInspection?.mrfNumber || '',
+      inspectionResult: d.materialInspection?.initialVisualInspection || '',
+      inspectionFailureReason: d.materialInspection?.failureReason || '',
+      inspectionDeficiency: d.materialInspection?.deficiency || '',
+      inspectorName: d.materialInspection?.inspectorName || '',
+      inspectionAtEAT: formatEAT(d.materialInspection?.inspectedAt),
+      inspectionMaterialReceipts: (d.materialInspection?.materialReceipts || [])
+        .map((line) => [
+          `${line.materialName || 'Material'}: ${line.receivedQuantity ?? ''} ${line.unit || ''}`.trim(),
+          line.initialVisualInspection || 'Pending',
+          line.failureReason ? `Reason: ${line.failureReason}` : '',
+          line.deficiency ? `Deficiency: ${line.deficiency}` : '',
+        ].filter(Boolean).join(' · '))
+        .join(' | '),
       // System accountability
       quarryOperator: d.weighOutByName || d.weighOutBy || '',
       creationLocation: d.weighInLocation || d.weighOutLocation || d.receivedLocation || '',
@@ -355,6 +379,42 @@ function buildMasterAudit(options = {}) {
 /**
  * ─── Driver Report ───
  */
+/** One row per inspected material for the workbook's dedicated MIF sheet. */
+function buildMaterialInspectionReport(options = {}) {
+  return getDeliveries(options).flatMap((delivery) => {
+    const inspection = delivery.materialInspection;
+    if (!inspection?.mrfNumber) return [];
+    const base = { mifNumber: inspection.mrfNumber, jobId: delivery.jobId || '', poNumber: delivery.poNumber || '', inspectorName: inspection.inspectorName || '', inspectedAtEAT: formatEAT(inspection.inspectedAt) };
+    const lines = Array.isArray(inspection.materialReceipts) && inspection.materialReceipts.length ? inspection.materialReceipts : [{ materialName: delivery.materialName || '', unit: delivery.unit || '', orderedQuantity: delivery.quantityOrdered, receivedQuantity: '', initialVisualInspection: inspection.initialVisualInspection || 'Pending', failureReason: inspection.failureReason || '', deficiency: inspection.deficiency || '' }];
+    return lines.map((line) => ({ ...base, materialName: line.materialName || 'Material', orderedQuantity: line.orderedQuantity ?? '', receivedQuantity: line.receivedQuantity ?? '', unit: line.unit || '', result: line.initialVisualInspection || 'Pending', failureReason: line.failureReason || '', deficiency: line.deficiency || '' }));
+  });
+}
+
+function buildFlaggedReport(options = {}) {
+  const vendors = buildMap(snapshotStore.getAll('vendors'));
+  return getDeliveries(options)
+    .filter((delivery) => delivery.securityFlag || delivery.siteArrivalWeightVarianceFlagged)
+    .map((delivery) => {
+      const securityFlag = delivery.securityFlag;
+      const weightFlag = delivery.siteArrivalWeightVarianceFlagged;
+      return {
+        jobId: delivery.jobId || delivery.id || '',
+        poNumber: delivery.poNumber || '',
+        vendorName: delivery.vendorName || vendors[delivery.vendorId]?.companyName || '',
+        driverName: delivery.driverName || '',
+        plateNumber: delivery.plateNumber || '',
+        source: securityFlag ? 'Security tracking' : 'Site weight variance',
+        status: securityFlag?.status || (weightFlag ? 'flagged' : ''),
+        reason: securityFlag?.reason || delivery.siteArrivalWeightFlagReason || delivery.flagReason || `Weight variance: ${delivery.siteArrivalWeightVariance ?? ''}T`,
+        flaggedBy: securityFlag?.flaggedBy || delivery.siteArrivalWeightCapturedByName || '',
+        flaggedAtEAT: formatEAT(securityFlag?.flaggedAt || delivery.siteArrivalWeightCapturedAt),
+        clearedBy: securityFlag?.clearedBy || '',
+        clearedAtEAT: formatEAT(securityFlag?.clearedAt),
+        resolutionReason: securityFlag?.resolutionReason || '',
+      };
+    });
+}
+
 function buildDriverReport() {
   const driverDocs = snapshotStore.getAll('drivers');
   const vendors = buildMap(snapshotStore.getAll('vendors'));
@@ -388,8 +448,8 @@ function buildMaterialReport() {
   const deliveries = snapshotStore.getAll('deliveryOrders');
 
   return matDocs.map((m) => {
-    const matDeliveries = deliveries.filter((d) => d.materialId === m.id);
-    const totalDelivered = matDeliveries.reduce((sum, d) => sum + (Number(d.netWeight) || Number(d.quantityDelivered) || 0), 0);
+    const matDeliveries = deliveries.filter((d) => d.materialId === m.id || (d.materialInspection?.materialReceipts || []).some((line) => String(line.materialId || '') === String(m.id)));
+    const totalDelivered = matDeliveries.reduce((sum, d) => sum + (d.materialInspection?.materialReceipts || []).filter((line) => String(line.materialId || '') === String(m.id)).reduce((lineSum, line) => lineSum + Math.max(0, Number(line.receivedQuantity) || 0), 0), 0);
 
     return {
       materialName: m.name || '',
@@ -397,7 +457,6 @@ function buildMaterialReport() {
       sizes: m.sizes || m.grade || '',
       unit: m.unit || 'Tonnes',
       totalDelivered,
-      deliveryCount: matDeliveries.length,
     };
   });
 }
@@ -459,6 +518,7 @@ function buildVendorReport(options = {}) {
   return vendorDocs.map((v) => {
     const vendorDeliveries = deliveries.filter((d) => d.vendorId === v.id);
     const vendorPOs = pos.filter((p) => p.vendorId === v.id);
+    const insurance = getInsuranceDetails(v);
 
     return {
       vendorName: v.companyName || '',
@@ -466,6 +526,13 @@ function buildVendorReport(options = {}) {
       fulfilledPOs: vendorPOs.filter((p) => p.status === 'completed' || p.status === 'delivered').length,
       totalPOs: vendorPOs.length,
       deliveryCount: vendorDeliveries.length,
+      insuranceCompany: insurance.insuranceCompany,
+      insuranceNumber: insurance.insuranceNumber,
+      insuranceStartDate: insurance.insuranceStartDate,
+      insuranceCommencingDate: insurance.insuranceCommencingDate,
+      insuranceExpiryDate: insurance.insuranceExpiryDate,
+      insuranceSupplier: insurance.insuranceSupplier,
+      insuranceStatus: insurance.insuranceStatus,
       status: v.status || '',
     };
   });
@@ -481,40 +548,38 @@ function buildPOReport(options = {}) {
   // Use time-filtered deliveries for preview/displays within the selected period
   const periodDeliveries = getDeliveries(options);
 
-  return poDocs.map((po) => {
+  return poDocs.flatMap((po) => {
     const allPoDeliveries = allDeliveries.filter((d) => d.purchaseOrderId === po.id);
     // Use site net weight as the delivered quantity (site data is the verified receiving weight).
     // Compute siteNet per delivery: siteWeighIn - siteWeighOut, falling back to stored siteNetWeight or netWeight.
     // Delivered Qty uses site net data (siteWeighIn - siteWeighOut) ONLY — no quarry fallback.
-    const totalDeliveredQty = allPoDeliveries.reduce(
-      (sum, d) => {
-        const siteNet = Number(d.siteWeighInWeight || 0) - Number(d.siteWeighOutWeight || 0);
-        return sum + (siteNet > 0 ? siteNet : 0);
-      },
-      0,
-    );
-    const targetQty = Number(po.quantity || 0);
-    const progress = targetQty > 0 ? Math.min(100, Math.round((totalDeliveredQty / targetQty) * 100)) : 0;
-
+    const totalDeliveredQty = allPoDeliveries.reduce((sum, d) => sum + (d.materialInspection?.materialReceipts || []).reduce((lineSum, line) => lineSum + Math.max(0, Number(line.receivedQuantity) || 0), 0), 0);
     const periodPoDeliveries = periodDeliveries.filter((d) => d.purchaseOrderId === po.id);
     // Period delivered qty also uses site net data ONLY — no quarry fallback.
-    const periodDeliveredQty = periodPoDeliveries.reduce((sum, d) => {
-      const siteNet = Number(d.siteWeighInWeight || 0) - Number(d.siteWeighOutWeight || 0);
-      return sum + (siteNet > 0 ? siteNet : 0);
-    }, 0);
+    const periodDeliveredQty = periodPoDeliveries.reduce((sum, d) => sum + (d.materialInspection?.materialReceipts || []).reduce((lineSum, line) => lineSum + Math.max(0, Number(line.receivedQuantity) || 0), 0), 0);
 
-    return {
+    const lines = Array.isArray(po.materials) && po.materials.length
+      ? po.materials
+      : [{ materialId: po.materialId, materialName: po.materialName, quantity: po.quantity, unit: po.unit }];
+    return lines.map((line) => {
+      const lineDeliveries = allPoDeliveries.filter((delivery) => !line.materialId || delivery.materialId === line.materialId || (delivery.materialInspection?.materialReceipts || []).some((receipt) => String(receipt.materialId || '') === String(line.materialId || '')));
+      const deliveredQuantity = lineDeliveries.reduce((sum, delivery) => sum + (delivery.materialInspection?.materialReceipts || []).filter((receipt) => String(receipt.materialId || '') === String(line.materialId || '')).reduce((receiptSum, receipt) => receiptSum + Math.max(0, Number(receipt.receivedQuantity) || 0), 0), 0);
+      const targetQty = Number(line.quantity || 0);
+      const progress = targetQty > 0 ? Math.min(100, Math.round((deliveredQuantity / targetQty) * 100)) : 0;
+      return {
       poNumber: po.poNumber || '',
       vendorName: po.vendorName || '',
-      materialName: po.materialName || '',
+      materialName: line.materialName || '',
+      materialId: line.materialId || '',
+      unit: line.unit || 'units',
       targetQuantity: targetQty,
-      deliveredQuantity: totalDeliveredQty,
-      remainingQuantity: Math.max(0, targetQty - totalDeliveredQty),
+      deliveredQuantity,
+      remainingQuantity: Math.max(0, targetQty - deliveredQuantity),
       progressPercent: progress,
       status: po.status || '',
-      deliveryCount: periodPoDeliveries.length,
       createdAt: formatEAT(po.createdAt),
-    };
+      };
+    });
   });
 }
 
@@ -575,6 +640,8 @@ function buildSummary(options = {}) {
 
 module.exports = {
   buildMasterAudit,
+  buildMaterialInspectionReport,
+  buildFlaggedReport,
   buildDriverReport,
   buildMaterialReport,
   buildFuelReport,
@@ -589,4 +656,5 @@ module.exports = {
   getQuarryLocation,
   getReportOrigin,
   getReportMaterialSource,
+  getReportBanker,
 };
