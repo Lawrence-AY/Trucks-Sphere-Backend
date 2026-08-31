@@ -25,13 +25,15 @@ async function notifyFlagStakeholders(order, flag, resolved = false) {
   const reason = resolved ? flag.resolutionReason : flag.reason;
   await Promise.all([...new Set(userIds)].map((userId) => db.collection('notifications').add({
     userId, read: false, createdAt: now(),
-    title: resolved ? 'Fleet flag cleared' : 'Security flag raised',
-    message: `${order.driverName || 'Driver'} and ${order.plateNumber || 'truck'} were ${action}${reason ? `: ${reason}` : '.'}`,
+    title: resolved ? 'Driver and truck unsuspended' : 'Security flag raised',
+    message: resolved
+      ? `${order.driverName || 'Driver'} and ${order.plateNumber || 'truck'} have been unsuspended${reason ? `: ${reason}` : '.'}`
+      : `${order.driverName || 'Driver'} and ${order.plateNumber || 'truck'} were ${action}${reason ? `: ${reason}` : '.'}`,
     type: resolved ? 'security_flag_cleared' : 'security_flagged', jobId: order.id,
     vendorId: order.vendorId || '', driverId: order.driverId || '', vehicleId: order.vehicleId || '', flag,
   })));
 
-  if (!resolved && isSmsConfigured()) {
+  if (isSmsConfigured()) {
     const vendor = order.vendorId ? await db.collection('vendors').doc(order.vendorId).get() : null;
     const phones = users.docs
       .filter((doc) => {
@@ -43,10 +45,12 @@ async function notifyFlagStakeholders(order, flag, resolved = false) {
         return user.phone || user.phoneNumber || user.mobile || '';
       });
     if (vendor?.exists) phones.push(vendor.data().phone || vendor.data().mobile || '');
-    const message = `TruckSphere ALERT: Driver ${order.driverName || 'Unknown'} / truck ${order.plateNumber || 'Unknown'} has been flagged. Reason: ${flag.reason || 'Security review required.'}`;
+    const message = resolved
+      ? `TruckSphere UPDATE: Driver ${order.driverName || 'Unknown'} / truck ${order.plateNumber || 'Unknown'} have been unsuspended. Reason: ${flag.resolutionReason || 'Security flag cleared.'}`
+      : `TruckSphere ALERT: Driver ${order.driverName || 'Unknown'} / truck ${order.plateNumber || 'Unknown'} has been flagged. Reason: ${flag.reason || 'Security review required.'}`;
     // SMS delivery must never delay or undo the security flag transaction.
     void Promise.all([...new Set(phones.filter(Boolean))].map((phone) => sendSMS(phone, message))).catch((error) => {
-      console.error('[Tracking] Flag SMS dispatch failed:', error.message);
+      console.error(`[Tracking] ${resolved ? 'Unsuspension' : 'Flag'} SMS dispatch failed:`, error.message);
     });
   }
 }
