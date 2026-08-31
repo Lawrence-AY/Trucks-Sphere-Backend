@@ -46,8 +46,8 @@ async function notifyFlagStakeholders(order, flag, resolved = false) {
       });
     if (vendor?.exists) phones.push(vendor.data().phone || vendor.data().mobile || '');
     const message = resolved
-      ? `TruckSphere UPDATE: Driver ${order.driverName || 'Unknown'} / truck ${order.plateNumber || 'Unknown'} have been unsuspended. Reason: ${flag.resolutionReason || 'Security flag cleared.'}`
-      : `TruckSphere ALERT: Driver ${order.driverName || 'Unknown'} / truck ${order.plateNumber || 'Unknown'} has been flagged. Reason: ${flag.reason || 'Security review required.'}`;
+      ? `TruckSphere UPDATE: Driver ${order.driverName || 'Unknown'}, Truck ${order.plateNumber || 'Unknown'} have been unsuspended. Reason: ${flag.resolutionReason || 'Security flag cleared.'}`
+      : `TruckSphere ALERT: Driver ${order.driverName || 'Unknown'}, Truck ${order.plateNumber || 'Unknown'} has been flagged. Reason: ${flag.reason || 'Security review required.'}`;
     // SMS delivery must never delay or undo the security flag transaction.
     void Promise.all([...new Set(phones.filter(Boolean))].map((phone) => sendSMS(phone, message))).catch((error) => {
       console.error(`[Tracking] ${resolved ? 'Unsuspension' : 'Flag'} SMS dispatch failed:`, error.message);
