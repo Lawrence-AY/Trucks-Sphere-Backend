@@ -1,3 +1,4 @@
+const { findLoginProfile, resolveLoginEmail } = require('./loginIdentity');
 const { getAuth } = require('firebase-admin/auth');
 const { db } = require('../../../config/firebase');
 const cryptoUtils = require('../../utils/cryptoUtils');
@@ -363,73 +364,14 @@ exports.login = async (req, res, next) => {
       return res.status(400).json({ error: 'Username or email and password required' });
     }
 
-    const isEmail = username.includes('@');
-    let email;
-    let userDocData = null;
-
-    if (isEmail) {
-      // Email-based login — look up directly by email
-      const emailSnap = await db.collection('users')
-        .where('email', '==', username.toLowerCase())
-        .limit(1)
-        .get();
-
-      if (!emailSnap.empty) {
-        userDocData = emailSnap.docs[0].data();
-        email = userDocData.authEmail || userDocData.email;
-      } else {
-        // Also try authEmail field
-        const authEmailSnap = await db.collection('users')
-          .where('authEmail', '==', username.toLowerCase())
-          .limit(1)
-          .get();
-        if (!authEmailSnap.empty) {
-          userDocData = authEmailSnap.docs[0].data();
-          email = userDocData.authEmail || userDocData.email;
-        } else {
-          return res.status(401).json({ error: 'Invalid email or password' });
-        }
-      }
-    } else {
-      // Username-based login — look up by generatedUsername
-      const userSnap = await db.collection('users')
-        .where('generatedUsername', '==', username.toLowerCase())
-        .limit(1)
-        .get();
-
-      if (!userSnap.empty) {
-        userDocData = userSnap.docs[0].data();
-        email = userDocData.authEmail || userDocData.email;
-      } else {
-        // Backward-compatible fallback: legacy users without generatedUsername
-        const fallbackEmail = `${username.toLowerCase()}@truck.com`;
-        try {
-          const legacySnap = await db.collection('users')
-            .where('email', '==', fallbackEmail)
-            .limit(1)
-            .get();
-
-          if (!legacySnap.empty) {
-            userDocData = legacySnap.docs[0].data();
-            email = fallbackEmail;
-            // Backfill generatedUsername for future fast-path logins
-            try {
-              await db.collection('users').doc(legacySnap.docs[0].id).update({
-                generatedUsername: username.toLowerCase(),
-              });
-              console.log(`[Auth] Backfilled generatedUsername for legacy user: ${username}`);
-            } catch (backfillErr) {
-              console.warn(`[Auth] Failed to backfill generatedUsername for ${username}:`, backfillErr.message);
-            }
-          } else {
-            return res.status(401).json({ error: 'Invalid username or password' });
-          }
-        } catch (legacyErr) {
-          console.warn('[Auth] Legacy user lookup failed:', legacyErr.message);
-          return res.status(401).json({ error: 'Invalid username or password' });
-        }
-      }
+    const userDocData = await findLoginProfile(db.collection('users'), username);
+    if (!userDocData || userDocData.isActive === false) {
+      return res.status(401).json({ error: 'Invalid username or password' });
     }
+    // Older vendor profiles may have a changed contact email without updating
+    // Firebase Auth. Resolve the actual sign-in address using the linked UID.
+    const email = await resolveLoginEmail(userDocData, getAuth());
+    if (!email) return res.status(401).json({ error: 'Invalid username or password' });
 
     const firebaseApiKey = getFirebaseApiKey();
 
@@ -457,6 +399,7 @@ exports.login = async (req, res, next) => {
 
     // Resolve vendorId / quarryId / siteId based on role + email
     const entityIds = await resolveEntityIds(email, role);
+    if (role === 'vendor' && userDocData.vendorId) entityIds.vendorId = userDocData.vendorId;
 
     // Look up user profile from Firestore for username, phone
     let firestoreProfile = {};

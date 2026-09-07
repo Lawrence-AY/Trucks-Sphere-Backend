@@ -48,8 +48,9 @@ router.get('/po/*', delivery_ordersController.findByPurchaseOrderId);
 router.get('/:id', delivery_ordersController.findById);
 router.post('/', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.create);
 router.post('/receive-lot', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.receiveLot);
-router.post('/:id/sync-odoo', requireManagementAccess({ write: true }), delivery_ordersController.syncOdooReceipt);
 router.put('/:id', requireRoles(...DELIVERY_WRITE_ROLES), delivery_ordersController.update);
+router.post('/:id/accept-warehouse', requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, 'operator_site'), delivery_ordersController.acceptWarehouse);
+router.post('/:id/deny-warehouse', requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, 'operator_site'), delivery_ordersController.denyWarehouse);
 router.delete('/:id', requireManagementAccess({ write: true }), delivery_ordersController.delete);
 
 module.exports = router;

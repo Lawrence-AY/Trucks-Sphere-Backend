@@ -11,6 +11,7 @@ const LEGACY_ROLES = Object.freeze({
   super_admin: MANAGEMENT_ROLES.SUPER_ADMIN,
   management: MANAGEMENT_ROLES.ADMIN,
   management_edit: MANAGEMENT_ROLES.ADMIN,
+  admin_edit: MANAGEMENT_ROLES.ADMIN,
   management_lite: MANAGEMENT_ROLES.ADMIN_LITE,
   admin_lite: MANAGEMENT_ROLES.ADMIN_LITE,
   // Operational aliases used by older seeded and Firebase-auth accounts.

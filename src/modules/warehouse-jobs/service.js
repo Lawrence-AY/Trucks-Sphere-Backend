@@ -56,7 +56,12 @@ function normalizeItems(rawItems) {
 const warehouseJobsService = {
   findAll(query = {}) {
     const { search, vendorId, status, page = 1, limit = 50 } = query;
-    let records = [...snapshotStore.getAll(COLLECTION_NAME)];
+    let records = snapshotStore.getAll(COLLECTION_NAME).map((job) => {
+      const receipt = snapshotStore.getById('deliveryOrders', job.deliveryOrderId || job.id);
+      return { ...job, warehouseAcceptedAt: receipt?.warehouseAcceptedAt || null,
+        warehouseAcceptedByName: receipt?.warehouseAcceptedByName || '',
+        status: receipt?.materialInspection?.mrfNumber ? 'INSPECTED' : receipt?.warehouseAcceptedAt ? 'ACCEPTED' : job.status };
+    });
 
     if (vendorId) records = records.filter((item) => normalizeId(item.vendorId) === normalizeId(vendorId));
     if (status) records = records.filter((item) => item.status === status);
@@ -89,12 +94,19 @@ const warehouseJobsService = {
       ? findEntity('purchaseOrders', data.purchaseOrderId, ['poNumber'])
       : null;
     if (!purchaseOrder) {
-      throw createValidationError('Choose a valid warehouse purchase order.');
+      throw createValidationError('Choose a valid warehouse purchase order.', 'WAREHOUSE_PURCHASE_ORDER_REQUIRED');
     }
 
-    const material = findEntity('materials', purchaseOrder.materialId);
-    if (!material?.isWarehouseMaterial) {
-      throw createValidationError('Choose a purchase order for a warehouse material.');
+    const orderMaterials = [purchaseOrder, ...(purchaseOrder.materials || [])]
+      .map((line) => findEntity('materials', line.materialId, ['materialId']))
+      .filter(Boolean);
+    const material = orderMaterials.find((entry) => entry.isWarehouseMaterial) ||
+      (purchaseOrder.isWarehouseMaterial ? orderMaterials[0] : null);
+    if (!material) {
+      throw createValidationError('Choose a purchase order for a warehouse material.', 'WAREHOUSE_MATERIAL_REQUIRED');
+    }
+    if (String(purchaseOrder.status || '').toLowerCase() === 'cancelled') {
+      throw createValidationError('This purchase order is cancelled.', 'WAREHOUSE_PURCHASE_ORDER_CANCELLED');
     }
 
     const materialNumber = String(
@@ -107,17 +119,7 @@ const warehouseJobsService = {
     }
 
     const vendor = findEntity('vendors', purchaseOrder?.vendorId || data.vendorId, ['vendorId']);
-    if (!vendor) throw createValidationError('Select a valid vendor.');
-
-    const driver = findEntity('drivers', data.driverId, ['driverId']);
-    if (!driver || normalizeId(driver.vendorId) !== normalizeId(vendor.id)) {
-      throw createValidationError('Select a driver from the selected vendor.');
-    }
-
-    const vehicle = findEntity('vehicles', data.vehicleId, ['vehicleId', 'registrationNumber', 'plateNumber']);
-    if (!vehicle || normalizeId(vehicle.vendorId) !== normalizeId(vendor.id)) {
-      throw createValidationError('Select a truck from the selected vendor.');
-    }
+    if (!vendor) throw createValidationError('Select a valid vendor.', 'WAREHOUSE_VENDOR_REQUIRED');
 
     const items = normalizeItems(data.items);
     // Warehouse dispatches do not require a manually selected delivery site.
@@ -129,7 +131,7 @@ const warehouseJobsService = {
 
     // Share the same atomic per-PO J-number sequence as quarry and site jobs.
     // This keeps every dispatch for one PO in one continuous J#### series.
-    const warehouseReference = buildWarehouseReference(pomatReference, vendor, driver, vehicle);
+    const warehouseReference = buildWarehouseReference(pomatReference, vendor);
     const { jobId } = await generateJobIdForPO(purchaseOrder.id, warehouseReference);
 
     return db.runTransaction(async (transaction) => {
@@ -137,6 +139,12 @@ const warehouseJobsService = {
       const deliveryOrderRef = deliveryOrdersCollection.doc(jobId.replace(/\//g, '-'));
       const existing = await transaction.get(docRef);
       const existingDeliveryOrder = await transaction.get(deliveryOrderRef);
+      // Allocate the RN in the job transaction: concurrent creates cannot reuse
+      // a number, and a failed job write does not consume one.
+      const receiptCounterRef = db.collection('counters').doc('auto_ids');
+      const receiptCounter = await transaction.get(receiptCounterRef);
+      const receiptSequence = Number(receiptCounter.data()?.receipt_note_counter || 0) + 1;
+      const receiptNoteId = `RN${String(receiptSequence).padStart(3, '0')}`;
       if (existing.exists || existingDeliveryOrder.exists) {
         const error = new Error('Could not allocate a unique warehouse job number. Please retry.');
         error.statusCode = 409;
@@ -149,16 +157,13 @@ const warehouseJobsService = {
       const item = {
         id: docRef.id,
         deliveryOrderId: deliveryOrderRef.id,
+        receiptNoteId,
         jobId,
         warehouseReference,
         pomatReference,
         poNumber: purchaseOrder.poNumber || pomatReference,
         vendorId: vendor.id,
         vendorName: vendor.companyName || vendor.name || '',
-        driverId: driver.id,
-        driverName: driver.fullName || driver.name || '',
-        vehicleId: vehicle.id,
-        plateNumber: vehicle.registrationNumber || vehicle.plateNumber || '',
         siteId: site?.id || '',
         siteName: site?.name || site?.location?.address || '',
         items,
@@ -177,6 +182,7 @@ const warehouseJobsService = {
         jobKey: warehouseReference,
         warehouseJobId: docRef.id,
         isWarehouseDelivery: true,
+        receiptNoteId,
         deliveryOrigin: 'warehouse',
         // Populate the shared source fields used by downstream job views and
         // reports, which otherwise fall back to a quarry origin.
@@ -189,11 +195,8 @@ const warehouseJobsService = {
         vendorId: vendor.id,
         vendorName: item.vendorName,
         companyName: item.vendorName,
-        driverId: driver.id,
-        driverName: item.driverName,
-        vehicleId: vehicle.id,
-        plateNumber: item.plateNumber,
-        materialId: `WAREHOUSE-${docRef.id}`,
+        materialId: material.id,
+        materials: items.map((line, index) => ({ ...line, materialId: `WAREHOUSE-${docRef.id}-${index}` })),
         materialName: product.materialName,
         quantityOrdered: product.quantity,
         quantityDelivered: 0,
@@ -210,6 +213,9 @@ const warehouseJobsService = {
         updatedAt: now,
       };
 
+      const writeStocks = await require('../stocks/service').prepare(transaction, deliveryOrder);
+      writeStocks();
+      transaction.set(receiptCounterRef, { receipt_note_counter: receiptSequence }, { merge: true });
       transaction.set(docRef, item);
       transaction.set(deliveryOrderRef, deliveryOrder);
       return item;

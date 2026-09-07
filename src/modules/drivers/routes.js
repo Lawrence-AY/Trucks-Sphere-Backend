@@ -20,8 +20,6 @@ router.use(requireRoles(
 
 router.get('/national-id/:nationalId', requireManagementAccess({ allowLite: true }), driversController.checkNationalId);
 router.post('/verify-identity', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), driversController.verifyIdentity);
-router.post('/sync/odoo', requireManagementAccess({ write: true }), driversController.syncFromOdoo);
-router.get('/sync/odoo', requireManagementAccess({ allowLite: true }), driversController.getOdooSyncStatus);
 router.get('/', driversController.findAll);
 router.get('/:id', driversController.findById);
 router.post('/', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), driversController.create);

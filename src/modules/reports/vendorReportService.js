@@ -1,3 +1,4 @@
+const { warehouseReportFields } = require('./warehouseReport');
 /**
  * Vendor Reports Service
  *
@@ -152,6 +153,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
         : '',
       lotNumber: d.storageLot || d.lotNumber || '',
       grnNumber: d.receiptNoteId || d.grnNumber || '',
+      ...warehouseReportFields(d, formatEAT),
       geolocation: d.weighOutGeoLocation
         ? `${d.weighOutGeoLocation.latitude},${d.weighOutGeoLocation.longitude}`
         : '',
@@ -266,10 +268,10 @@ function buildVendorPOReport(vendorId, options = {}) {
       vendorName: po.vendorName || '',
       materialName: line.materialName || '',
       materialId: line.materialId || '',
-      unit: line.unit || 'units',
-      targetQuantity: targetQty,
-      deliveredQuantity,
-      remainingQuantity: Math.max(0, targetQty - deliveredQuantity),
+      unit: line.isWarehouseMaterial ? '' : line.unit || 'units',
+      targetQuantity: line.isWarehouseMaterial ? '' : targetQty,
+      deliveredQuantity: line.isWarehouseMaterial ? '' : deliveredQuantity,
+      remainingQuantity: line.isWarehouseMaterial ? '' : Math.max(0, targetQty - deliveredQuantity),
       progressPercent: progress,
       status: po.status || '',
       createdAt: formatEAT(po.createdAt),

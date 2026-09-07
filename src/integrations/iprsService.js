@@ -35,18 +35,28 @@ function getConfig() {
 
 function pick(object, keys) {
   if (!object || typeof object !== 'object') return undefined;
-  for (const key of keys) if (object[key] !== undefined && object[key] !== null && String(object[key]).trim()) return object[key];
+  const normalized = new Map(Object.entries(object).map(([key, value]) => [key.replace(/[^a-z0-9]/gi, '').toLowerCase(), value]));
+  for (const key of keys) {
+    const value = normalized.get(key.replace(/[^a-z0-9]/gi, '').toLowerCase());
+    if (value !== undefined && value !== null && String(value).trim()) return value;
+  }
   return undefined;
 }
 
 function responseObjects(value) {
   const queue = [value];
   const results = [];
+  const visited = new Set();
   while (queue.length) {
     const item = queue.shift();
-    if (!item || typeof item !== 'object') continue;
+    if (!item || typeof item !== 'object' || visited.has(item)) continue;
+    visited.add(item);
+    if (Array.isArray(item)) { queue.push(...item); continue; }
     results.push(item);
-    for (const key of ['data', 'result', 'identity', 'person', 'record']) if (item[key] && typeof item[key] === 'object') queue.push(item[key]);
+    for (const key of ['data', 'result', 'results', 'identity', 'person', 'record', 'records', 'session']) {
+      const nested = pick(item, [key]);
+      if (nested && typeof nested === 'object') queue.push(nested);
+    }
   }
   return results;
 }
@@ -54,7 +64,7 @@ function responseObjects(value) {
 function extractToken(data) {
   for (const object of responseObjects(data)) {
     const token = pick(object, ['token', 'access_token', 'accessToken', 'session_token', 'sessionToken']);
-    if (token) return String(token).trim();
+    if (token) return String(token).trim().replace(/^Bearer\s+/i, '');
   }
   return '';
 }
@@ -68,25 +78,29 @@ function responseIndicatesRejected(data) {
   return false;
 }
 
-function identityMatches(data, expected) {
+function identityComparisons(data, expected) {
+  const comparisons = [];
   for (const object of responseObjects(data)) {
     const nationalId = pick(object, ['id_number', 'idNumber', 'national_id', 'nationalId', 'id_no', 'idNo']);
     const firstName = pick(object, ['first_name', 'firstName', 'firstname', 'given_name', 'givenName']);
     const surname = pick(object, ['surname', 'last_name', 'lastName', 'family_name', 'familyName']);
-    if (nationalId || firstName || surname) {
-      return String(nationalId || '').replace(/\s+/g, '') === expected.nationalId
-        && normalizeName(firstName) === normalizeName(expected.firstName)
-        && normalizeName(surname) === normalizeName(expected.surname);
-    }
+    if (nationalId || firstName || surname) comparisons.push({
+      nationalId: nationalId ? String(nationalId).replace(/\s+/g, '') === expected.nationalId : null,
+      firstName: firstName ? normalizeName(firstName) === normalizeName(expected.firstName) : null,
+      surname: surname ? normalizeName(surname) === normalizeName(expected.surname) : null,
+    });
   }
-  return false;
+  return comparisons;
+}
+function identityMatches(data, expected) {
+  return identityComparisons(data, expected).some((r) => r.nationalId !== false && r.firstName === true && r.surname === true);
 }
 
 async function createSession(config) {
   let response;
   try {
     response = await axios.post(`${config.baseUrl}${config.sessionPath}`, { username: config.username, password: config.password }, {
-      headers: { 'Content-Type': 'application/json', 'User-Agent': 'TruckSphere IPRS Integration/1.0' }, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true,
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'TruckSphere IPRS Integration/1.0', 'Cache-Control': 'no-store, no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true,
     });
   } catch { throw iprsError('IPRS_UNAVAILABLE', 503); }
   if (response.status < 200 || response.status >= 300) throw iprsError('IPRS_SESSION_FAILED', 503);
@@ -106,20 +120,23 @@ async function verifyDriverIdentity({ nationalId, firstName, surname }) {
   let response;
   try {
     response = await axios.post(`${config.baseUrl}${config.verifyIdPath}`, {
-      id_number: normalizedNationalId, first_name: cleanFirstName, surname: cleanSurname,
+      idNumber: normalizedNationalId,
     }, {
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'TruckSphere IPRS Integration/1.0' }, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'TruckSphere IPRS Integration/1.0', 'Cache-Control': 'no-store, no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true,
     });
   } catch { throw iprsError('IPRS_UNAVAILABLE', 503); }
   // Cowrie IPRS returns the matching record in some 400 responses, together
   // with a false wrapper flag. The record is the authoritative result: accept
-  // it only when all three requested identity values match exactly.
-  if (identityMatches(response.data, { nationalId: normalizedNationalId, firstName: cleanFirstName, surname: cleanSurname })) {
+  // it when both names match, and the ID matches if the provider returns it.
+  if ((response.status >= 200 && response.status < 300 || response.status === 400 || response.status === 422) && identityMatches(response.data, { nationalId: normalizedNationalId, firstName: cleanFirstName, surname: cleanSurname })) {
     return { verified: true, skipped: false };
   }
-  if (response.status === 404 || response.status === 422 || responseIndicatesRejected(response.data)) throw iprsError('IPRS_IDENTITY_MISMATCH');
+  const comparisons = identityComparisons(response.data, { nationalId: normalizedNationalId, firstName: cleanFirstName, surname: cleanSurname });
+  // Log match booleans only. Never log identity values, response bodies or tokens.
+  console.warn('[IPRS] verification diagnostic', JSON.stringify({ providerStatus: response.status, comparisons, recognizedIdentity: comparisons.some((r) => Object.values(r).every((v) => v !== null)) }));
+  if (response.status === 404 || ((response.status >= 200 && response.status < 300 || response.status === 400 || response.status === 422) && comparisons.some((r) => r.firstName !== null && r.surname !== null))) throw iprsError('IPRS_IDENTITY_MISMATCH');
   if (response.status < 200 || response.status >= 300) throw iprsError('IPRS_VERIFICATION_FAILED', 503);
-  throw iprsError('IPRS_IDENTITY_MISMATCH');
+  throw iprsError('IPRS_RESPONSE_UNRECOGNIZED', 503);
 }
 
-module.exports = { isIprsEnabled, verifyDriverIdentity, __testables: { extractToken, identityMatches, normalizeName, responseIndicatesRejected } };
+module.exports = { isIprsEnabled, verifyDriverIdentity, __testables: { extractToken, identityMatches, identityComparisons, normalizeName, responseIndicatesRejected } };

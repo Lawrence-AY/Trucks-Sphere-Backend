@@ -28,6 +28,7 @@ function canViewPurchaseOrder(item, user, entity) {
   const role = normalizeRole(user?.role);
   if (isManagement(role)) return true;
   if (role === 'vendor') return matchesId(item?.vendorId, entity?.vendorId || user?.entityId);
+  if (role === 'operator_quarry' && item?.isWarehouseMaterial) return false;
   // Purchase orders no longer carry a quarry or site assignment. Both
   // operational teams must be able to select any active PO when creating a
   // job card; job creation records the operator and operational context.
@@ -39,6 +40,7 @@ exports.findAll = async (req, res, next) => {
   try {
     const { role } = req.user;
     let scopedQuery = { ...req.query };
+    if (normalizeRole(role) === 'operator_quarry') scopedQuery.excludeWarehouse = true;
     const userEntity = await getUserEntity(req.user);
 
     // Scope purchase orders based on user role

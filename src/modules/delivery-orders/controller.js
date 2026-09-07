@@ -58,6 +58,12 @@ function withRoleDefaults(payload, user, userEntity, { isCreate = false } = {}) 
     nextPayload.siteId = userEntity.siteId;
   }
 
+  if (normalizeRole(user?.role) === 'operator_site' && ['siteWeighInWeight', 'hasWeightDiscrepancy', 'siteArrivalWeightVarianceFlagged', 'differenceNote', 'siteFlagReason'].some((key) => key in payload)) {
+    nextPayload.siteFlaggedBy = userEntity?.displayName || user?.displayName || user?.email || 'Site operator';
+    nextPayload.siteFlaggedByUid = user?.uid || '';
+    nextPayload.siteFlaggedAt = new Date().toISOString();
+  }
+
   // Keep the assigned quarry location on the delivery so reports retain the
   // source that applied when the quarry operator handled the job.
   if (user?.role === 'operator_quarry' && userEntity?.quarryLocation) {
@@ -229,6 +235,10 @@ exports.findByPurchaseOrderId = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
+    if (normalizeRole(req.user?.role) === 'operator_quarry') {
+      const po = require('../purchase-orders/service').findById(req.body?.purchaseOrderId);
+      if (po?.isWarehouseMaterial) return res.status(409).json({ code: 'WAREHOUSE_PO_NOT_FOR_QUARRY', error: 'Warehouse POs cannot be dispatched from a quarry.' });
+    }
     const userEntity = await getUserEntity(req.user);
     const payload = withRoleDefaults(req.body, req.user, userEntity, { isCreate: true });
     const item = await delivery_ordersService.create(payload);
@@ -241,6 +251,9 @@ exports.update = async (req, res, next) => {
     const existing = await delivery_ordersService.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const entity = await getUserEntity(req.user);
+    if (['warehouseAcceptedAt', 'warehouseAcceptedByUid', 'warehouseAcceptedByName', 'warehouseDeniedAt', 'warehouseDeniedByUid', 'warehouseDeniedByName', 'warehouseDenialReason'].some((key) => key in (req.body || {}))) {
+      return res.status(400).json({ error: 'Use the warehouse acceptance or denial action.' });
+    }
     if (!canAccessDelivery(existing, req.user, entity)) return res.status(404).json({ error: 'Not found' });
     if (normalizeRole(req.user?.role) === 'inspector') {
       // The write middleware adds updatedBy for audit purposes before this
@@ -253,14 +266,11 @@ exports.update = async (req, res, next) => {
     const payload = withRoleDefaults(req.body, req.user, entity);
     const item = await delivery_ordersService.update(req.params.id, payload);
     if (!item) return res.status(404).json({ error: 'Not found' });
-    res.json(item);
-  } catch (err) { next(err); }
-};
-
-exports.syncOdooReceipt = async (req, res, next) => {
-  try {
-    const item = await delivery_ordersService.syncOdooReceipt(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
+    const siteFlag = require('../tracking/siteFlags').newSiteFlag(item, existing);
+    if (siteFlag) {
+      require('../../utils/snapshotStore').applyCommittedUpdate('deliveryOrders', item.id, item);
+      void require('../tracking/controller').notifySiteFlag(item, siteFlag).catch((error) => console.error('[Delivery] Site flag notification failed:', error.message));
+    }
     res.json(item);
   } catch (err) { next(err); }
 };
@@ -297,4 +307,28 @@ exports.delete = async (req, res, next) => {
     await delivery_ordersService.delete(req.params.id);
     res.json({ message: 'Deleted successfully' });
   } catch (err) { next(err); }
+};
+
+exports.acceptWarehouse = async (req, res, next) => {
+  try {
+    const entity = await getUserEntity(req.user);
+    const existing = await delivery_ordersService.findById(req.params.id);
+    if (!existing || !canAccessDelivery(existing, req.user, entity)) return res.status(404).json({ error: 'Not found' });
+    const item = await delivery_ordersService.acceptWarehouse(req.params.id, { ...req.user, siteId: entity?.siteId || '', displayName: entity?.displayName || req.user?.email || '' });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json(item);
+  } catch (error) { next(error); }
+};
+
+exports.denyWarehouse = async (req, res, next) => {
+  try {
+    const entity = await getUserEntity(req.user);
+    const existing = await delivery_ordersService.findById(req.params.id);
+    if (!existing || !canAccessDelivery(existing, req.user, entity)) return res.status(404).json({ error: 'Not found' });
+    const item = await delivery_ordersService.denyWarehouse(req.params.id, { ...req.user, siteId: entity?.siteId || '', displayName: entity?.displayName || req.user?.email || '' }, req.body?.reason);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    require('../../utils/snapshotStore').applyCommittedUpdate('deliveryOrders', item.id, item);
+    void require('../tracking/controller').notifyWarehouseDenial(item).catch((error) => console.error('[Delivery] Denial notification failed:', error.message));
+    res.json(item);
+  } catch (error) { next(error); }
 };

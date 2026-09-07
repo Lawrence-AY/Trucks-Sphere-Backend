@@ -11,6 +11,7 @@ const redis = require('../config/redis');
 
 // Initialize real-time snapshot cache (eliminates repeated Firestore reads)
 const snapshotStore = require('./utils/snapshotStore');
+require('./modules/stocks/sync').startStockSync(snapshotStore);
 
 // Import security middleware
 const {
@@ -328,6 +329,7 @@ app.use('/api/materials', materialsRoutes);
 app.use('/api/purchase-orders', purchaseOrdersRoutes);
 app.use('/api/delivery-orders', deliveryOrdersRoutes);
 app.use('/api/warehouse-jobs', warehouseJobsRoutes);
+app.use('/api/stocks', require('./modules/stocks/routes'));
 app.use('/api/weighbridge', weighbridgeRoutes);
 app.use('/api/quarries', quarryRoutes);
 app.use('/api/sites', siteRoutes);

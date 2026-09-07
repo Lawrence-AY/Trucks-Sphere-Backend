@@ -3,17 +3,10 @@ const { getAuth } = require('firebase-admin/auth');
 const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
 const { assertStrongPassword } = require('../../utils/passwordPolicy');
-const { fetchOdooVendors, odooPartnerToVendor, syncVendor } = require('../../integrations/odooVendorService');
-const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('vendors');
 const uniqueKeysRef = db.collection('vendorUniqueKeys');
 
 const COLLECTION_NAME = 'vendors';
-let odooSyncJob = { status: 'idle', result: null, startedAt: null, completedAt: null };
-
-function withoutUndefined(source) {
-  return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined));
-}
 
 function normalizedMatchKey(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -51,11 +44,10 @@ function duplicateVendorError() {
 
 async function createVendorWithUniqueKeys(docRef, item, uniqueKeys) {
   await db.runTransaction(async (transaction) => {
-    const [reservations, existingVendors] = await Promise.all([
+    const [, existingVendors] = await Promise.all([
       Promise.all(uniqueKeys.map((key) => transaction.get(uniqueKeysRef.doc(key)))),
       transaction.get(collectionRef),
     ]);
-    if (reservations.some((reservation) => reservation.exists)) throw duplicateVendorError();
     const hasLegacyDuplicate = existingVendors.docs.some((existing) =>
       vendorUniqueKeys(existing.data(), { allowMissingCompany: true }).some((key) => uniqueKeys.includes(key)),
     );
@@ -68,79 +60,6 @@ async function createVendorWithUniqueKeys(docRef, item, uniqueKeys) {
       createdAt: item.createdAt,
     }));
   });
-}
-
-function addUniqueIndex(index, key, value) {
-  if (!key) return;
-  index.set(key, index.has(key) ? null : value);
-}
-
-async function importOdooVendors(options = {}) {
-  const result = { total: 0, imported: 0, updatedFromOdoo: 0 };
-  const [odooPartners, vendorSnapshot] = await Promise.all([
-    fetchOdooVendors(options),
-    collectionRef.get(),
-  ]);
-  result.total = odooPartners.length;
-
-  const byOdooId = new Map();
-  const byKraPin = new Map();
-  const byPhone = new Map();
-  const byCompanyName = new Map();
-  vendorSnapshot.docs.forEach((doc) => {
-    const vendor = doc.data();
-    if (Number.isInteger(vendor.odooPartnerId)) byOdooId.set(vendor.odooPartnerId, doc);
-    addUniqueIndex(byKraPin, normalizedMatchKey(vendor.kraPin), doc);
-    addUniqueIndex(byPhone, normalizedPhoneKey(vendor.phone), doc);
-    addUniqueIndex(byCompanyName, normalizedMatchKey(vendor.companyName || vendor.name), doc);
-  });
-
-  for (const partner of odooPartners) {
-    const mapped = withoutUndefined(odooPartnerToVendor(partner));
-    const matchingKraPin = normalizedMatchKey(mapped.kraPin);
-    const matchingPhone = normalizedPhoneKey(mapped.phone);
-    const matchingCompanyName = normalizedMatchKey(mapped.companyName);
-    const existing = byOdooId.get(partner.id)
-      || (matchingKraPin && byKraPin.get(matchingKraPin))
-      || (matchingPhone && byPhone.get(matchingPhone))
-      || (matchingCompanyName && byCompanyName.get(matchingCompanyName));
-    const now = new Date().toISOString();
-
-    if (existing) {
-      await existing.ref.update({ ...mapped, updatedAt: now });
-      byOdooId.set(partner.id, existing);
-      result.updatedFromOdoo += 1;
-      continue;
-    }
-
-    const vendorId = await getNextId('vendor');
-    const item = {
-      ...mapped,
-      id: vendorId,
-      vendorId,
-      companyName: mapped.companyName || `Odoo Vendor ${partner.id}`,
-      contactPerson: mapped.contactPerson || mapped.companyName || `Odoo Vendor ${partner.id}`,
-      phone: mapped.phone || '',
-      status: mapped.status || 'active',
-      fleetSize: 0,
-      companyActCR12: '',
-      kraPin: mapped.kraPin || '',
-      businessPermit: '',
-      taxCompliance: '',
-      createdAt: now,
-      updatedAt: now,
-    };
-    const ref = collectionRef.doc(vendorId);
-    await ref.set(item);
-    const newDoc = { ref, data: () => item };
-    byOdooId.set(partner.id, newDoc);
-    addUniqueIndex(byKraPin, normalizedMatchKey(item.kraPin), newDoc);
-    addUniqueIndex(byPhone, normalizedPhoneKey(item.phone), newDoc);
-    addUniqueIndex(byCompanyName, normalizedMatchKey(item.companyName), newDoc);
-    result.imported += 1;
-  }
-
-  return result;
 }
 
 function splitName(value = '') {
@@ -174,11 +93,9 @@ const vendorsService = {
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
-    // Sort by createdAt descending
+    // Stable vendor-number ordering also keeps paginated filter options fixed.
     results = [...results].sort((a, b) => {
-      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return db - da;
+      return String(a.vendorId || a.id).localeCompare(String(b.vendorId || b.id), 'en', { numeric: true, sensitivity: 'base' }) || String(a.id).localeCompare(String(b.id));
     });
 
     if (status) results = results.filter(item => item.status === status);
@@ -227,7 +144,6 @@ const vendorsService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      if (isOdooEnabled()) Object.assign(item, await syncVendor(item));
       await createVendorWithUniqueKeys(docRef, item, uniqueKeys);
       return { id: vendorId, ...item };
     } catch (error) {
@@ -245,10 +161,9 @@ const vendorsService = {
    * writes are committed in one batch; a Firebase Auth account is removed if
    * the batch cannot be committed, so no orphan account is left behind.
    */
-  async createWithAccount({ vendor = {}, account = {} }) {
+  async createWithAccount({ vendor = {}, account = {} }, existingVendorId = null) {
     const email = String(account.email || vendor.email || '').trim().toLowerCase();
     const password = account.password;
-    if (!email) throw Object.assign(new Error('Account email is required'), { statusCode: 400 });
     assertStrongPassword(password);
     if (!vendor.companyName || !vendor.contactPerson || !vendor.phone) {
       throw Object.assign(new Error('Company name, contact person, and phone number are required'), { statusCode: 400 });
@@ -256,13 +171,14 @@ const vendorsService = {
 
     const uniqueKeys = vendorUniqueKeys(vendor);
     const username = await generateUniqueUsername(vendor.contactPerson);
-    const vendorId = await getNextId('vendor');
+    const authEmail = email || `${username}@users.trucksphere.local`;
+    const vendorId = existingVendorId || await getNextId('vendor');
     const now = new Date().toISOString();
     let authUser;
 
     try {
       authUser = await getAuth().createUser({
-        email,
+        email: authEmail,
         password,
         displayName: vendor.contactPerson.trim(),
         disabled: account.isActive === false,
@@ -283,16 +199,16 @@ const vendorsService = {
         kraPinNormalized: normalizedMatchKey(vendor.kraPin),
         phoneNormalized: normalizedPhoneKey(vendor.phone),
         userId: authUser.uid,
-        createdAt: now,
+        createdAt: vendor.createdAt || now,
         updatedAt: now,
       };
-      if (isOdooEnabled()) Object.assign(vendorItem, await syncVendor(vendorItem));
       const { firstName, lastName } = splitName(vendor.contactPerson);
       const userItem = {
         id: authUser.uid,
         uid: authUser.uid,
         authUid: authUser.uid,
         email,
+        authEmail,
         displayName: vendor.contactPerson.trim(),
         generatedUsername: username,
         username,
@@ -307,17 +223,24 @@ const vendorsService = {
       };
 
       await db.runTransaction(async (transaction) => {
-        const [reservations, existingVendors] = await Promise.all([
+        if (existingVendorId) {
+          const current = await transaction.get(collectionRef.doc(existingVendorId));
+          const linkedUsers = await transaction.get(db.collection('users').where('vendorId', '==', existingVendorId));
+          if (!current.exists || current.data().userId || !linkedUsers.empty) {
+            throw Object.assign(new Error('Vendor not found or already has a login account.'), { statusCode: 409, code: 'VENDOR_ACCOUNT_ALREADY_EXISTS' });
+          }
+        }
+        const [, existingVendors] = await Promise.all([
           Promise.all(uniqueKeys.map((key) => transaction.get(uniqueKeysRef.doc(key)))),
           transaction.get(collectionRef),
         ]);
-        if (reservations.some((reservation) => reservation.exists)) throw duplicateVendorError();
-        const hasLegacyDuplicate = existingVendors.docs.some((existing) =>
+            const hasLegacyDuplicate = existingVendors.docs.filter((existing) => existing.id !== existingVendorId).some((existing) =>
           vendorUniqueKeys(existing.data(), { allowMissingCompany: true }).some((key) => uniqueKeys.includes(key)),
         );
         if (hasLegacyDuplicate) throw duplicateVendorError();
 
-        transaction.set(collectionRef.doc(vendorId), vendorItem);
+        if (existingVendorId) transaction.set(collectionRef.doc(vendorId), { userId: authUser.uid, email, updatedAt: now }, { merge: true });
+        else transaction.set(collectionRef.doc(vendorId), vendorItem);
         transaction.set(db.collection('users').doc(authUser.uid), userItem);
         uniqueKeys.forEach((key) => transaction.set(uniqueKeysRef.doc(key), {
           vendorId,
@@ -325,7 +248,6 @@ const vendorsService = {
           createdAt: now,
         }));
       });
-
       return { vendor: vendorItem, user: userItem, username };
     } catch (error) {
       if (authUser) {
@@ -335,6 +257,12 @@ const vendorsService = {
       }
       throw error;
     }
+  },
+
+  async createAccount(id, account) {
+    const current = await collectionRef.doc(id).get();
+    if (!current.exists) throw Object.assign(new Error('Vendor not found'), { statusCode: 404 });
+    return vendorsService.createWithAccount({ vendor: current.data(), account }, id);
   },
 
   async update(id, data) {
@@ -351,7 +279,6 @@ const vendorsService = {
         companyNameNormalized: normalizedMatchKey(vendor.companyName || vendor.name),
         kraPinNormalized: normalizedMatchKey(vendor.kraPin),
         phoneNormalized: normalizedPhoneKey(vendor.phone),
-        ...(isOdooEnabled() ? await syncVendor(vendor) : {}),
         updatedAt: new Date().toISOString(),
       };
       let result = null;
@@ -393,63 +320,6 @@ const vendorsService = {
       console.error('vendorsService.delete error:', error);
       throw error;
     }
-  },
-
-  async importFromOdoo(options) {
-    return importOdooVendors(options);
-  },
-
-  /** Synchronize local vendors to Odoo Fleet/Purchase Contacts, then import
-   * Odoo-side changes. It also repairs vendors created before outbound sync. */
-  async syncAllWithOdoo() {
-    if (!isOdooEnabled()) {
-      return { total: 0, synced: 0, failed: 0, errors: [], imported: 0, updatedFromOdoo: 0, disabled: true };
-    }
-
-    const snapshot = await collectionRef.get();
-    const result = { total: snapshot.size, synced: 0, failed: 0, errors: [], imported: 0, updatedFromOdoo: 0 };
-    for (const doc of snapshot.docs) {
-      try {
-        const vendor = { id: doc.id, ...doc.data() };
-        const odooFields = await syncVendor(vendor);
-        await doc.ref.update({ ...odooFields, updatedAt: new Date().toISOString() });
-        result.synced += 1;
-      } catch (error) {
-        result.failed += 1;
-        result.errors.push({ id: doc.id, code: error.code || 'ODOO_VENDOR_SYNC_FAILED' });
-        console.error(`[Odoo] Failed to synchronize vendor ${doc.id}: ${error.message}`);
-      }
-    }
-
-    const imported = await importOdooVendors();
-    result.imported = imported.imported;
-    result.updatedFromOdoo = imported.updatedFromOdoo;
-    return result;
-  },
-
-  startOdooSync() {
-    if (!isOdooEnabled()) return { status: 'disabled', result: { code: 'ODOO_DISABLED' }, startedAt: null, completedAt: null };
-    if (odooSyncJob.status === 'running') return odooSyncJob;
-
-    odooSyncJob = { status: 'running', result: null, startedAt: new Date().toISOString(), completedAt: null };
-    void vendorsService.syncAllWithOdoo()
-      .then((result) => {
-        odooSyncJob = { status: 'completed', result, startedAt: odooSyncJob.startedAt, completedAt: new Date().toISOString() };
-      })
-      .catch((error) => {
-        console.error(`[Odoo] Vendor sync failed: ${error.message}`);
-        odooSyncJob = {
-          status: 'failed',
-          result: { code: error.code || 'ODOO_VENDOR_SYNC_FAILED' },
-          startedAt: odooSyncJob.startedAt,
-          completedAt: new Date().toISOString(),
-        };
-      });
-    return odooSyncJob;
-  },
-
-  getOdooSyncStatus() {
-    return odooSyncJob;
   },
 };
 

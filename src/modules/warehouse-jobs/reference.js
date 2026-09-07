@@ -18,6 +18,7 @@ function normalizePomatReference(value) {
 function buildWarehouseReference(pomatReference, vendor = {}, driver = {}, vehicle = {}) {
   const normalizedPomat = normalizePomatReference(pomatReference);
   const vendorNumber = trailingNumber(vendor.vendorId || vendor.id, 'V');
+  if (!driver.id && !driver.driverId && !vehicle.id && !vehicle.vehicleId) return `${normalizedPomat}/${vendorNumber}`;
   const driverNumber = trailingNumber(driver.driverId || driver.id, 'D');
   const vehicleNumber = trailingNumber(vehicle.vehicleId || vehicle.id || vehicle.registrationNumber || vehicle.plateNumber, 'T');
   return `${normalizedPomat}/${vendorNumber}/${driverNumber}/${vehicleNumber}`;

@@ -9,8 +9,6 @@ router.use(requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MA
 
 router.get('/username', vendorsController.previewUsername);
 router.post('/with-account', requireManagementAccess({ allowLite: true, write: true }), vendorsController.createWithAccount);
-router.post('/sync/odoo', requireManagementAccess({ write: true }), vendorsController.syncFromOdoo);
-router.get('/sync/odoo', requireManagementAccess({ allowLite: true }), vendorsController.getOdooSyncStatus);
 router.get('/', vendorsController.findAll);
 router.get('/:id/documents', vendorsController.findDocuments);
 router.get('/:id', vendorsController.findById);

@@ -2,29 +2,18 @@
  * trucks-Sphere-Backend src/delivery-orders/service.js
  * **/
 const { db, admin } = require('../../../config/firebase');
+const { isWarehouseReceipt, acceptanceUpdates, denialUpdates, validateWarehouseUpdate } = require('../warehouse-jobs/receipt');
 const { getNextId } = require('../../utils/counterService');
 const { generateJobIdForPO } = require('../../utils/jobIdService');
 const { generateTrackingId } = require('../../utils/trackingUtils');
 const snapshotStore = require('../../utils/snapshotStore');
 const { JOB_STATUS, normalizeJobStatus, isActiveJob } = require('../../utils/jobLifecycle');
 const { buildBackorder, isBackorderCreationEnabled, planSiteNetBackorder } = require('./backorder');
-const { syncSiteReceipt, createJobReceipt } = require('../../integrations/odooReceiptService');
-const { isOdooEnabled } = require('../../integrations/odooConfig');
+const stockService = require('../stocks/service');
 const collectionRef = db.collection('deliveryOrders');
 const purchaseOrdersCollection = db.collection('purchaseOrders');
 
 const COLLECTION_NAME = 'deliveryOrders';
-
-function linkedSnapshotRecord(collectionName, id) {
-  if (!id) return null;
-  return snapshotStore.getById(collectionName, id)
-    || snapshotStore.getAll(collectionName).find((item) =>
-      [item.id, item.vendorId, item.driverId, item.vehicleId]
-        .filter(Boolean)
-        .some((candidate) => String(candidate) === String(id)),
-    )
-    || null;
-}
 
 function normalizeMaterialSource(value) {
   if (typeof value !== 'string') return null;
@@ -179,6 +168,8 @@ async function applyUpdateWithBackorder(docRef, id, updates) {
   return db.runTransaction(async (transaction) => {
     const sourceSnapshot = await transaction.get(docRef);
     if (!sourceSnapshot.exists) return { backorder: null };
+    const writeStocks = await stockService.prepare(transaction, { ...sourceSnapshot.data(), ...updates, id });
+    writeStocks();
 
     if (!isBackorderCreationEnabled()) {
       transaction.update(docRef, updates);
@@ -260,7 +251,7 @@ const delivery_ordersService = {
     if (fuelReady === true || fuelReady === 'true') {
       results = results.filter((item) => {
         const normalizedStatus = normalizeJobStatus(item.status);
-        return normalizedStatus === JOB_STATUS.SITE_WEIGHED_OUT || normalizedStatus === JOB_STATUS.COMPLETED;
+        return !isWarehouseDelivery(item) && (normalizedStatus === JOB_STATUS.SITE_WEIGHED_OUT || normalizedStatus === JOB_STATUS.COMPLETED);
       });
     }
     // Post-filter by jobId
@@ -383,34 +374,6 @@ const delivery_ordersService = {
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      if (isOdooEnabled()) {
-        // The delivery exists once persisted. Odoo is intentionally handled
-        // in the background so a slow remote ERP can never make the mobile
-        // POST time out or encourage an operator to submit a duplicate job.
-        void (async () => {
-          const purchaseOrder = purchaseOrderContext || await db.collection('purchaseOrders').doc(String(item.purchaseOrderId || '')).get()
-            .then((doc) => doc.exists ? { id: doc.id, ...doc.data() } : null);
-          const material = snapshotStore.getById('materials', item.materialId)
-            || await db.collection('materials').doc(String(item.materialId || '')).get()
-              .then((doc) => doc.exists ? { id: doc.id, ...doc.data() } : null);
-          const vendor = linkedSnapshotRecord('vendors', item.vendorId);
-          const driver = linkedSnapshotRecord('drivers', item.driverId);
-          const vehicle = linkedSnapshotRecord('vehicles', item.vehicleId);
-          const odooFields = await createJobReceipt({
-            deliveryOrder: item,
-            purchaseOrder: purchaseOrder || {},
-            material: material || {},
-            vendor,
-            driver,
-            vehicle,
-          });
-          await docRef.update(odooFields);
-        })().catch(async (error) => {
-          const odooFailure = { odooReceiptSyncStatus: 'failed', odooReceiptLastAttemptAt: new Date().toISOString(), odooReceiptSyncError: error.code || 'ODOO_JOB_RECEIPT_SYNC_FAILED' };
-          await docRef.update(odooFailure).catch(() => {});
-          console.error(`[Odoo] Failed to create receipt for job ${jobId}: ${error.message}`);
-        });
-      }
       // Cache is updated via onSnapshot
       return { id: docId, ...item };
     } catch (error) {
@@ -446,6 +409,7 @@ const delivery_ordersService = {
 
   async _applyUpdate(docRef, id, existing, data) {
     try {
+      validateWarehouseUpdate(existing, data);
       const updates = { ...data, updatedAt: new Date().toISOString() };
       // MIF identifiers are generated on the server so offline/retried mobile
       // submissions cannot create duplicate inspection numbers.
@@ -468,6 +432,12 @@ const delivery_ordersService = {
           inspection.mrfNumber = existing.materialInspection.mrfNumber;
         }
         updates.materialInspection = { ...existing.materialInspection, ...inspection };
+        if (isWarehouseReceipt(existing)) {
+          updates.status = JOB_STATUS.COMPLETED;
+          updates.workflowStage = 'inspected';
+          updates.currentStage = 'completed';
+          updates.completedAt = updates.updatedAt;
+        }
       }
       if (updates.status) updates.status = normalizeJobStatus(updates.status, normalizeJobStatus(existing.status));
       if (Object.prototype.hasOwnProperty.call(data, 'materialSource')) {
@@ -498,14 +468,6 @@ const delivery_ordersService = {
         .includes(normalizeJobStatus(existing.status));
       const isNowCompleted = [JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED]
         .includes(normalizeJobStatus(updates.status, normalizeJobStatus(existing.status)));
-      const shouldSyncOdooReceipt = isOdooEnabled() && !wasCompletedAtStart && isNowCompleted;
-      if (shouldSyncOdooReceipt) {
-        // A site completion must never be rolled back merely because Odoo is
-        // unavailable. Persist an observable status, then complete the Odoo
-        // sync below and expose a retryable failure to management if needed.
-        updates.odooReceiptSyncStatus = 'pending';
-        updates.odooReceiptLastAttemptAt = new Date().toISOString();
-      }
 
       console.debug('[SiteWeights] delivery order before update', {
         documentId: id,
@@ -525,7 +487,7 @@ const delivery_ordersService = {
         : null;
       const backorderResult = backorderPlan
         ? await applyUpdateWithBackorder(docRef, id, updates)
-        : (await docRef.update(updates), { backorder: null });
+        : (await stockService.persistDelivery(docRef, updates), { backorder: null });
       console.debug('[SiteWeights] delivery order update succeeded', { documentId: id });
 
       // Diagnostic verification of the exact document written. Remove this
@@ -564,7 +526,7 @@ const delivery_ordersService = {
       // When delivery is marked as delivered/completed, tag it as awaiting quality control check
       const wasCompleted = wasCompletedAtStart;
       
-      if (!wasCompleted && isNowCompleted) {
+      if (!wasCompleted && isNowCompleted && !isWarehouseReceipt(existing)) {
         const purchaseOrderId = existing.purchaseOrderId;
         const deliveredQty = Number(
           data.quantityDelivered ??
@@ -636,56 +598,49 @@ const delivery_ordersService = {
           }
         }
 
-      let syncedBackorder = null;
-      if (shouldSyncOdooReceipt) {
-        const purchaseOrder = existing.purchaseOrderId
-          ? snapshotStore.getById('purchaseOrders', existing.purchaseOrderId)
-          : null;
-        const material = existing.materialId
-          ? snapshotStore.getById('materials', existing.materialId)
-          : null;
 
-        try {
-          const odooSync = await syncSiteReceipt({
-            deliveryOrder: { id, ...persisted },
-            purchaseOrder,
-            material,
-            vendor: linkedSnapshotRecord('vendors', persisted.vendorId),
-            driver: linkedSnapshotRecord('drivers', persisted.driverId),
-            vehicle: linkedSnapshotRecord('vehicles', persisted.vehicleId),
-          });
-          await docRef.update(odooSync.source);
-          Object.assign(persisted, odooSync.source);
-
-          if (backorderResult.backorder?.id && odooSync.backorder) {
-            await collectionRef.doc(backorderResult.backorder.id).update(odooSync.backorder);
-            syncedBackorder = { ...backorderResult.backorder, ...odooSync.backorder };
-          }
-        } catch (odooError) {
-          const failedSync = {
-            odooReceiptSyncStatus: 'failed',
-            odooReceiptSyncErrorCode: odooError.code || 'ODOO_RECEIPT_SYNC_FAILED',
-            odooReceiptLastAttemptAt: new Date().toISOString(),
-          };
-          await docRef.update(failedSync);
-          Object.assign(persisted, failedSync);
-          if (backorderResult.backorder?.id) {
-            await collectionRef.doc(backorderResult.backorder.id).update(failedSync);
-            syncedBackorder = { ...backorderResult.backorder, ...failedSync };
-          }
-          console.error(`[Odoo] Receipt sync failed for delivery ${id}: ${odooError.message}`);
-        }
-      }
 
       return {
         id: persistedDocument.id,
         ...persisted,
-        ...(backorderResult.backorder ? { backorder: syncedBackorder || backorderResult.backorder } : {}),
+        ...(backorderResult.backorder ? { backorder: backorderResult.backorder } : {}),
       };
     } catch (error) {
       console.error('delivery_ordersService._applyUpdate error:', error);
       throw error;
     }
+  },
+
+  async denyWarehouse(id, actor, reason) {
+    return db.runTransaction(async (transaction) => {
+      const ref = collectionRef.doc(id);
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) return null;
+      const job = snapshot.data();
+      if (actor.siteId && job.siteId && actor.siteId !== job.siteId) throw Object.assign(new Error('Delivery belongs to another site.'), { statusCode: 403 });
+      const updates = denialUpdates(job, actor, reason);
+      transaction.update(ref, updates);
+      return { id, ...job, ...updates };
+    });
+  },
+
+  async acceptWarehouse(id, actor) {
+    return db.runTransaction(async (transaction) => {
+      const ref = collectionRef.doc(id);
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) return null;
+      const job = snapshot.data();
+      if (actor.siteId && job.siteId && actor.siteId !== job.siteId) {
+        throw Object.assign(new Error('Delivery belongs to another site.'), { statusCode: 403 });
+      }
+      const updates = acceptanceUpdates(job, actor);
+      if (updates) {
+        const writeStocks = await stockService.prepare(transaction, { ...job, ...updates, id });
+        writeStocks();
+        transaction.update(ref, updates);
+      }
+      return { id, ...job, ...updates };
+    });
   },
 
   async receiveLot(deliveryOrderId, storageLot) {
@@ -709,76 +664,9 @@ const delivery_ordersService = {
     }
   },
 
-  /**
-   * Management retry for a site receipt that could not reach Odoo during the
-   * original completion. It never changes the local delivery/backorder data.
-   */
-  async syncOdooReceipt(id) {
-    if (!isOdooEnabled()) {
-      const error = new Error('Odoo integration is currently disabled.');
-      error.statusCode = 503;
-      error.code = 'ODOO_DISABLED';
-      throw error;
-    }
-    const docRef = collectionRef.doc(id);
-    const cached = snapshotStore.getById(COLLECTION_NAME, id);
-    const snapshot = cached ? null : await docRef.get();
-    const existing = cached || (snapshot?.exists ? snapshot.data() : null);
-    if (!existing) return null;
-
-    const status = normalizeJobStatus(existing.status);
-    if (![JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED].includes(status)) {
-      const error = new Error('Only completed site receipts can be synchronized with Odoo.');
-      error.statusCode = 409;
-      error.code = 'ODOO_RECEIPT_NOT_FINALIZED';
-      throw error;
-    }
-
-    const pending = {
-      odooReceiptSyncStatus: 'pending',
-      odooReceiptLastAttemptAt: new Date().toISOString(),
-    };
-    await docRef.update(pending);
-    const purchaseOrder = existing.purchaseOrderId
-      ? snapshotStore.getById('purchaseOrders', existing.purchaseOrderId)
-      : null;
-    const material = existing.materialId
-      ? snapshotStore.getById('materials', existing.materialId)
-      : null;
-
-    try {
-      const odooSync = await syncSiteReceipt({
-        deliveryOrder: { id, ...existing, ...pending },
-        purchaseOrder,
-        material,
-        vendor: linkedSnapshotRecord('vendors', existing.vendorId),
-        driver: linkedSnapshotRecord('drivers', existing.driverId),
-        vehicle: linkedSnapshotRecord('vehicles', existing.vehicleId),
-      });
-      await docRef.update(odooSync.source);
-
-      if (existing.backorderDeliveryOrderId && odooSync.backorder) {
-        await collectionRef.doc(existing.backorderDeliveryOrderId).update(odooSync.backorder);
-      }
-      return { id, ...existing, ...pending, ...odooSync.source };
-    } catch (odooError) {
-      const failed = {
-        odooReceiptSyncStatus: 'failed',
-        odooReceiptSyncErrorCode: odooError.code || 'ODOO_RECEIPT_SYNC_FAILED',
-        odooReceiptLastAttemptAt: new Date().toISOString(),
-      };
-      await docRef.update(failed);
-      if (existing.backorderDeliveryOrderId) {
-        await collectionRef.doc(existing.backorderDeliveryOrderId).update(failed);
-      }
-      console.error(`[Odoo] Receipt retry failed for delivery ${id}: ${odooError.message}`);
-      return { id, ...existing, ...failed };
-    }
-  },
-
   async delete(id) {
     try {
-      await collectionRef.doc(id).delete();
+      await stockService.deleteDelivery(collectionRef.doc(id));
     } catch (error) {
       console.error('delivery_ordersService.delete error:', error);
       throw error;

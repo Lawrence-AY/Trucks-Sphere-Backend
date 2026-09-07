@@ -15,8 +15,8 @@ router.post('/sessions/:sessionId/vehicle', trackingController.attachSecuritySes
 router.post('/sessions/:sessionId/decision', trackingController.recordSecurityDecision);
 router.get('/flags', verifyToken, requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'operator_site'), trackingController.listFlags);
 router.post('/flags/:id/clear', verifyToken, requireManagementAccess({ write: true, allowAdminWrite: true }), trackingController.clearFlag);
-router.get('/security-personnel', verifyToken, requireManagementAccess({ write: true, superAdminOnly: true }), trackingController.listSecurityPersonnel);
-router.post('/security-personnel', verifyToken, requireManagementAccess({ write: true, superAdminOnly: true }), trackingController.createSecurityPersonnel);
+router.get('/security-personnel', verifyToken, requireManagementAccess({ write: true, allowAdminWrite: true }), trackingController.listSecurityPersonnel);
+router.post('/security-personnel', verifyToken, requireManagementAccess({ write: true, allowAdminWrite: true }), trackingController.createSecurityPersonnel);
 
 // GET /track/by-plate/:plateNumber — public, no auth required
 router.get('/by-plate/:plateNumber', trackingController.getTrackingByPlate);

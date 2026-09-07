@@ -1,14 +1,10 @@
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
-const vendorsService = require('../vendors/service');
-const { fetchOdooDrivers, odooDriverToDriver } = require('../../integrations/odooDriverService');
-const { isOdooEnabled } = require('../../integrations/odooConfig');
 const collectionRef = db.collection('drivers');
 const nationalIdRef = db.collection('driverNationalIds');
 
 const COLLECTION_NAME = 'drivers';
-let odooSyncJob = { status: 'idle', result: null, startedAt: null, completedAt: null };
 
 function normalizeNationalId(value) {
   return String(value || '').trim().replace(/\s+/g, '').toUpperCase();
@@ -23,95 +19,6 @@ function duplicateNationalIdError() {
     statusCode: 409,
     code: 'DRIVER_NATIONAL_ID_EXISTS',
   });
-}
-
-function addUniqueIndex(index, key, value) {
-  if (!key) return;
-  index.set(key, index.has(key) ? null : value);
-}
-
-async function importOdooDrivers() {
-  const odooDrivers = await fetchOdooDrivers();
-  const driverVendorPartnerIds = [...new Set(odooDrivers
-    .map((driver) => odooDriverToDriver(driver).odooVendorPartnerId)
-    .filter(Number.isInteger))];
-  // Refresh precisely the vendor Contacts referenced by drivers. Some Odoo
-  // Vendor relations are not marked with supplier_rank, so a generic supplier
-  // import alone would leave those drivers unassigned.
-  const vendorSync = await vendorsService.importFromOdoo({ partnerIds: driverVendorPartnerIds });
-  const [driverSnapshot, vendorSnapshot] = await Promise.all([
-    collectionRef.get(),
-    db.collection('vendors').get(),
-  ]);
-  const result = {
-    total: odooDrivers.length,
-    imported: 0,
-    updatedFromOdoo: 0,
-    skippedWithoutVendor: 0,
-    skippedWithoutNationalId: 0,
-    failed: 0,
-    errors: [],
-    vendorSync,
-  };
-
-  const vendorByOdooPartnerId = new Map();
-  vendorSnapshot.docs.forEach((doc) => {
-    const vendor = doc.data();
-    if (Number.isInteger(vendor.odooPartnerId)) vendorByOdooPartnerId.set(vendor.odooPartnerId, doc);
-  });
-
-  const byOdooDriverId = new Map();
-  const byNationalId = new Map();
-  driverSnapshot.docs.forEach((doc) => {
-    const driver = doc.data();
-    if (Number.isInteger(driver.odooDriverId)) byOdooDriverId.set(driver.odooDriverId, doc);
-    addUniqueIndex(byNationalId, normalizeNationalId(driver.nationalId), doc);
-  });
-
-  for (const odooDriver of odooDrivers) {
-    const mapped = odooDriverToDriver(odooDriver);
-    const vendorDoc = vendorByOdooPartnerId.get(mapped.odooVendorPartnerId);
-    const normalizedNationalId = normalizeNationalId(mapped.nationalId);
-    if (!vendorDoc) {
-      result.skippedWithoutVendor += 1;
-      continue;
-    }
-    if (!normalizedNationalId) {
-      result.skippedWithoutNationalId += 1;
-      continue;
-    }
-
-    try {
-      const vendor = vendorDoc.data();
-      const driverData = {
-        ...mapped,
-        nationalId: normalizedNationalId,
-        vendorId: vendor.id || vendorDoc.id,
-        vendorName: vendor.companyName || vendor.name || vendorDoc.id,
-      };
-      const existing = byOdooDriverId.get(mapped.odooDriverId) || byNationalId.get(normalizedNationalId);
-
-      if (existing) {
-        await driversService.update(existing.id, driverData);
-        byOdooDriverId.set(mapped.odooDriverId, existing);
-        addUniqueIndex(byNationalId, normalizedNationalId, existing);
-        result.updatedFromOdoo += 1;
-      } else {
-        const created = await driversService.create(driverData);
-        const ref = collectionRef.doc(created.id);
-        const newDoc = { id: created.id, ref, data: () => created };
-        byOdooDriverId.set(mapped.odooDriverId, newDoc);
-        addUniqueIndex(byNationalId, normalizedNationalId, newDoc);
-        result.imported += 1;
-      }
-    } catch (error) {
-      result.failed += 1;
-      result.errors.push({ odooDriverId: mapped.odooDriverId || null, code: error.code || 'ODOO_DRIVER_SYNC_FAILED' });
-      console.error(`[Odoo] Failed to synchronize driver ${mapped.odooDriverId || 'unknown'}: ${error.message}`);
-    }
-  }
-
-  return result;
 }
 
 const driversService = {
@@ -295,35 +202,6 @@ const driversService = {
       console.error('driversService.delete error:', error);
       throw error;
     }
-  },
-
-  async importFromOdoo() {
-    return importOdooDrivers();
-  },
-
-  startOdooSync() {
-    if (!isOdooEnabled()) return { status: 'disabled', result: { code: 'ODOO_DISABLED' }, startedAt: null, completedAt: null };
-    if (odooSyncJob.status === 'running') return odooSyncJob;
-
-    odooSyncJob = { status: 'running', result: null, startedAt: new Date().toISOString(), completedAt: null };
-    void driversService.importFromOdoo()
-      .then((result) => {
-        odooSyncJob = { status: 'completed', result, startedAt: odooSyncJob.startedAt, completedAt: new Date().toISOString() };
-      })
-      .catch((error) => {
-        console.error(`[Odoo] Driver sync failed: ${error.message}`);
-        odooSyncJob = {
-          status: 'failed',
-          result: { code: error.code || 'ODOO_DRIVER_SYNC_FAILED' },
-          startedAt: odooSyncJob.startedAt,
-          completedAt: new Date().toISOString(),
-        };
-      });
-    return odooSyncJob;
-  },
-
-  getOdooSyncStatus() {
-    return odooSyncJob;
   },
 };
 

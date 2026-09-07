@@ -70,11 +70,11 @@ function watchCollection(name, ref) {
       // snapshot carries only Firestore's changed documents, preserving
       // references for all untouched records.
       const byId = new Map((store.get(name) || []).map(item => [item.id, item]));
-      snapshot.docChanges().forEach(change => {
+      const changes = snapshot.docChanges();
+      changes.forEach(change => {
         const record = { id: change.doc.id, ...change.doc.data() };
         if (change.type === 'removed') byId.delete(change.doc.id);
         else byId.set(change.doc.id, record);
-        emitChange(name, { type: change.type, id: change.doc.id, record });
       });
       const docs = Array.from(byId.values());
       store.set(name, docs);
@@ -82,6 +82,12 @@ function watchCollection(name, ref) {
       const hash = cacheService.generateHash(docs);
       hashes.set(name, hash);
       timestamps.set(name, Date.now());
+
+      // Readers triggered by a change must see the newly committed snapshot.
+      changes.forEach(change => emitChange(name, {
+        type: change.type, id: change.doc.id,
+        record: { id: change.doc.id, ...change.doc.data() },
+      }));
 
       // Persist to Redis asynchronously (fire-and-forget)
       cacheService.persistSnapshot(name, docs).catch(() => {});
@@ -232,7 +238,23 @@ async function invalidateRedisCache(collectionName) {
   await cacheService.invalidate(collectionName);
 }
 
+// Publish a committed write immediately instead of waiting for the listener.
+function applyCommittedUpdate(collectionName, id, updates) {
+  const docs = [...getAll(collectionName)];
+  const index = docs.findIndex((item) => item.id === id);
+  const record = { ...(index >= 0 ? docs[index] : {}), ...updates, id };
+  if (index >= 0) docs[index] = record;
+  else docs.push(record);
+  store.set(collectionName, docs);
+  hashes.set(collectionName, cacheService.generateHash(docs));
+  timestamps.set(collectionName, Date.now());
+  emitChange(collectionName, { type: index >= 0 ? 'modified' : 'added', id, record });
+  cacheService.persistSnapshot(collectionName, docs).catch(() => {});
+  return record;
+}
+
 module.exports = {
+  applyCommittedUpdate,
   init,
   waitUntilReady,
   getAll,

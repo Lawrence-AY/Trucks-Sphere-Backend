@@ -1,7 +1,6 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
-const { syncPurchaseOrder } = require('../../integrations/odooPurchaseService');
-const { isOdooEnabled } = require('../../integrations/odooConfig');
+const { isWarehousePurchaseOrder } = require('./warehouse');
 const { getNextId, peekNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('purchaseOrders');
 
@@ -63,11 +62,7 @@ const purchase_ordersService = {
     // predate this denormalized field, so resolve it from the material cache
     // as well; warehouse clients can then list the correct orders reliably.
     results = results.map((item) => {
-      const material = snapshotStore.getById('materials', item.materialId) ||
-        snapshotStore.getAll('materials').find((entry) =>
-          [entry.id, entry.materialId].filter(Boolean).some((id) => String(id).toLowerCase() === String(item.materialId || '').toLowerCase()),
-        );
-      return { ...item, isWarehouseMaterial: Boolean(item.isWarehouseMaterial || material?.isWarehouseMaterial) };
+      return { ...item, isWarehouseMaterial: isWarehousePurchaseOrder(item, snapshotStore.getAll('materials')) };
     });
 
     results = [...results].sort((a, b) => {
@@ -76,6 +71,7 @@ const purchase_ordersService = {
       return db - da;
     });
 
+    if (query.excludeWarehouse === true) results = results.filter(item => !item.isWarehouseMaterial);
     if (status) results = results.filter(item => item.status === status);
     if (vendorId) results = results.filter(item => item.vendorId === vendorId);
     if (quarryId) results = results.filter(item => item.quarryId === quarryId);
@@ -100,7 +96,7 @@ const purchase_ordersService = {
 
   findById(id) {
     const doc = snapshotStore.getById(COLLECTION_NAME, id);
-    return doc || null;
+    return doc ? { ...doc, isWarehouseMaterial: isWarehousePurchaseOrder(doc, snapshotStore.getAll('materials')) } : null;
   },
 
   /**
@@ -118,18 +114,24 @@ const purchase_ordersService = {
       const lines = requestedLines.map((line) => {
         const material = findReference('materials', line.materialId);
         const quantity = Number(line.quantity);
-        if (!material || !Number.isFinite(quantity) || quantity <= 0) return null;
+        if (!material || (!material.isWarehouseMaterial && (!Number.isFinite(quantity) || quantity <= 0))) return null;
         return {
           materialId: material.id,
           materialNumber: displayNumber(material.materialId || material.id, 'MAT'),
           materialName: material.name || '',
           isWarehouseMaterial: Boolean(material.isWarehouseMaterial),
-          quantity,
-          unit: line.unit || material.defaultUnit || material.measurementType || 'units',
+          quantity: material.isWarehouseMaterial ? null : quantity,
+          unit: material.isWarehouseMaterial ? null : line.unit || material.defaultUnit || material.measurementType || 'units',
           material,
         };
       });
       const material = lines[0]?.material;
+      if (lines.length > 1 && lines.some((line) => line?.isWarehouseMaterial)) {
+        const error = new Error('A warehouse-reference purchase order can contain only one material.');
+        error.statusCode = 400;
+        error.code = 'WAREHOUSE_PO_SINGLE_MATERIAL_REQUIRED';
+        throw error;
+      }
       const quarry = payload.quarryId ? findReference('quarries', payload.quarryId) : null;
       const site = payload.siteId ? findReference('sites', payload.siteId) : null;
       if (!vendor || !material || lines.some((line) => !line) || (payload.quarryId && !quarry) || (payload.siteId && !site)) {
@@ -213,14 +215,6 @@ const purchase_ordersService = {
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      // Persist the TruckSphere PO before syncing Odoo. This keeps creation
-      // fast and protects it from mobile request timeouts. Odoo details are
-      // added when the background sync completes.
-      if (isOdooEnabled()) {
-        syncPurchaseOrder({ purchaseOrder: item, vendor, materials: lines })
-          .then((odooFields) => docRef.update({ ...odooFields, updatedAt: new Date().toISOString() }))
-          .catch((syncError) => console.error(`Purchase order ${poNumber} Odoo sync failed:`, syncError.message));
-      }
       return { id: docId, ...item };
     } catch (error) {
       console.error('purchase_ordersService.create error:', error);

@@ -1,6 +1,5 @@
 //backorder.js
 const { JOB_STATUS, normalizeJobStatus, TERMINAL_STATUSES } = require('../../utils/jobLifecycle');
-const { isOdooEnabled } = require('../../integrations/odooConfig');
 
 const SHORTFALL_EPSILON = 0.001;
 const SITE_COMPLETION_STATUSES = new Set([JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED]);
@@ -118,7 +117,6 @@ function buildBackorder({ source, plan, id, now }) {
     sourceOrderedQuantity: plan.orderedQuantity,
     sourceDeliveredQuantity: plan.deliveredQuantity,
     createdBy: 'site_net_backorder',
-    ...(isOdooEnabled() ? { odooReceiptSyncStatus: 'pending' } : {}),
     createdAt: now,
     updatedAt: now,
   };

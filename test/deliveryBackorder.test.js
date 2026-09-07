@@ -64,5 +64,4 @@ test('a backorder retains delivery context but awaits a new driver, truck, and j
   assert.equal(backorder.driverId, '');
   assert.equal(backorder.vehicleId, '');
   assert.equal(backorder.plateNumber, '');
-  assert.equal(backorder.odooReceiptSyncStatus, undefined);
 });

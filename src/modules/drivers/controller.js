@@ -48,27 +48,24 @@ exports.checkNationalId = async (req, res, next) => {
 };
 
 exports.verifyIdentity = async (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   try {
     const result = await verifyDriverIdentity(req.body);
     res.json(result);
   } catch (err) { next(err); }
 };
 
-exports.syncFromOdoo = async (_req, res, next) => {
-  try {
-    const job = driversService.startOdooSync();
-    res.status(job.status === 'running' ? 202 : 200).json(job);
-  } catch (err) { next(err); }
-};
-
-exports.getOdooSyncStatus = async (_req, res, next) => {
-  try {
-    res.json(driversService.getOdooSyncStatus());
-  } catch (err) { next(err); }
-};
-
 exports.update = async (req, res, next) => {
   try {
+    if (['nationalId', 'firstName', 'surname'].some((key) => Object.prototype.hasOwnProperty.call(req.body, key))) {
+      const existing = await driversService.findById(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+      await verifyDriverIdentity({
+        nationalId: req.body.nationalId ?? existing.nationalId,
+        firstName: req.body.firstName ?? existing.firstName,
+        surname: req.body.surname ?? existing.surname,
+      });
+    }
     const item = await driversService.update(req.params.id, req.body);
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json(item);

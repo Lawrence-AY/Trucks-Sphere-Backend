@@ -6,6 +6,7 @@
  */
 
 const reportsService = require('./service');
+const stocksService = require('../stocks/service');
 const excelBuilder = require('./excelBuilder');
 const csvBuilder = require('./csvBuilder');
 const snapshotStore = require('../../utils/snapshotStore');
@@ -36,6 +37,8 @@ exports.exportExcel = async (req, res, next) => {
 
     // Build all report data
     const data = {
+      stocks: await stocksService.list(),
+      stockMovements: await stocksService.allMovements(),
       masterAudit: reportsService.buildMasterAudit(options),
       materialInspections: reportsService.buildMaterialInspectionReport(options),
       flagged: reportsService.buildFlaggedReport(options),
@@ -76,6 +79,8 @@ exports.getSummary = async (req, res, next) => {
   try {
     const options = parseOptions(req.query);
     const summary = reportsService.buildSummary(options);
+    const stocks = await stocksService.list();
+    summary.stocks = { total: stocks.length, unpriced: stocks.filter(r => r.unitCost == null).length, exceptions: stocks.filter(r => r.excessQuantity > 0 || r.shortageQuantity > 0 || r.quarantinedQuantity > 0).length };
     res.json(summary);
   } catch (err) {
     next(err);
@@ -95,6 +100,11 @@ exports.getCategorySummary = async (req, res, next) => {
 
     let data;
     switch (category) {
+      case 'stocks': {
+        const rows = await stocksService.list();
+        data = { total: rows.length, unpriced: rows.filter(r => r.unitCost == null).length, exceptions: rows.filter(r => r.excessQuantity > 0 || r.shortageQuantity > 0 || r.quarantinedQuantity > 0).length, preview: rows.slice(0, 5) };
+        break;
+      }
       case 'deliveries': {
         const deliveries = reportsService.buildMasterAudit(options);
         data = {
@@ -190,6 +200,10 @@ exports.exportCategoryCSV = async (req, res, next) => {
     let filename = '';
 
     switch (category) {
+      case 'stocks':
+        rows = await stocksService.list();
+        filename = `Stocks_Current_${new Date().toISOString().slice(0, 10)}.csv`;
+        break;
       case 'deliveries':
         rows = reportsService.buildMasterAudit(options);
         filename = `Deliveries_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -223,7 +237,7 @@ exports.exportCategoryCSV = async (req, res, next) => {
         filename = `QuarryOps_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'site-ops':
-        rows = reportsService.buildMasterAudit(options).filter(r => r.siteInTimeEAT);
+        rows = reportsService.buildMasterAudit(options).filter(r => r.siteInTimeEAT || r.warehouseAcceptedAt);
         filename = `SiteOps_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'inspections':
@@ -231,36 +245,14 @@ exports.exportCategoryCSV = async (req, res, next) => {
         filename = `Material_Inspections_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'warehouse':
-        // Warehouse shipments do not pass through quarry operations. Export a
-        // focused record rather than the master-audit shape, which includes
-        // quarry, fuel, creation-location, and vendor-insurance fields that
-        // are not relevant to warehouse reporting.
-        rows = reportsService.buildMasterAudit(options)
-          .filter(r => r.origin === 'Warehouse')
-          .map((r) => ({
-            jobId: r.jobId,
-            poNumber: r.poNumber,
-            jobStatus: r.jobStatus,
-            vendorName: r.vendorName,
-            driverName: r.driverName,
-            driverLicense: r.driverLicense,
-            plateNumber: r.plateNumber,
-            truckMake: r.truckMake,
-            truckModel: r.truckModel,
-            materialName: r.materialName,
-            items: r.warehouseItems,
-            origin: r.origin,
-            banker: r.banker,
-            quantityOrdered: r.quantityOrdered,
-            quantityDelivered: r.quantityDelivered,
-            siteInTimeEAT: r.siteInTimeEAT,
-            siteOutTimeEAT: r.siteOutTimeEAT,
-            siteWeighIn: r.siteWeighIn,
-            siteWeighOut: r.siteWeighOut,
-            siteNet: r.siteNet,
-            lotNumber: r.lotNumber,
-            grnNumber: r.grnNumber,
-          }));
+        rows = reportsService.buildMasterAudit(options).filter(r => r.origin === 'Warehouse').map(r => ({
+          jobId: r.jobId, poNumber: r.poNumber, vendorName: r.vendorName,
+          items: r.warehouseItems, receiptStatus: r.warehouseReceiptStatus,
+          acceptedAt: r.warehouseAcceptedAt, acceptedBy: r.warehouseAcceptedBy,
+          receivedItems: r.warehouseReceivedItems, mifNumber: r.mrfNumber,
+          inspector: r.inspectorName, inspectedAt: r.inspectionAtEAT,
+          inspectionResult: r.inspectionResult,
+        }));
         filename = `Warehouse_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       default:

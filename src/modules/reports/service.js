@@ -1,3 +1,4 @@
+const { warehouseReportFields } = require('./warehouseReport');
 /**
  * Reports Service — Data Aggregator
  *
@@ -372,6 +373,7 @@ function buildMasterAudit(options = {}) {
       quarryOperator: d.weighOutByName || d.weighOutBy || '',
       creationLocation: d.weighInLocation || d.weighOutLocation || d.receivedLocation || '',
       geolocation: d.weighOutGeoLocation ? `${d.weighOutGeoLocation.latitude},${d.weighOutGeoLocation.longitude}` : '',
+      ...warehouseReportFields(d, formatEAT),
     };
   });
 }
@@ -453,10 +455,10 @@ function buildMaterialReport() {
 
     return {
       materialName: m.name || '',
-      category: m.category || '',
+      category: m.isWarehouseMaterial ? 'Warehouse' : m.category || '',
       sizes: m.sizes || m.grade || '',
-      unit: m.unit || 'Tonnes',
-      totalDelivered,
+      unit: m.isWarehouseMaterial ? '' : m.defaultUnit || m.measurementType || m.unit || '',
+      totalDelivered: m.isWarehouseMaterial ? '' : totalDelivered,
     };
   });
 }
@@ -571,10 +573,10 @@ function buildPOReport(options = {}) {
       vendorName: po.vendorName || '',
       materialName: line.materialName || '',
       materialId: line.materialId || '',
-      unit: line.unit || 'units',
-      targetQuantity: targetQty,
-      deliveredQuantity,
-      remainingQuantity: Math.max(0, targetQty - deliveredQuantity),
+      unit: line.isWarehouseMaterial ? '' : line.unit || 'units',
+      targetQuantity: line.isWarehouseMaterial ? '' : targetQty,
+      deliveredQuantity: line.isWarehouseMaterial ? '' : deliveredQuantity,
+      remainingQuantity: line.isWarehouseMaterial ? '' : Math.max(0, targetQty - deliveredQuantity),
       progressPercent: progress,
       status: po.status || '',
       createdAt: formatEAT(po.createdAt),
