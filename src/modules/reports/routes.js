@@ -17,7 +17,6 @@ router.use(requireManagementAccess());
 // GET /api/admin/reports — list available report types
 router.get('/', (_req, res) => {
   const reports = [
-    { id: 'stocks', name: 'Site Stock Valuation', category: 'Inventory', description: 'Current balances, usage, valuation and receipt variances.' },
     {
       id: 'operations-summary',
       name: 'Operations Summary',

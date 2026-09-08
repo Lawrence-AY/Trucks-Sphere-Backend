@@ -285,9 +285,9 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Cleared At (EAT)': r.clearedAtEAT, 'Clear Reason': r.resolutionReason,
   })));
 
-  const stockColumns = ['siteName', 'jobId', 'poNumber', 'materialName', 'origin', 'unit', 'receiptStatus', 'dispatchedQuantity', 'receivedQuantity', 'usableQuantity', 'quarantinedQuantity', 'excessQuantity', 'shortageQuantity', 'consumedQuantity', 'remainingQuantity', 'unitCost', 'currency', 'receivedValue', 'remainingValue', 'valuationStatus', 'acceptedBy', 'acceptedAt', 'inspectorName', 'inspectedAt', 'mifNumber'];
-  addSheet(wb, 'Stocks - Current Balances', stockColumns, data.stocks || []);
-  addSheet(wb, 'Stock Movements - All Time', ['stockId', 'jobId', 'siteName', 'materialName', 'unit', 'type', 'quantity', 'previousUnitCost', 'unitCost', 'currency', 'remainingQuantity', 'reason', 'actorName', 'createdAt'], data.stockMovements || []);
+ // const stockColumns = ['siteName', 'jobId', 'poNumber', 'materialName', 'origin', 'unit', 'receiptStatus', 'dispatchedQuantity', 'receivedQuantity', 'usableQuantity', 'quarantinedQuantity', 'excessQuantity', 'shortageQuantity', 'consumedQuantity', 'remainingQuantity', 'unitCost', 'currency', 'receivedValue', 'remainingValue', 'valuationStatus', 'acceptedBy', 'acceptedAt', 'inspectorName', 'inspectedAt', 'mifNumber'];
+ // addSheet(wb, 'Stocks - Current Balances', stockColumns, data.stocks || []);
+ // addSheet(wb, 'Stock Movements - All Time', ['stockId', 'jobId', 'siteName', 'materialName', 'unit', 'type', 'quantity', 'previousUnitCost', 'unitCost', 'currency', 'remainingQuantity', 'reason', 'actorName', 'createdAt'], data.stockMovements || []);
   const buffer = await wb.xlsx.writeBuffer();
   return buffer;
 }

@@ -6,7 +6,6 @@
  */
 
 const reportsService = require('./service');
-const stocksService = require('../stocks/service');
 const excelBuilder = require('./excelBuilder');
 const csvBuilder = require('./csvBuilder');
 const snapshotStore = require('../../utils/snapshotStore');
@@ -36,10 +35,7 @@ exports.exportExcel = async (req, res, next) => {
     const { start_date, end_date, filter } = req.query;
 
     // Build all report data
-    const data = {
-      stocks: await stocksService.list(),
-      stockMovements: await stocksService.allMovements(),
-      masterAudit: reportsService.buildMasterAudit(options),
+    const data = {      masterAudit: reportsService.buildMasterAudit(options),
       materialInspections: reportsService.buildMaterialInspectionReport(options),
       flagged: reportsService.buildFlaggedReport(options),
       drivers: reportsService.buildDriverReport(),
@@ -79,8 +75,6 @@ exports.getSummary = async (req, res, next) => {
   try {
     const options = parseOptions(req.query);
     const summary = reportsService.buildSummary(options);
-    const stocks = await stocksService.list();
-    summary.stocks = { total: stocks.length, unpriced: stocks.filter(r => r.unitCost == null).length, exceptions: stocks.filter(r => r.excessQuantity > 0 || r.shortageQuantity > 0 || r.quarantinedQuantity > 0).length };
     res.json(summary);
   } catch (err) {
     next(err);
@@ -100,11 +94,8 @@ exports.getCategorySummary = async (req, res, next) => {
 
     let data;
     switch (category) {
-      case 'stocks': {
-        const rows = await stocksService.list();
-        data = { total: rows.length, unpriced: rows.filter(r => r.unitCost == null).length, exceptions: rows.filter(r => r.excessQuantity > 0 || r.shortageQuantity > 0 || r.quarantinedQuantity > 0).length, preview: rows.slice(0, 5) };
-        break;
-      }
+      case 'stocks':
+        return res.status(404).json({ error: 'Report unavailable' });
       case 'deliveries': {
         const deliveries = reportsService.buildMasterAudit(options);
         data = {
@@ -201,9 +192,7 @@ exports.exportCategoryCSV = async (req, res, next) => {
 
     switch (category) {
       case 'stocks':
-        rows = await stocksService.list();
-        filename = `Stocks_Current_${new Date().toISOString().slice(0, 10)}.csv`;
-        break;
+        return res.status(404).json({ error: 'Report unavailable' });
       case 'deliveries':
         rows = reportsService.buildMasterAudit(options);
         filename = `Deliveries_${new Date().toISOString().slice(0, 10)}.csv`;

@@ -25,7 +25,7 @@ test('fuel queue excludes all warehouse markers before pagination', () => {
   const service = load('../src/modules/delivery-orders/service', {
     '../../../config/firebase': { db: { collection: () => ({}) } },
     '../../utils/snapshotStore': { getAll: (name) => name === 'deliveryOrders' ? deliveries : [], getById: () => null },
-    '../../utils/counterService': {}, '../../utils/jobIdService': {}, '../../utils/trackingUtils': {}, '../stocks/service': {},
+    '../../utils/counterService': {}, '../../utils/jobIdService': {}, '../../utils/trackingUtils': {},
   });
   const result = service.findAll({ fuelReady: true, limit: 1 });
   assert.equal(result.total, 1);
@@ -54,7 +54,7 @@ test('warehouse denial notifies the owning vendor and management with the reason
     { id: 'owner', vendorId: 'V1', role: 'vendor' },
     { id: 'other', vendorId: 'V2', role: 'vendor' },
     { id: 'admin', role: 'admin' },
-    { id: 'lite', role: 'admin_lite' },
+    { id: 'lite', role: 'management_lite' },
   ];
   const controller = load('../src/modules/tracking/controller', {
     './service': {}, '../../utils/trackingUtils': {},
@@ -96,15 +96,17 @@ test('site flags recognize legacy status and notify only for a new flag or chang
   assert.ok(newSiteFlag({ ...job, siteFlagReason: 'Rechecked missing load' }, job));
 });
 
-test('site flags send SMS to management and the vendor even when an in-app notification fails', async () => {
+test('site flags never send SMS even when an in-app notification fails; warehouse SMS still works', async () => {
   const sent = [];
-  const users = [{ id: 'admin', role: 'admin', phone: '0700000001' }, { id: 'super', role: 'superadmin', phoneNumber: '0700000002' }, { id: 'lite', role: 'adminlite', phone: '0700000003' }, { id: 'vendor', role: 'vendor', vendorId: 'V1', phone: '0700000004' }, { id: 'other', role: 'vendor', vendorId: 'V2', phone: '0700000005' }];
+  const users = [{ id: 'admin', role: 'admin', phone: '0700000001' }, { id: 'super', role: 'superadmin', phoneNumber: '0700000002' }, { id: 'lite', role: 'management_lite', phone: '0700000003' }, { id: 'vendor', role: 'vendor', vendorId: 'V1', phone: '0700000004' }, { id: 'other', role: 'vendor', vendorId: 'V2', phone: '0700000005' }];
   const controller = load('../src/modules/tracking/controller', {
     './service': {}, '../../utils/trackingUtils': {},
     '../../../config/firebase': { db: { collection: (name) => name === 'users' ? { get: async () => ({ docs: users.map((user) => ({ id: user.id, data: () => user })) }) } : name === 'vendors' ? { doc: () => ({ get: async () => ({ exists: false }) }) } : { add: async () => { throw Error('Notification unavailable'); } } } },
     '../sms/service': { isSmsConfigured: () => true, sendSMS: async (phone, message) => { sent.push({ phone, message }); return { success: true }; } },
   });
   await controller.notifySiteFlag({ id: 'job', vendorId: 'V1' }, { source: 'operator_site', reason: 'Missing load', flaggedBy: 'Receiver' });
+  assert.equal(sent.length, 0);
+  await controller.notifyWarehouseDenial({ id: 'job', vendorId: 'V1', warehouseDenialReason: 'Missing load' });
   assert.deepEqual(sent.map((item) => item.phone).sort(), ['0700000001', '0700000002', '0700000003', '0700000004']);
   assert.ok(sent.every((item) => /Missing load/.test(item.message)));
 });

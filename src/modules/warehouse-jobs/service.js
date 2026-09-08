@@ -213,8 +213,8 @@ const warehouseJobsService = {
         updatedAt: now,
       };
 
-      const writeStocks = await require('../stocks/service').prepare(transaction, deliveryOrder);
-      writeStocks();
+      //const writeStocks = await require('../stocks/service').prepare(transaction, deliveryOrder);
+      //writeStocks();
       transaction.set(receiptCounterRef, { receipt_note_counter: receiptSequence }, { merge: true });
       transaction.set(docRef, item);
       transaction.set(deliveryOrderRef, deliveryOrder);

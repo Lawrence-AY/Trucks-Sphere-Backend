@@ -21,7 +21,7 @@ async function notifyFlagStakeholders(order, flag, resolved = false, denied = fa
   const users = await db.collection('users').get();
   const userIds = users.docs.filter((doc) => {
     const user = doc.data();
-    return (Boolean(order.vendorId) && (user.vendorId === order.vendorId || user.entityId === order.vendorId)) || ['admin', 'admin_edit', 'adminlite', 'admin_lite', 'management', 'management_edit', 'management_lite', 'superadmin', 'super_admin'].includes(String(user.role || '').toLowerCase());
+    return (Boolean(order.vendorId) && (user.vendorId === order.vendorId || user.entityId === order.vendorId)) || ['admin', 'admin_edit', 'management', 'management_edit', 'management_lite', 'superadmin', 'super_admin'].includes(String(user.role || '').toLowerCase());
   }).map((doc) => doc.id);
   const action = resolved ? 'cleared' : 'flagged';
   const reason = resolved ? flag.resolutionReason : flag.reason;
@@ -36,12 +36,13 @@ async function notifyFlagStakeholders(order, flag, resolved = false, denied = fa
   })));
   if (notificationResults.some((result) => result.status === 'rejected')) console.error('[Tracking] Some stakeholder notifications could not be saved.');
 
-  if (isSmsConfigured()) {
+  // Site weight variance notifications are in-app only.
+  if (!siteFlag && isSmsConfigured()) {
     const vendor = order.vendorId ? await db.collection('vendors').doc(order.vendorId).get() : null;
     const phones = users.docs
       .filter((doc) => {
         const user = doc.data();
-        return (Boolean(order.vendorId) && (user.vendorId === order.vendorId || user.entityId === order.vendorId)) || ['admin', 'admin_edit', 'adminlite', 'admin_lite', 'management', 'management_edit', 'management_lite', 'superadmin', 'super_admin'].includes(String(user.role || '').toLowerCase());
+        return (Boolean(order.vendorId) && (user.vendorId === order.vendorId || user.entityId === order.vendorId)) || ['admin', 'admin_edit',  'management', 'management_edit', 'management_lite', 'superadmin', 'super_admin'].includes(String(user.role || '').toLowerCase());
       })
       .map((doc) => {
         const user = doc.data();
