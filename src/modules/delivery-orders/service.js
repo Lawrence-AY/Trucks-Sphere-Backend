@@ -127,13 +127,14 @@ function applySiteArrivalWorkflow(data, updates, existing = {}) {
  */
 function enrichWithPurchaseOrderContext(item) {
   if (!item?.purchaseOrderId) return item;
-  if (item.quarryId && item.siteId) return item;
+  if (item.quarryId && item.siteId && item.materials?.length) return item;
 
   const po = snapshotStore.getById('purchaseOrders', item.purchaseOrderId);
   if (!po) return item;
 
   return {
     ...item,
+    materials: item.materials?.length ? item.materials : (po.materials?.length ? po.materials : undefined),
     quarryId: item.quarryId || po.quarryId || '',
     quarryName: item.quarryName || po.quarryName || '',
     siteId: item.siteId || po.siteId || '',
