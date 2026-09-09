@@ -11,6 +11,7 @@ function warehouseReportFields(delivery, formatDate = (value) => value || '') {
   const receipts = delivery.materialInspection?.materialReceipts || [];
   return {
     origin: 'Warehouse', materialSource: 'Warehouse',
+    materialName: items.map((line) => line.materialName || line.productName || '').filter(Boolean).join(' | '),
     warehouseAcceptedAt: formatDate(delivery.warehouseAcceptedAt),
     warehouseAcceptedBy: delivery.warehouseAcceptedByName || '',
     mrfNumber: delivery.materialInspection?.mrfNumber || '',

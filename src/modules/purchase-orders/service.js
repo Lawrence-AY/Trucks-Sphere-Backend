@@ -121,7 +121,7 @@ const purchase_ordersService = {
           materialName: material.name || '',
           isWarehouseMaterial: Boolean(material.isWarehouseMaterial),
           quantity: material.isWarehouseMaterial ? null : quantity,
-          unit: material.isWarehouseMaterial ? null : line.unit || material.defaultUnit || material.measurementType || 'units',
+          unit: material.isWarehouseMaterial ? null : material.measurementType || material.defaultUnit || line.unit || 'units',
           material,
         };
       });

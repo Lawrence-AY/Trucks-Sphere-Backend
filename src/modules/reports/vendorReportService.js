@@ -6,7 +6,7 @@ const { warehouseReportFields } = require('./warehouseReport');
  * Used by vendor account users to download their own reports.
  */
 const snapshotStore = require('../../utils/snapshotStore');
-const { formatEAT, formatJobStatus, getInsuranceDetails, getQuarryLocation, getReportMaterialSource, getReportBanker } = require('./service');
+const { formatEAT, formatJobStatus, getInsuranceDetails, getQuarryLocation, getReportOrigin, getReportMaterialSource, getReportBanker } = require('./service');
 
 function withinTimeframe(dateStr, options) {
   if (!dateStr) return false;
@@ -133,6 +133,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
       plateNumber: d.plateNumber || vehicle.plateNumber || vehicle.plate || '',
       truckMake: vehicle.make || '',
       truckModel: vehicle.model || '',
+      origin: getReportOrigin(d, quarryLocation),
       materialName: d.materialName || material.name || '',
       materialSource: getReportMaterialSource(d, quarryLocation),
       banker: getReportBanker(d),
@@ -171,6 +172,9 @@ function buildVendorDriverReport(vendorId) {
   return driverDocs.map((d) => {
     const insurance = getInsuranceDetails(vendor, d);
     return {
+    driverNumber: d.driverId || d.id || '',
+    vendorNumber: vendor.vendorId || vendorId || '',
+    vendorName: vendor.companyName || vendor.name || d.vendorName || '',
     driverName: d.name || d.fullName || '',
     nationalId: d.nationalId || '',
     licenseNumber: d.licenseNumber || '',

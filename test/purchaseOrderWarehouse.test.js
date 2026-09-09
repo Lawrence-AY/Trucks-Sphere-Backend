@@ -10,6 +10,7 @@ function loadService() {
     materials: [
       { id: 'MAT001', name: 'Warehouse item', isWarehouseMaterial: true },
       { id: 'MAT002', name: 'Aggregate', defaultUnit: 'Tonnes' },
+      { id: 'MAT003', name: 'Steel', measurementType: 'Pieces', defaultUnit: 'Tonnes' },
     ],
   };
   const module = { exports: {} };
@@ -53,4 +54,13 @@ test('single-material warehouse PO can omit quantity and unit', async () => {
   const order = await loadService().create({ vendorId: 'V001', materialId: 'MAT001' });
   assert.equal(order.quantity, null);
   assert.equal(order.unit, null);
+});
+
+test('PO units follow each saved material measurement type despite client overrides', async () => {
+  const order = await loadService().create({ vendorId: 'V001', materials: [
+    { materialId: 'MAT002', quantity: 2, unit: 'Litres' },
+    { materialId: 'MAT003', quantity: 8, unit: 'Kilograms' },
+  ] });
+  assert.equal(order.unit, 'Tonnes');
+  assert.deepEqual(Array.from(order.materials, (line) => line.unit), ['Tonnes', 'Pieces']);
 });

@@ -1,3 +1,4 @@
+const { isSupersededForFuel } = require('../../utils/fuelEligibility');
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
@@ -75,6 +76,9 @@ const fuelService = {
 
   async create(data) {
     try {
+      const jobs = snapshotStore.getAll('deliveryOrders');
+      const job = jobs.find((item) => item.jobId === data.jobId || item.id === data.jobId);
+      if (job && isSupersededForFuel(job, jobs)) throw Object.assign(new Error('This driver or truck has a newer job. Refresh the fuel queue.'), { statusCode: 409, code: 'FUEL_JOB_SUPERSEDED' });
       const fuelId = await getNextId('fuel');
       const docRef = collectionRef.doc(fuelId);
       // Normalize vendorId to consistent V### format

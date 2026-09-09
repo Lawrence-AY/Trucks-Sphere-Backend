@@ -51,6 +51,7 @@ function getReportOrigin(delivery, quarryLocation = '') {
   if (delivery.isWarehouseDelivery || String(delivery.deliveryOrigin || '').trim().toLowerCase() === 'warehouse') {
     return 'Warehouse';
   }
+  if (['operator_site', 'site_operator'].includes(String(delivery.createdBy?.role || delivery.createdBy || '').toLowerCase())) return delivery.materialSource || 'Not captured';
   if (quarryLocation) return quarryLocation;
   const geo = delivery.weighOutGeoLocation || {};
   return delivery.quarryName || geo.town || geo.locality || geo.city || geo.address || delivery.weighOutLocation || 'Not captured';
@@ -65,14 +66,14 @@ function getReportMaterialSource(delivery, quarryLocation = '') {
   if (delivery.isWarehouseDelivery || String(delivery.deliveryOrigin || '').trim().toLowerCase() === 'warehouse') {
     return 'Warehouse';
   }
-  if (quarryLocation) return quarryLocation;
-  const createdBy = String(delivery.createdBy || '').trim().toLowerCase();
+  const createdBy = String(delivery.createdBy?.role || delivery.createdBy || '').trim().toLowerCase();
   const wasCreatedAtSite = createdBy === 'operator_site' || createdBy === 'site_operator';
 
   if (wasCreatedAtSite) {
     return delivery.materialSource || 'Not captured';
   }
 
+  if (quarryLocation) return quarryLocation;
   const geo = delivery.weighOutGeoLocation || {};
   const city = String(geo.city || geo.town || geo.district || geo.locality || '').trim();
   const rawLocation = String(geo.address || geo.name || delivery.weighOutLocation || '').trim();
@@ -424,6 +425,8 @@ function buildDriverReport() {
   return driverDocs.map((d) => {
     const insurance = getInsuranceDetails(vendors[d.vendorId], d);
     return {
+    driverNumber: d.driverId || d.id || '',
+    vendorNumber: vendors[d.vendorId]?.vendorId || d.vendorId || '',
     driverName: d.name || d.fullName || '',
     nationalId: d.nationalId || '',
     licenseNumber: d.licenseNumber || '',

@@ -41,6 +41,7 @@ const LEGACY_STATUS = Object.freeze({
   completed: JOB_STATUS.COMPLETED,
   closed: JOB_STATUS.COMPLETED,
   cancelled: JOB_STATUS.CANCELLED,
+  canceled: JOB_STATUS.CANCELLED,
 });
 
 const ACTIVE_TRACKING_STATUSES = new Set([

@@ -113,7 +113,7 @@ function canAccessDelivery(item, user, userEntity) {
     return true;
   }
 
-  // Inspectors work at the receiving site before site weigh-out. They may
+  // Inspectors can work before or after site weigh-out. They may
   // read the site queue and save only the inspection fields (enforced below).
   if (normalizedRole === 'inspector') return true;
 
@@ -138,7 +138,8 @@ function unwrapDeliveryResults(result) {
 
 exports.findAll = async (req, res, next) => {
   try {
-    let scopedQuery = { ...req.query };
+    // Scope the complete snapshot before optional pagination. Boards need all trips.
+    const scopedQuery = { ...req.query, page: 1, limit: Math.max(snapshotStore.getAll('deliveryOrders').length, 1) };
 
     // Scope delivery orders based on user role
     const userEntity = await getUserEntity(req.user);
@@ -152,7 +153,9 @@ exports.findAll = async (req, res, next) => {
         visibleCount: data.length,
       });
     }
-    res.json({ ...result, data, total: data.length, totalPages: 1 });
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.max(Number(req.query.limit) || data.length || 1, 1);
+    res.json({ ...result, data: data.slice((page - 1) * limit, page * limit), total: data.length, page, totalPages: Math.ceil(data.length / limit) });
   } catch (err) { next(err); }
 };
 

@@ -151,10 +151,13 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 2: Drivers ───
   addSheet(wb, `Drivers${suffix}`, [
-    'Driver Name', 'National ID', 'License Number', 'NTSA Status', 'Insurance Company',
+    'Driver Number', 'Vendor Number', 'Vendor Name', 'Driver Name', 'National ID', 'License Number', 'NTSA Status', 'Insurance Company',
     'Policy No', 'Insurance Start', 'Insurance Commencing', 'Insurance Expiry', 'Insurance Supplier',
-    'Insurance Status', 'Vendor', 'Phone', 'Status',
+    'Insurance Status', 'Phone', 'Status',
   ], data.drivers.map((r) => ({
+    'Driver Number': r.driverNumber,
+    'Vendor Number': r.vendorNumber,
+    'Vendor Name': r.vendorName,
     'Driver Name': r.driverName,
     'National ID': r.nationalId,
     'License Number': r.licenseNumber,
@@ -166,7 +169,6 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Insurance Expiry': r.insuranceExpiryDate,
     'Insurance Supplier': r.insuranceSupplier,
     'Insurance Status': r.insuranceStatus,
-    'Vendor': r.vendorName,
     'Phone': r.phone,
     'Status': r.status,
   })));

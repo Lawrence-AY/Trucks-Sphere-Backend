@@ -196,7 +196,6 @@ function buildDriver(row, vendors) {
   if (!driver.surname) return { ...missing('MISSING_DRIVER_SURNAME'), item };
   if (!driver.phone) return { ...missing('MISSING_DRIVER_PHONE'), item };
   if (!driver.nationalId) return { ...missing('MISSING_NATIONAL_ID'), item };
-  if (!driver.licenseNumber) return { ...missing('MISSING_LICENSE_NUMBER'), item };
   return { status: 'READY', code: 'READY', item };
 }
 

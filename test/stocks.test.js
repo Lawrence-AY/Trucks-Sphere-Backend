@@ -114,3 +114,10 @@ test('management Excel contains current stock and movement sheets', async () => 
   assert.equal(workbook.getWorksheet('Stocks - Current Balances').rowCount, 3);
   assert.ok(workbook.getWorksheet('Stock Movements - All Time'));
 });
+
+test('quarry excess receipts retain the purchase order reference', () => {
+ const [row] = model.stockRows({ id: 'quarry1', status: 'COMPLETED', purchaseOrderId: 'po1', purchaseOrderNumber: 'PO1/V1', materialId: 'sand', quantityOrdered: 10, siteNetWeight: 12 });
+ assert.equal(row.excessQuantity, 2);
+ assert.equal(row.purchaseOrderId, 'po1');
+ assert.equal(row.poNumber, 'PO1/V1');
+});

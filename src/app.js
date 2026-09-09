@@ -12,6 +12,7 @@ const redis = require('../config/redis');
 // Initialize real-time snapshot cache (eliminates repeated Firestore reads)
 const snapshotStore = require('./utils/snapshotStore');
 require('./modules/stocks/sync').startStockSync(snapshotStore);
+require('./modules/purchase-orders/deliveryAlerts').startDeliveryAlertSync(snapshotStore);
 
 // Import security middleware
 const {

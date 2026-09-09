@@ -85,7 +85,7 @@ test('warehouse creation accepts a mixed PO without fleet and preserves every pr
     { productName: 'Paint', quantity: 4, unit: 'Litres' }, { productName: 'Bolts', quantity: 20, unit: 'Pieces' },
   ] });
   assert.equal(result.driverId, undefined);
-  assert.equal(result.receiptNoteId, 'RN042');
+  assert.equal(result.receiptNoteId, 'PO0001/V001/RN042');
   assert.equal(result.vehicleId, undefined);
   assert.equal(result.jobId, 'POMAT002/V001/J0001');
   const delivery = writes.find((entry) => entry.ref.collection === 'deliveryOrders').data;
@@ -96,12 +96,12 @@ test('warehouse creation accepts a mixed PO without fleet and preserves every pr
   assert.equal(delivery.status, 'DISPATCHED');
   // assert.equal(writes.filter((entry) => entry.ref.collection === 'stocks').length, 2);
   const next = await module.exports.create({ purchaseOrderId: 'PO1', items: [{ productName: 'Paint', quantity: 1, unit: 'Litres' }] });
-  assert.equal(next.receiptNoteId, 'RN043');
+  assert.equal(next.receiptNoteId, 'PO0001/V001/RN043');
   // The warehouse picker accepts a material's public ID as well as its doc ID.
   records.materials[1].materialId = 'MAT002';
   records.materials[1].id = 'material-document-2';
   const aliased = await module.exports.create({ purchaseOrderId: 'PO1', items: [{ productName: 'Paint', quantity: 1, unit: 'Litres' }] });
-  assert.equal(aliased.receiptNoteId, 'RN044');
+  assert.equal(aliased.receiptNoteId, 'PO0001/V001/RN044');
   records.materials[1].isWarehouseMaterial = false;
   records.purchaseOrders[0].isWarehouseMaterial = true;
   await module.exports.create({ purchaseOrderId: 'PO1', items: [{ productName: 'Paint', quantity: 1, unit: 'Litres' }] });

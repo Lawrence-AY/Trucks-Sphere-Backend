@@ -144,7 +144,7 @@ const warehouseJobsService = {
       const receiptCounterRef = db.collection('counters').doc('auto_ids');
       const receiptCounter = await transaction.get(receiptCounterRef);
       const receiptSequence = Number(receiptCounter.data()?.receipt_note_counter || 0) + 1;
-      const receiptNoteId = `RN${String(receiptSequence).padStart(3, '0')}`;
+      const receiptNoteId = `${purchaseOrder.poNumber || warehouseReference}/RN${String(receiptSequence).padStart(3, '0')}`;
       if (existing.exists || existingDeliveryOrder.exists) {
         const error = new Error('Could not allocate a unique warehouse job number. Please retry.');
         error.statusCode = 409;
@@ -187,6 +187,7 @@ const warehouseJobsService = {
         // Populate the shared source fields used by downstream job views and
         // reports, which otherwise fall back to a quarry origin.
         materialSource: 'Warehouse',
+        banker: 'Warehouse-banker',
         quarryName: 'Warehouse',
         warehouseReference,
         pomatReference,

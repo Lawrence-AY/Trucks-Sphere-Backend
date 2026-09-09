@@ -14,6 +14,65 @@ function load(relative, overrides) {
   return module.exports;
 }
 
+test('fuel eligibility retires the previous job when either the driver or truck has a newer assignment', () => {
+  const { isFuelReady } = require('../src/utils/fuelEligibility');
+  const old = { id: 'old', driverId: 'D1', vehicleId: 'T1', plateNumber: 'KAA 123A', status: 'SITE_WEIGHED_OUT', createdAt: '2026-09-01T10:00:00Z' };
+  for (const identity of [{ driverId: 'D1' }, { vehicleId: 'T1' }, { plateNumber: 'kaa123a' }]) {
+    const next = { id: 'next', ...identity, status: 'DISPATCHED', createdAt: '2026-09-02T10:00:00Z' };
+    assert.equal(isFuelReady(old, [old, next]), false);
+    assert.equal(isFuelReady(old, [old, { ...next, status: 'CANCELLED' }]), true);
+    assert.equal(isFuelReady(old, [old, { ...next, createdAt: '2026-08-01T10:00:00Z' }]), true);
+  }
+  assert.equal(isFuelReady(old, [old, { id: 'other', driverId: 'D2', vehicleId: 'T2', createdAt: '2026-09-03T10:00:00Z' }]), true);
+});
+
+test('site custom-job origin and material source override inherited quarry information in reports', () => {
+  const service = load('../src/modules/reports/service', { '../../utils/snapshotStore': {} });
+  for (const createdBy of ['operator_site', { role: 'operator_site' }]) {
+    const job = { createdBy, materialSource: 'External supplier yard', quarryName: 'Old quarry' };
+    assert.equal(service.getReportOrigin(job, 'Assigned quarry'), 'External supplier yard');
+    assert.equal(service.getReportMaterialSource(job, 'Assigned quarry'), 'External supplier yard');
+  }
+  assert.equal(service.getReportMaterialSource({ createdBy: 'operator_quarry' }, 'Assigned quarry'), 'Assigned quarry');
+});
+
+test('warehouse material column contains every product and driver worksheet contains business identifiers', async () => {
+  const { warehouseReportFields } = require('../src/modules/reports/warehouseReport');
+  assert.equal(warehouseReportFields({ isWarehouseDelivery: true, materials: [{ materialName: 'Cement' }, { materialName: 'Steel' }] }).materialName, 'Cement | Steel');
+  const records = { drivers: [{ id: 'driver-doc', driverId: 'D007', name: 'Driver', vendorId: 'vendor-doc' }], vendors: [{ id: 'vendor-doc', vendorId: 'V003', companyName: 'Vendor Company' }] };
+  const service = load('../src/modules/reports/service', { '../../utils/snapshotStore': { getAll: (name) => records[name] || [] } });
+  const rows = service.buildDriverReport();
+  assert.equal(rows[0].driverNumber, 'D007');
+  assert.equal(rows[0].vendorNumber, 'V003');
+  assert.equal(rows[0].vendorName, 'Vendor Company');
+  const { buildExcelWorkbook } = require('../src/modules/reports/excelBuilder');
+  const data = Object.fromEntries(['masterAudit', 'materialInspections', 'flagged', 'fuel', 'trucks', 'materials', 'vendors', 'purchaseOrders'].map((key) => [key, []]));
+  const workbook = new (require('exceljs').Workbook)();
+  await workbook.xlsx.load(await buildExcelWorkbook({ ...data, drivers: rows }));
+  const sheet = workbook.worksheets.find((item) => item.name.startsWith('Drivers'));
+  assert.deepEqual(sheet.getRow(1).values.slice(1, 4), ['Driver Number', 'Vendor Number', 'Vendor Name']);
+  assert.deepEqual(sheet.getRow(2).values.slice(1, 4), ['D007', 'V003', 'Vendor Company']);
+});
+
+test('delivery board includes more than 50 trips and explicit pagination keeps accurate totals', async () => {
+  const jobs = Array.from({ length: 75 }, (_, index) => ({ id: String(index), isWarehouseDelivery: index === 74 }));
+  const controller = load('../src/modules/delivery-orders/controller', {
+    './service': { findAll: ({ limit }) => ({ data: jobs.slice(0, limit) }) },
+    '../../utils/snapshotStore': { getAll: () => jobs },
+    '../../../config/firebase': { db: {} },
+  });
+  let result;
+  const res = { json: (data) => { result = data; } };
+  const request = { user: { role: 'superadmin' }, query: {} };
+  await controller.findAll(request, res, (error) => { throw error; });
+  assert.equal(result.data.length, 75);
+  assert.equal(result.data[74].isWarehouseDelivery, true);
+  await controller.findAll({ ...request, query: { page: '2', limit: '50' } }, res, (error) => { throw error; });
+  assert.equal(result.data.length, 25);
+  assert.equal(result.total, 75);
+  assert.equal(result.totalPages, 2);
+});
+
 test('fuel queue excludes all warehouse markers before pagination', () => {
   const deliveries = [
     { id: 'warehouse-flag', status: 'COMPLETED', isWarehouseDelivery: true },

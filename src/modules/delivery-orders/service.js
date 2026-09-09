@@ -1,3 +1,4 @@
+const { isFuelReady } = require('../../utils/fuelEligibility');
 /**
  * trucks-Sphere-Backend src/delivery-orders/service.js
  * **/
@@ -127,13 +128,14 @@ function applySiteArrivalWorkflow(data, updates, existing = {}) {
  */
 function enrichWithPurchaseOrderContext(item) {
   if (!item?.purchaseOrderId) return item;
-  if (item.quarryId && item.siteId && item.materials?.length) return item;
+  if (item.quarryId && item.siteId && item.materials?.length && item.poNumber) return item;
 
   const po = snapshotStore.getById('purchaseOrders', item.purchaseOrderId);
   if (!po) return item;
 
   return {
     ...item,
+    poNumber: item.poNumber || po.poNumber || '',
     materials: item.materials?.length ? item.materials : (po.materials?.length ? po.materials : undefined),
     quarryId: item.quarryId || po.quarryId || '',
     quarryName: item.quarryName || po.quarryName || '',
@@ -250,10 +252,8 @@ const delivery_ordersService = {
     // Fuel can be issued only after the site operator has finalized the job.
     // Filter before pagination so older finalized jobs are not skipped.
     if (fuelReady === true || fuelReady === 'true') {
-      results = results.filter((item) => {
-        const normalizedStatus = normalizeJobStatus(item.status);
-        return !isWarehouseDelivery(item) && (normalizedStatus === JOB_STATUS.SITE_WEIGHED_OUT || normalizedStatus === JOB_STATUS.COMPLETED);
-      });
+      const allJobs = snapshotStore.getAll(COLLECTION_NAME);
+      results = results.filter((item) => isFuelReady(item, allJobs));
     }
     // Post-filter by jobId
     if (jobId) {
@@ -316,6 +316,14 @@ const delivery_ordersService = {
    */
   async create(data) {
     try {
+      if (data.purchaseOrderId) {
+        const poSnapshot = await purchaseOrdersCollection.doc(data.purchaseOrderId).get();
+        const po = poSnapshot.exists ? poSnapshot.data() : null;
+        const closed = ['completed', 'complete', 'delivered', 'fulfilled', 'closed', 'cancelled', 'canceled', 'archived', 'excess', 'overdelivered', 'over_delivered'];
+        if (po && closed.includes(String(po.status || '').trim().toLowerCase())) {
+          throw Object.assign(new Error('This purchase order is closed. Select an open purchase order.'), { statusCode: 409, code: 'PURCHASE_ORDER_CLOSED' });
+        }
+      }
       const conflict = await findActiveAssignmentConflict(data);
       if (conflict) {
         const driverConflict = data.driverId && normalizeResourceId(conflict.driverId) === normalizeResourceId(data.driverId);
@@ -359,6 +367,7 @@ const delivery_ordersService = {
         ...data,
         id: docId,
         jobId,
+        poNumber: purchaseOrderContext?.poNumber || data.poNumber || '',
         materialSource: normalizeMaterialSource(data.materialSource),
         banker: isWarehouseDelivery(data) ? 'Warehouse-banker' : normalizeBanker(data.banker),
         quarryId: data.quarryId || purchaseOrderContext?.quarryId || '',

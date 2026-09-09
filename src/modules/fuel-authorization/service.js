@@ -1,3 +1,5 @@
+const snapshotStore = require('../../utils/snapshotStore');
+const { isSupersededForFuel } = require('../../utils/fuelEligibility');
 /**
  * Fuel Authorization Service
  * Handles the fuel authorization workflow:
@@ -44,6 +46,10 @@ async function createAuthorization(params) {
   if (!vendorId) throw new Error('vendorId is required');
   if (!driverId) throw new Error('driverId is required');
   if (!vehicleId) throw new Error('vehicleId is required');
+
+  const jobs = snapshotStore.getAll('deliveryOrders');
+  const job = jobs.find((item) => item.jobId === jobId || item.id === jobId);
+  if (job && isSupersededForFuel(job, jobs)) throw Object.assign(new Error('This driver or truck has a newer job. Refresh the fuel queue.'), { statusCode: 409, code: 'FUEL_JOB_SUPERSEDED' });
 
   // Generate 6-digit OTP
   const otp = generateOTP();

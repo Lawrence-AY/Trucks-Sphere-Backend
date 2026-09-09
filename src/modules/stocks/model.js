@@ -22,13 +22,13 @@ function stockRows(delivery) {
     const passed = hasReceipt && (receipt.initialVisualInspection === 'Pass' || (!inspected?.mrfNumber && completed));
     return {
       id: createHash('sha256').update(`${delivery.id}:${line.materialId || index}`).digest('hex'),
-      deliveryOrderId: delivery.id, jobId: delivery.jobId || delivery.id, poNumber: delivery.poNumber || '',
+      deliveryOrderId: delivery.id, jobId: delivery.jobId || delivery.id, purchaseOrderId: delivery.purchaseOrderId || '', poNumber: delivery.poNumber || delivery.purchaseOrderNumber || '',
       siteId: delivery.siteId || '', siteName: delivery.siteName || delivery.siteId || 'Unassigned',
       materialId: line.materialId || '', materialName: line.materialName || line.productName || delivery.materialName || '',
       vendorName: delivery.vendorName || '', origin: wh ? 'Warehouse' : 'Quarry', unit: line.unit || delivery.unit || '',
       dispatchedQuantity: sent, receivedQuantity: received, usableQuantity: passed ? received : 0,
       quarantinedQuantity: hasReceipt && !passed ? received : 0,
-      excessQuantity: wh ? Math.max(0, round(received - sent)) : 0,
+      excessQuantity: hasReceipt ? Math.max(0, round(received - sent)) : 0,
       shortageQuantity: wh && hasReceipt ? Math.max(0, round(sent - received)) : 0,
       receiptStatus: hasReceipt ? passed ? 'Inspected - Pass' : 'Quarantined' : delivery.warehouseAcceptedAt ? 'Accepted - awaiting inspection' : 'Dispatched',
       acceptedAt: delivery.warehouseAcceptedAt || delivery.receivedAt || '', acceptedBy: delivery.warehouseAcceptedByName || delivery.receivedByName || '',
