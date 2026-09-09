@@ -121,3 +121,32 @@ test('quarry excess receipts retain the purchase order reference', () => {
  assert.equal(row.purchaseOrderId, 'po1');
  assert.equal(row.poNumber, 'PO1/V1');
 });
+
+test('partial warehouse damage releases good units and later shipments accumulate without duplication', async () => {
+  const { service, records, ref } = fixture();
+  const first = { ...delivery, materials: [delivery.materials[0]], materialInspection: { mrfNumber: 'MIF1', materialReceipts: [{ materialId: 'line1', receivedQuantity: 10, damagedQuantity: 1, initialVisualInspection: 'Failed', failureReason: 'One broken unit' }] } };
+  const second = { ...first, id: 'dispatch2', materialInspection: { mrfNumber: 'MIF2', materialReceipts: [{ materialId: 'line1', receivedQuantity: 5, damagedQuantity: 0, initialVisualInspection: 'Pass' }] } };
+  for (const job of [first, second]) {
+    records.set('deliveryOrders/' + job.id, job);
+    await service.persistDelivery(ref('deliveryOrders', job.id), { materialInspection: job.materialInspection });
+  }
+  await service.persistDelivery(ref('deliveryOrders', first.id), {});
+  const rows = [...records.entries()].filter(([key]) => key.startsWith('stocks/')).map(([, row]) => row);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].remainingQuantity, 9);
+  assert.equal(rows[0].quarantinedQuantity, 1);
+  assert.equal(rows.reduce((sum, row) => sum + row.remainingQuantity, 0), 14);
+  await service.change(rows[0].id, { type: 'usage', quantity: 2, reason: 'Installed', requestId: 'partial_usage_1' }, {});
+  await service.persistDelivery(ref('deliveryOrders', first.id), {});
+  assert.equal(records.get('stocks/' + rows[0].id).remainingQuantity, 7);
+});
+test('warehouse damage validation rejects invalid splits and preserves historical failures', () => {
+  const receipt = { materialId: 'line1', receivedQuantity: 10, initialVisualInspection: 'Failed', failureReason: 'Damage' };
+  const job = { ...delivery, materials: [delivery.materials[0]] };
+  for (const damagedQuantity of [-1, 11, '', 'abc', 0]) assert.throws(() => model.validateInspection(job, { materialReceipts: [{ ...receipt, damagedQuantity }] }));
+  assert.throws(() => model.validateInspection(job, { materialReceipts: [{ ...receipt, initialVisualInspection: 'Pass', damagedQuantity: 1 }] }));
+  model.validateInspection(job, { materialReceipts: [{ ...receipt, damagedQuantity: 10 }] });
+  const legacy = model.stockRows({ ...job, materialInspection: { mrfNumber: 'old', materialReceipts: [receipt] } })[0];
+  assert.equal(legacy.usableQuantity, 0);
+  assert.equal(legacy.quarantinedQuantity, 10);
+});

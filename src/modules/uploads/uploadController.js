@@ -255,7 +255,10 @@ exports.uploadInspectionPhoto = [
       const doc = await ref.get();
       if (!doc.exists) return res.status(404).json({ error: 'Delivery order not found' });
       const { url } = await uploadFile(req.file.buffer, req.file.originalname, 'Material inspections', req.params.deliveryOrderId, req.file.mimetype);
-      const inspection = doc.data().materialInspection || {};
+      await db.runTransaction(async (transaction) => {
+        const latest = await transaction.get(ref);
+        if (!latest.exists) throw Object.assign(new Error('Delivery order not found'), { statusCode: 404 });
+      const inspection = latest.data().materialInspection || {};
       const photos = Array.isArray(inspection.photoURLs) ? inspection.photoURLs : [];
       const materialId = String(req.query.materialId || '').trim();
       const materialReceipts = Array.isArray(inspection.materialReceipts) ? inspection.materialReceipts : [];
@@ -264,7 +267,8 @@ exports.uploadInspectionPhoto = [
           ? { ...receipt, photoURLs: [...(Array.isArray(receipt.photoURLs) ? receipt.photoURLs : []), url] }
           : receipt
       )) : materialReceipts;
-      await ref.update({ materialInspection: { ...inspection, photoURLs: [...photos, url], materialReceipts: updatedReceipts }, updatedAt: new Date().toISOString() });
+      transaction.update(ref, { materialInspection: { ...inspection, photoURLs: [...photos, url], materialReceipts: updatedReceipts }, updatedAt: new Date().toISOString() });
+      });
       res.json({ success: true, photoURL: url, deliveryOrderId: req.params.deliveryOrderId });
     } catch (err) { next(err); }
   },

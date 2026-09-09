@@ -107,3 +107,19 @@ test('snapshot synchronization handles existing POs and deleted trips', async ()
   assert.equal(f.records.get('purchaseOrders/po1').deliverySummary.overDelivered, false);
   stop();
 });
+
+test('material breakdown separates materials sharing a unit and sums completed trips', () => {
+  const order = { ...po, materials: [{ materialId: 'sand', materialName: 'Sand', quantity: 20, unit: 'Tonnes' }, { materialId: 'stone', materialName: 'Stone', quantity: 30, unit: 'Tonnes' }] };
+  const trips = [trip('one', 10, { materialId: 'sand' }), trip('two', 5, { materialId: 'sand' }), trip('three', 32, { materialId: 'stone' }), trip('pending', 100, { materialId: 'sand', status: 'DISPATCHED' })];
+  trips.push(trips[0]);
+  const result = buildDeliverySummary(order, trips);
+  assert.equal(result.materials[0].materialName, 'Sand');
+  assert.equal(result.materials[0].deliveredQuantity, 15);
+  assert.equal(result.materials[0].variance, -5);
+  assert.equal(result.materials[1].deliveredQuantity, 32);
+  assert.equal(result.materials[1].variance, 2);
+  assert.equal(result.totals[0].deliveredQuantity, 47);
+  const ambiguous = buildDeliverySummary(order, [trip('unknown', 8)]);
+  assert.equal(ambiguous.totals[0].deliveredQuantity, 8);
+  assert.equal(ambiguous.materials.reduce((sum, line) => sum + line.deliveredQuantity, 0), 0);
+});

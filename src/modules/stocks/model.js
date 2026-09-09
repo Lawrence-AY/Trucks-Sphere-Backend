@@ -20,17 +20,20 @@ function stockRows(delivery) {
     const sent = Math.max(0, number(line.quantity ?? line.orderedQuantity));
     const received = hasReceipt ? Math.max(0, number(receipt.receivedQuantity)) : 0;
     const passed = hasReceipt && (receipt.initialVisualInspection === 'Pass' || (!inspected?.mrfNumber && completed));
+    // Historical failed receipts without a split remain fully quarantined.
+    const damaged = hasReceipt ? wh && receipt.damagedQuantity != null
+      ? Math.min(received, Math.max(0, number(receipt.damagedQuantity))) : passed ? 0 : received : 0;
     return {
       id: createHash('sha256').update(`${delivery.id}:${line.materialId || index}`).digest('hex'),
       deliveryOrderId: delivery.id, jobId: delivery.jobId || delivery.id, purchaseOrderId: delivery.purchaseOrderId || '', poNumber: delivery.poNumber || delivery.purchaseOrderNumber || '',
       siteId: delivery.siteId || '', siteName: delivery.siteName || delivery.siteId || 'Unassigned',
       materialId: line.materialId || '', materialName: line.materialName || line.productName || delivery.materialName || '',
       vendorName: delivery.vendorName || '', origin: wh ? 'Warehouse' : 'Quarry', unit: line.unit || delivery.unit || '',
-      dispatchedQuantity: sent, receivedQuantity: received, usableQuantity: passed ? received : 0,
-      quarantinedQuantity: hasReceipt && !passed ? received : 0,
+      dispatchedQuantity: sent, receivedQuantity: received, usableQuantity: round(received - damaged),
+      damagedQuantity: damaged, quarantinedQuantity: damaged,
       excessQuantity: hasReceipt ? Math.max(0, round(received - sent)) : 0,
       shortageQuantity: wh && hasReceipt ? Math.max(0, round(sent - received)) : 0,
-      receiptStatus: hasReceipt ? passed ? 'Inspected - Pass' : 'Quarantined' : delivery.warehouseAcceptedAt ? 'Accepted - awaiting inspection' : 'Dispatched',
+      receiptStatus: hasReceipt ? damaged > 0 && damaged < received ? 'Partially accepted' : passed ? 'Inspected - Pass' : 'Quarantined' : delivery.warehouseAcceptedAt ? 'Accepted - awaiting inspection' : 'Dispatched',
       acceptedAt: delivery.warehouseAcceptedAt || delivery.receivedAt || '', acceptedBy: delivery.warehouseAcceptedByName || delivery.receivedByName || '',
       inspectedAt: inspected?.inspectedAt || '', inspectorName: inspected?.inspectorName || '', mifNumber: inspected?.mrfNumber || '',
     };
@@ -48,6 +51,12 @@ function validateInspection(delivery, inspection) {
     ids.add(key);
     if (receipt.receivedQuantity === '' || receipt.receivedQuantity == null || !Number.isFinite(Number(receipt.receivedQuantity)) || Number(receipt.receivedQuantity) < 0) fail('Enter a valid received quantity for every product.');
     if (!['Pass', 'Failed'].includes(receipt.initialVisualInspection)) fail('Choose Pass or Failed for every warehouse product.');
+    if (receipt.damagedQuantity != null) {
+      const damaged = Number(receipt.damagedQuantity);
+      if (String(receipt.damagedQuantity).trim() === '' || !Number.isFinite(damaged) || damaged < 0 || damaged > Number(receipt.receivedQuantity)) fail('Damaged quantity must be between zero and received quantity.');
+      if (receipt.initialVisualInspection === 'Pass' && damaged !== 0) fail('Mark damaged materials Failed and record the damaged quantity.');
+      if (receipt.initialVisualInspection === 'Failed' && damaged === 0 && Number(receipt.receivedQuantity) > 0) fail('Enter the quantity that failed inspection.');
+    }
     if (receipt.initialVisualInspection === 'Failed' && !String(receipt.failureReason || '').trim()) fail('Enter a reason for each failed product.');
   }
 }
