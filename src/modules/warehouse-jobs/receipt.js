@@ -10,7 +10,6 @@ function acceptanceUpdates(job, actor, now = new Date().toISOString()) {
   if (job.warehouseAcceptedAt) return null;
   if (!['DISPATCHED', 'IN_TRANSIT', 'ARRIVED_AT_SITE', 'SITE_WEIGHED_IN', 'SITE_IN', 'WEIGHED_IN'].includes(String(job.status).toUpperCase())) throw conflict('This delivery is not awaiting site acceptance.', 'WAREHOUSE_NOT_AWAITING_ACCEPTANCE');
   if (job.securityFlag?.status === 'flagged' || job.isFlagged === true) throw conflict('Clear the delivery flag before acceptance.', 'SECURITY_FLAG_UNRESOLVED');
-  if (!job.packagingPhotoURL) throw conflict('Upload the packaging photo before acceptance.', 'WAREHOUSE_PHOTO_REQUIRED');
   return {
     warehouseAcceptedAt: now, warehouseAcceptedByUid: actor.uid || '',
     warehouseAcceptedByName: actor.displayName || actor.email || '', siteId: job.siteId || actor.siteId || '',

@@ -19,11 +19,11 @@ router.use(requireRoles(
 ));
 
 router.get('/national-id/:nationalId', requireManagementAccess({ allowLite: true }), driversController.checkNationalId);
-router.post('/verify-identity', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), driversController.verifyIdentity);
+router.post('/verify-identity', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), driversController.verifyIdentity);
 router.get('/', driversController.findAll);
 router.get('/:id', driversController.findById);
-router.post('/', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), driversController.create);
-router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), driversController.update);
+router.post('/', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), driversController.create);
+router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), driversController.update);
 router.delete('/:id', requireManagementAccess({ write: true }), driversController.delete);
 
 module.exports = router;

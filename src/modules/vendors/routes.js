@@ -8,12 +8,12 @@ router.use(verifyToken);
 router.use(requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'vendor', 'operator_warehouse'));
 
 router.get('/username', vendorsController.previewUsername);
-router.post('/with-account', requireManagementAccess({ allowLite: true, write: true }), vendorsController.createWithAccount);
+router.post('/with-account', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true }), vendorsController.createWithAccount);
 router.get('/', vendorsController.findAll);
 router.get('/:id/documents', vendorsController.findDocuments);
 router.get('/:id', vendorsController.findById);
-router.post('/', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), vendorsController.create);
-router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), vendorsController.update);
+router.post('/', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), vendorsController.create);
+router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), vendorsController.update);
 router.delete('/:id', requireManagementAccess({ write: true }), vendorsController.delete);
 
 module.exports = router;

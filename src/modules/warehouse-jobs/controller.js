@@ -24,3 +24,15 @@ exports.create = async (req, res, next) => {
     res.status(201).json(item);
   } catch (error) { next(error); }
 };
+
+exports.preview = async (req, res, next) => {
+  try {
+    if (!req.file?.buffer?.length) {
+      const error = new Error('CSV or Excel file is required');
+      error.statusCode = 400;
+      error.code = 'WAREHOUSE_PREVIEW_FILE_REQUIRED';
+      throw error;
+    }
+    res.json(await warehouseJobsService.preview(req.file.buffer, req.file));
+  } catch (error) { next(error); }
+};

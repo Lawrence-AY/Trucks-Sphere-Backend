@@ -20,8 +20,8 @@ router.use(requireRoles(
 
 router.get('/', vehiclesController.findAll);
 router.get('/:id', vehiclesController.findById);
-router.post('/', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), vehiclesController.create);
-router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowLiteWrite: true }), vehiclesController.update);
+router.post('/', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), vehiclesController.create);
+router.put('/:id', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), vehiclesController.update);
 router.delete('/:id', requireManagementAccess({ write: true }), vehiclesController.delete);
 
 module.exports = router;

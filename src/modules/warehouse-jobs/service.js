@@ -1,4 +1,5 @@
 const { db } = require('../../../config/firebase');
+const ExcelJS = require('exceljs');
 const snapshotStore = require('../../utils/snapshotStore');
 const { JOB_STATUS } = require('../../utils/jobLifecycle');
 const { buildWarehouseReference, normalizePomatReference } = require('./reference');
@@ -10,6 +11,119 @@ const deliveryOrdersCollection = db.collection('deliveryOrders');
 
 function normalizeId(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeHeader(value) {
+  return String(value || '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function normalizeText(value) {
+  return String(value ?? '').trim();
+}
+
+function splitCsvRecords(buffer) {
+  const text = Buffer.from(buffer).toString('utf8').replace(/^\uFEFF/, '');
+  const records = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quoted) {
+      if (char === '"' && text[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        field += char;
+      }
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === ',') {
+      row.push(field);
+      field = '';
+    } else if (char === '\n') {
+      row.push(field.replace(/\r$/, ''));
+      records.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += char;
+    }
+  }
+  if (field.length || row.length) {
+    row.push(field.replace(/\r$/, ''));
+    records.push(row);
+  }
+  return records;
+}
+
+function excelCellText(cell) {
+  const value = cell.value;
+  if (value === undefined || value === null) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === 'object' && value.result !== undefined) return normalizeText(value.result);
+  return cell.text || normalizeText(value);
+}
+
+async function spreadsheetRecords(buffer, file = {}) {
+  const filename = String(file.originalname || file.name || '').toLowerCase();
+  const mimeType = String(file.mimetype || file.mimeType || '').toLowerCase();
+  const isXlsx = filename.endsWith('.xlsx') || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (!isXlsx) return splitCsvRecords(buffer);
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(buffer));
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) return [];
+  const columnCount = worksheet.actualColumnCount;
+  const records = [];
+  worksheet.eachRow({ includeEmpty: false }, (row) => {
+    records.push(Array.from({ length: columnCount }, (_value, index) => excelCellText(row.getCell(index + 1))));
+  });
+  return records;
+}
+
+const WAREHOUSE_COLUMN_ALIASES = {
+  source: ['source', 'materialsource', 'origin'],
+  description: ['description', 'productdescription', 'productname', 'materialname', 'itemdescription', 'item', 'material'],
+  quantity: ['quantity', 'qty', 'amount'],
+  unit: ['unit', 'uom', 'measure', 'measurement'],
+  mrfNo: ['mrfno', 'mrfnumber', 'mrf'],
+  additionalNotes: ['additionalnotes', 'notes', 'remarks'],
+};
+
+function statusSummary(rows) {
+  return rows.reduce((summary, row) => {
+    summary.total += 1;
+    if (row.status === 'READY') summary.ready += 1;
+    if (row.status === 'INVALID') summary.invalid += 1;
+    return summary;
+  }, { total: 0, ready: 0, invalid: 0 });
+}
+
+function warehouseColumn(headers, aliases) {
+  return aliases.map((alias) => headers.indexOf(alias)).find((index) => index >= 0) ?? -1;
+}
+
+function isShipmentHeading(record) {
+  const values = record.map(normalizeText).filter(Boolean);
+  if (!values.length) return true;
+  const joined = values.join(' ').toLowerCase();
+  if (/^date\s*:/.test(joined)) return true;
+  if (/^(source|description|quantity|unit|mrf\s*no\.?|additional notes)$/.test(joined)) return true;
+  return false;
+}
+
+function sourceRowData(headers, record) {
+  return Object.fromEntries(headers.map((header, index) => [header || `Column ${index + 1}`, normalizeText(record[index])]));
 }
 
 function findEntity(collectionName, id, aliases = []) {
@@ -49,6 +163,11 @@ function normalizeItems(rawItems) {
       materialName: productName,
       quantity,
       unit: unit || 'units',
+      source: String(item?.source || '').trim(),
+      description: String(item?.description || '').trim(),
+      mrfNo: String(item?.mrfNo || item?.mrfNumber || '').trim(),
+      additionalNotes: String(item?.additionalNotes || item?.notes || '').trim(),
+      sourceData: item?.sourceData && typeof item.sourceData === 'object' ? item.sourceData : {},
     };
   });
 }
@@ -87,6 +206,55 @@ const warehouseJobsService = {
 
   findById(id) {
     return snapshotStore.getById(COLLECTION_NAME, id) || null;
+  },
+
+  async preview(buffer, file) {
+    const records = await spreadsheetRecords(buffer, file);
+    if (records.length < 2) {
+      throw createValidationError('No shipment rows were found.', 'WAREHOUSE_PREVIEW_ROWS_REQUIRED');
+    }
+
+    const originalHeaders = records[0].map(normalizeText);
+    const headers = records[0].map(normalizeHeader);
+    const indexes = Object.fromEntries(Object.entries(WAREHOUSE_COLUMN_ALIASES).map(([key, aliases]) => [key, warehouseColumn(headers, aliases)]));
+    const fallbackTextIndexes = originalHeaders
+      .map((_header, index) => index)
+      .filter((index) => ![indexes.source, indexes.quantity, indexes.unit, indexes.mrfNo, indexes.additionalNotes].includes(index));
+
+    const rows = records.slice(1)
+      .filter((record) => record.some((value) => normalizeText(value)))
+      .filter((record) => !isShipmentHeading(record))
+      .map((record, index) => {
+        const value = (key) => indexes[key] >= 0 ? normalizeText(record[indexes[key]]) : '';
+        const fallbackDescription = fallbackTextIndexes.map((cellIndex) => normalizeText(record[cellIndex])).find(Boolean) || '';
+        const fallbackQuantity = record.map(normalizeText).find((cell) => Number.isFinite(Number(cell)) && Number(cell) > 0) || '';
+        const quantityText = value('quantity') || fallbackQuantity;
+        const quantity = Number(quantityText);
+        const item = {
+          productName: value('description') || fallbackDescription,
+          quantity: quantityText,
+          unit: value('unit') || 'tonnes',
+          source: value('source') || 'Warehouse',
+          mrfNo: value('mrfNo'),
+          additionalNotes: value('additionalNotes'),
+          sourceData: sourceRowData(originalHeaders, record),
+        };
+        const ready = item.productName && Number.isFinite(quantity) && quantity > 0;
+        return {
+          rowNumber: index + 2,
+          status: ready ? 'READY' : 'INVALID',
+          code: ready ? 'READY' : 'WAREHOUSE_ROW_INVALID',
+          label: item.productName || `Row ${index + 2}`,
+          item,
+        };
+      })
+      .filter((row) => row.status === 'READY');
+
+    if (!rows.length) {
+      throw createValidationError('No shipment rows were found.', 'WAREHOUSE_PREVIEW_ROWS_REQUIRED');
+    }
+
+    return { headers: originalHeaders, counts: statusSummary(rows), rows };
   },
 
   async create(data = {}) {
@@ -168,6 +336,11 @@ const warehouseJobsService = {
         siteName: site?.name || site?.location?.address || '',
         items,
         itemCount: items.length,
+        workflowType: data.workflowType === 'bulk_upload' ? 'bulk_upload' : 'manual_purchase_order',
+        goodsDeliveryNoteSource: String(data.goodsDeliveryNoteSource || '').trim() || 'manual',
+        goodsDeliveryNoteFileName: String(data.goodsDeliveryNoteFileName || '').trim(),
+        goodsDeliveryNoteHeaders: Array.isArray(data.goodsDeliveryNoteHeaders) ? data.goodsDeliveryNoteHeaders.map(normalizeText) : [],
+        dispatchedToSiteAt: now,
         status: 'SUBMITTED',
         submittedAt: now,
         createdByUid: data.createdByUid || '',
@@ -202,6 +375,11 @@ const warehouseJobsService = {
         quantityOrdered: product.quantity,
         quantityDelivered: 0,
         unit: product.unit,
+        goodsDeliveryNoteSource: String(data.goodsDeliveryNoteSource || '').trim() || 'manual',
+        goodsDeliveryNoteFileName: String(data.goodsDeliveryNoteFileName || '').trim(),
+        goodsDeliveryNoteHeaders: Array.isArray(data.goodsDeliveryNoteHeaders) ? data.goodsDeliveryNoteHeaders.map(normalizeText) : [],
+        workflowType: data.workflowType === 'bulk_upload' ? 'bulk_upload' : 'manual_purchase_order',
+        dispatchedToSiteAt: now,
         additionalItems: items.slice(1),
         siteId: item.siteId,
         siteName: item.siteName,

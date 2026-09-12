@@ -26,8 +26,9 @@ test('warehouse acceptance records the actor without inventing weights', () => {
   assert.equal(acceptanceUpdates({ ...submitted, ...changes }, {}), null);
 });
 
-test('warehouse acceptance enforces photo, security and lifecycle checks', () => {
-  for (const patch of [{ packagingPhotoURL: '' }, { isFlagged: true }, { status: 'CANCELLED' }]) {
+test('warehouse acceptance enforces security and lifecycle checks without requiring a photo', () => {
+  assert.doesNotThrow(() => acceptanceUpdates({ ...submitted, packagingPhotoURL: '' }, {}));
+  for (const patch of [{ isFlagged: true }, { status: 'CANCELLED' }]) {
     assert.throws(() => acceptanceUpdates({ ...submitted, ...patch }, {}), error => error.statusCode === 409);
   }
   assert.throws(() => acceptanceUpdates({ status: 'DISPATCHED' }, {}));
