@@ -8,7 +8,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { db } = require('../config/firebase');
-const { resetAllCounters } = require('../src/utils/counterService');
+const { setCounter } = require('../src/utils/counterService');
 
 const MASTER_MATERIALS = [
   { id: 'MAT001', name: 'Murram (Clay Gravel)', description: 'Clay gravel material for road base and fill', unit: 'tons', category: 'aggregate', active: true },
@@ -37,8 +37,8 @@ async function seedMaterials() {
   await writeBatch.commit();
   console.log('[Seed] Master materials seeded successfully.');
 
-  await resetAllCounters();
-  console.log('[Seed] All auto-increment counters reset to 0.');
+  await setCounter('material', MASTER_MATERIALS.length);
+  console.log(`[Seed] Material counter set to ${MASTER_MATERIALS.length} (next will be MAT008).`);
 
   const verifySnapshot = await db.collection('materials').orderBy('id').get();
   console.log('\nMaterials catalog:');

@@ -1,0 +1,1738 @@
+{
+  "vendors": {
+    "model": "x_trucksphere_vendors",
+    "collection": "vendors",
+    "fields": [
+      {
+        "source": "createdBy",
+        "name": "x_created_by",
+        "label": "Created By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdAt",
+        "name": "x_created_at",
+        "label": "Created At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedBy",
+        "name": "x_updated_by",
+        "label": "Updated By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedAt",
+        "name": "x_updated_at",
+        "label": "Updated At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedBy",
+        "name": "x_deleted_by",
+        "label": "Deleted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedAt",
+        "name": "x_deleted_at",
+        "label": "Deleted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "id",
+        "name": "x_id",
+        "label": "Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorId",
+        "name": "x_vendor_id",
+        "label": "Vendor Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "companyName",
+        "name": "x_company_name",
+        "label": "Company Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "contactPerson",
+        "name": "x_contact_person",
+        "label": "Contact Person",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "phone",
+        "name": "x_phone",
+        "label": "Phone",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "email",
+        "name": "x_email",
+        "label": "Email",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "address",
+        "name": "x_address",
+        "label": "Address",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "kraPin",
+        "name": "x_kra_pin",
+        "label": "Kra Pin",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "registrationNumber",
+        "name": "x_registration_number",
+        "label": "Registration Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "businessPermit",
+        "name": "x_business_permit",
+        "label": "Business Permit",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "companyActCR12",
+        "name": "x_company_act_cr12",
+        "label": "Company Act CR12",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "fleetSize",
+        "name": "x_fleet_size",
+        "label": "Fleet Size",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "taxCompliance",
+        "name": "x_tax_compliance",
+        "label": "Tax Compliance",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "status",
+        "name": "x_status",
+        "label": "Status",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceCompany",
+        "name": "x_insurance_company",
+        "label": "Insurance Company",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceNumber",
+        "name": "x_insurance_number",
+        "label": "Insurance Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceStartDate",
+        "name": "x_insurance_start_date",
+        "label": "Insurance Start Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceExpiryDate",
+        "name": "x_insurance_expiry_date",
+        "label": "Insurance Expiry Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceCommencingDate",
+        "name": "x_insurance_commencing_date",
+        "label": "Insurance Commencing Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceSupplier",
+        "name": "x_insurance_supplier",
+        "label": "Insurance Supplier",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "ntsaInspectionExpiry",
+        "name": "x_ntsa_inspection_expiry",
+        "label": "Ntsa Inspection Expiry",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "wibaProvider",
+        "name": "x_wiba_provider",
+        "label": "Wiba Provider",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "wibaStartDate",
+        "name": "x_wiba_start_date",
+        "label": "Wiba Start Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "wibaEndDate",
+        "name": "x_wiba_end_date",
+        "label": "Wiba End Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverCount",
+        "name": "x_driver_count",
+        "label": "Driver Count",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "vehicleCount",
+        "name": "x_vehicle_count",
+        "label": "Vehicle Count",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "activeJobCount",
+        "name": "x_active_job_count",
+        "label": "Active Job Count",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "performance",
+        "name": "x_performance",
+        "label": "Performance",
+        "type": "text",
+        "encoding": "JSON"
+      },
+      {
+        "source": "userId",
+        "name": "x_user_id",
+        "label": "User Id",
+        "type": "char",
+        "encoding": "plain"
+      }
+    ]
+  },
+  "drivers": {
+    "model": "x_trucksphere_drivers",
+    "collection": "drivers",
+    "fields": [
+      {
+        "source": "createdBy",
+        "name": "x_created_by",
+        "label": "Created By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdAt",
+        "name": "x_created_at",
+        "label": "Created At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedBy",
+        "name": "x_updated_by",
+        "label": "Updated By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedAt",
+        "name": "x_updated_at",
+        "label": "Updated At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedBy",
+        "name": "x_deleted_by",
+        "label": "Deleted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedAt",
+        "name": "x_deleted_at",
+        "label": "Deleted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "id",
+        "name": "x_id",
+        "label": "Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverId",
+        "name": "x_driver_id",
+        "label": "Driver Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "fullName",
+        "name": "x_full_name",
+        "label": "Full Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "firstName",
+        "name": "x_first_name",
+        "label": "First Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "surname",
+        "name": "x_surname",
+        "label": "Surname",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "phone",
+        "name": "x_phone",
+        "label": "Phone",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "email",
+        "name": "x_email",
+        "label": "Email",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "nationalId",
+        "name": "x_national_id",
+        "label": "National Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "licenseNumber",
+        "name": "x_license_number",
+        "label": "License Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "licenseClass",
+        "name": "x_license_class",
+        "label": "License Class",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "licenseExpiry",
+        "name": "x_license_expiry",
+        "label": "License Expiry",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "status",
+        "name": "x_status",
+        "label": "Status",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "photoURL",
+        "name": "x_photo_url",
+        "label": "Photo URL",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "emergencyContact",
+        "name": "x_emergency_contact",
+        "label": "Emergency Contact",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "emergencyPhone",
+        "name": "x_emergency_phone",
+        "label": "Emergency Phone",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorId",
+        "name": "x_vendor_id",
+        "label": "Vendor Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorName",
+        "name": "x_vendor_name",
+        "label": "Vendor Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "assignedTruckId",
+        "name": "x_assigned_truck_id",
+        "label": "Assigned Truck Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "currentVehicleId",
+        "name": "x_current_vehicle_id",
+        "label": "Current Vehicle Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "currentVehiclePlate",
+        "name": "x_current_vehicle_plate",
+        "label": "Current Vehicle Plate",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "availability",
+        "name": "x_availability",
+        "label": "Availability",
+        "type": "boolean",
+        "encoding": "plain"
+      },
+      {
+        "source": "totalTrips",
+        "name": "x_total_trips",
+        "label": "Total Trips",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "rating",
+        "name": "x_rating",
+        "label": "Rating",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceCompany",
+        "name": "x_insurance_company",
+        "label": "Insurance Company",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceNumber",
+        "name": "x_insurance_number",
+        "label": "Insurance Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceStartDate",
+        "name": "x_insurance_start_date",
+        "label": "Insurance Start Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceExpiryDate",
+        "name": "x_insurance_expiry_date",
+        "label": "Insurance Expiry Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceCommencingDate",
+        "name": "x_insurance_commencing_date",
+        "label": "Insurance Commencing Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceSupplier",
+        "name": "x_insurance_supplier",
+        "label": "Insurance Supplier",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "ntsaInspectionExpiry",
+        "name": "x_ntsa_inspection_expiry",
+        "label": "Ntsa Inspection Expiry",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "wibaProvider",
+        "name": "x_wiba_provider",
+        "label": "Wiba Provider",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "wibaStartDate",
+        "name": "x_wiba_start_date",
+        "label": "Wiba Start Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "wibaEndDate",
+        "name": "x_wiba_end_date",
+        "label": "Wiba End Date",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverCode",
+        "name": "x_driver_code",
+        "label": "Driver Code",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "baseDriverCode",
+        "name": "x_base_driver_code",
+        "label": "Base Driver Code",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "name",
+        "name": "x_name",
+        "label": "Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "code",
+        "name": "x_code",
+        "label": "Code",
+        "type": "char",
+        "encoding": "plain"
+      }
+    ]
+  },
+  "vehicles": {
+    "model": "x_trucksphere_vehicles",
+    "collection": "vehicles",
+    "fields": [
+      {
+        "source": "createdBy",
+        "name": "x_created_by",
+        "label": "Created By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdAt",
+        "name": "x_created_at",
+        "label": "Created At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedBy",
+        "name": "x_updated_by",
+        "label": "Updated By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedAt",
+        "name": "x_updated_at",
+        "label": "Updated At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedBy",
+        "name": "x_deleted_by",
+        "label": "Deleted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedAt",
+        "name": "x_deleted_at",
+        "label": "Deleted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "id",
+        "name": "x_id",
+        "label": "Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "registrationNumber",
+        "name": "x_registration_number",
+        "label": "Registration Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "plateNumber",
+        "name": "x_plate_number",
+        "label": "Plate Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorId",
+        "name": "x_vendor_id",
+        "label": "Vendor Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorName",
+        "name": "x_vendor_name",
+        "label": "Vendor Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "make",
+        "name": "x_make",
+        "label": "Make",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "model",
+        "name": "x_model",
+        "label": "Model",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "type",
+        "name": "x_type",
+        "label": "Type",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "year",
+        "name": "x_year",
+        "label": "Year",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "capacity",
+        "name": "x_capacity",
+        "label": "Capacity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "capacityUnit",
+        "name": "x_capacity_unit",
+        "label": "Capacity Unit",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "assignedDriverId",
+        "name": "x_assigned_driver_id",
+        "label": "Assigned Driver Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "currentDriverId",
+        "name": "x_current_driver_id",
+        "label": "Current Driver Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "currentDriverName",
+        "name": "x_current_driver_name",
+        "label": "Current Driver Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "insuranceExpiry",
+        "name": "x_insurance_expiry",
+        "label": "Insurance Expiry",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "inspectionExpiry",
+        "name": "x_inspection_expiry",
+        "label": "Inspection Expiry",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "lastInspection",
+        "name": "x_last_inspection",
+        "label": "Last Inspection",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "status",
+        "name": "x_status",
+        "label": "Status",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "photos",
+        "name": "x_photos",
+        "label": "Photos",
+        "type": "text",
+        "encoding": "JSON"
+      },
+      {
+        "source": "documents",
+        "name": "x_documents",
+        "label": "Documents",
+        "type": "text",
+        "encoding": "JSON"
+      },
+      {
+        "source": "axles",
+        "name": "x_axles",
+        "label": "Axles",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "fuelType",
+        "name": "x_fuel_type",
+        "label": "Fuel Type",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "color",
+        "name": "x_color",
+        "label": "Color",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vehicleEmail",
+        "name": "x_vehicle_email",
+        "label": "Vehicle Email",
+        "type": "char",
+        "encoding": "plain"
+      }
+    ]
+  },
+  "fuels": {
+    "model": "x_trucksphere_fuels",
+    "collection": "fuelRecords",
+    "fields": [
+      {
+        "source": "createdBy",
+        "name": "x_created_by",
+        "label": "Created By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdAt",
+        "name": "x_created_at",
+        "label": "Created At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedBy",
+        "name": "x_updated_by",
+        "label": "Updated By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedAt",
+        "name": "x_updated_at",
+        "label": "Updated At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedBy",
+        "name": "x_deleted_by",
+        "label": "Deleted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedAt",
+        "name": "x_deleted_at",
+        "label": "Deleted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "id",
+        "name": "x_id",
+        "label": "Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "fuelId",
+        "name": "x_fuel_id",
+        "label": "Fuel Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "jobId",
+        "name": "x_job_id",
+        "label": "Job Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorId",
+        "name": "x_vendor_id",
+        "label": "Vendor Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorName",
+        "name": "x_vendor_name",
+        "label": "Vendor Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "companyName",
+        "name": "x_company_name",
+        "label": "Company Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverName",
+        "name": "x_driver_name",
+        "label": "Driver Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "plateNumber",
+        "name": "x_plate_number",
+        "label": "Plate Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "fuelAmount",
+        "name": "x_fuel_amount",
+        "label": "Fuel Amount",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "fuelType",
+        "name": "x_fuel_type",
+        "label": "Fuel Type",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "unit",
+        "name": "x_unit",
+        "label": "Unit",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "pricePerUnit",
+        "name": "x_price_per_unit",
+        "label": "Price Per Unit",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "totalCost",
+        "name": "x_total_cost",
+        "label": "Total Cost",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "stationId",
+        "name": "x_station_id",
+        "label": "Station Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "stationName",
+        "name": "x_station_name",
+        "label": "Station Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "operatorId",
+        "name": "x_operator_id",
+        "label": "Operator Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "operatorName",
+        "name": "x_operator_name",
+        "label": "Operator Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "authorizationCode",
+        "name": "x_authorization_code",
+        "label": "Authorization Code",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "authorizationId",
+        "name": "x_authorization_id",
+        "label": "Authorization Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "dispensedAt",
+        "name": "x_dispensed_at",
+        "label": "Dispensed At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "notes",
+        "name": "x_notes",
+        "label": "Notes",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "receiptNoteId",
+        "name": "x_receipt_note_id",
+        "label": "Receipt Note Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverId",
+        "name": "x_driver_id",
+        "label": "Driver Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverCode",
+        "name": "x_driver_code",
+        "label": "Driver Code",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "girDriverCode",
+        "name": "x_gir_driver_code",
+        "label": "Gir Driver Code",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vehicleId",
+        "name": "x_vehicle_id",
+        "label": "Vehicle Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "fmsTransactionId",
+        "name": "x_fms_transaction_id",
+        "label": "Fms Transaction Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "pumpPhotoURL",
+        "name": "x_pump_photo_url",
+        "label": "Pump Photo URL",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "dispensedByName",
+        "name": "x_dispensed_by_name",
+        "label": "Dispensed By Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "pricePerLiter",
+        "name": "x_price_per_liter",
+        "label": "Price Per Liter",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "dispensedBy",
+        "name": "x_dispensed_by",
+        "label": "Dispensed By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "dispensedByEmail",
+        "name": "x_dispensed_by_email",
+        "label": "Dispensed By Email",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "status",
+        "name": "x_status",
+        "label": "Status",
+        "type": "char",
+        "encoding": "plain"
+      }
+    ]
+  },
+  "materials": {
+    "model": "x_trucksphere_materials",
+    "collection": "materials",
+    "fields": [
+      {
+        "source": "createdBy",
+        "name": "x_created_by",
+        "label": "Created By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdAt",
+        "name": "x_created_at",
+        "label": "Created At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedBy",
+        "name": "x_updated_by",
+        "label": "Updated By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedAt",
+        "name": "x_updated_at",
+        "label": "Updated At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedBy",
+        "name": "x_deleted_by",
+        "label": "Deleted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedAt",
+        "name": "x_deleted_at",
+        "label": "Deleted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "id",
+        "name": "x_id",
+        "label": "Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "name",
+        "name": "x_name",
+        "label": "Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "category",
+        "name": "x_category",
+        "label": "Category",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "measurementType",
+        "name": "x_measurement_type",
+        "label": "Measurement Type",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "defaultUnit",
+        "name": "x_default_unit",
+        "label": "Default Unit",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "status",
+        "name": "x_status",
+        "label": "Status",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "description",
+        "name": "x_description",
+        "label": "Description",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "properties",
+        "name": "x_properties",
+        "label": "Properties",
+        "type": "text",
+        "encoding": "JSON"
+      },
+      {
+        "source": "unitPrice",
+        "name": "x_unit_price",
+        "label": "Unit Price",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "salesPrice",
+        "name": "x_sales_price",
+        "label": "Sales Price",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "barcode",
+        "name": "x_barcode",
+        "label": "Barcode",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "weight",
+        "name": "x_weight",
+        "label": "Weight",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "volume",
+        "name": "x_volume",
+        "label": "Volume",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "productType",
+        "name": "x_product_type",
+        "label": "Product Type",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "standardWeight",
+        "name": "x_standard_weight",
+        "label": "Standard Weight",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "diameterOptions",
+        "name": "x_diameter_options",
+        "label": "Diameter Options",
+        "type": "text",
+        "encoding": "JSON"
+      },
+      {
+        "source": "isWarehouseMaterial",
+        "name": "x_is_warehouse_material",
+        "label": "Is Warehouse Material",
+        "type": "boolean",
+        "encoding": "plain"
+      },
+      {
+        "source": "materialId",
+        "name": "x_material_id",
+        "label": "Material Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "active",
+        "name": "x_active",
+        "label": "Active",
+        "type": "boolean",
+        "encoding": "plain"
+      }
+    ]
+  },
+  "warehouse": {
+    "model": "x_trucksphere_warehouse",
+    "collection": "warehouseJobs",
+    "fields": [
+      {
+        "source": "createdBy",
+        "name": "x_created_by",
+        "label": "Created By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdAt",
+        "name": "x_created_at",
+        "label": "Created At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedBy",
+        "name": "x_updated_by",
+        "label": "Updated By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedAt",
+        "name": "x_updated_at",
+        "label": "Updated At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedBy",
+        "name": "x_deleted_by",
+        "label": "Deleted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedAt",
+        "name": "x_deleted_at",
+        "label": "Deleted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "id",
+        "name": "x_id",
+        "label": "Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deliveryOrderId",
+        "name": "x_delivery_order_id",
+        "label": "Delivery Order Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "receiptNoteId",
+        "name": "x_receipt_note_id",
+        "label": "Receipt Note Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "jobId",
+        "name": "x_job_id",
+        "label": "Job Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "warehouseReference",
+        "name": "x_warehouse_reference",
+        "label": "Warehouse Reference",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "pomatReference",
+        "name": "x_pomat_reference",
+        "label": "Pomat Reference",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "poNumber",
+        "name": "x_po_number",
+        "label": "Po Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorId",
+        "name": "x_vendor_id",
+        "label": "Vendor Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorName",
+        "name": "x_vendor_name",
+        "label": "Vendor Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverId",
+        "name": "x_driver_id",
+        "label": "Driver Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "driverName",
+        "name": "x_driver_name",
+        "label": "Driver Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vehicleId",
+        "name": "x_vehicle_id",
+        "label": "Vehicle Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "plateNumber",
+        "name": "x_plate_number",
+        "label": "Plate Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "siteId",
+        "name": "x_site_id",
+        "label": "Site Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "siteName",
+        "name": "x_site_name",
+        "label": "Site Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "items",
+        "name": "x_items",
+        "label": "Items",
+        "type": "text",
+        "encoding": "JSON"
+      },
+      {
+        "source": "itemCount",
+        "name": "x_item_count",
+        "label": "Item Count",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "status",
+        "name": "x_status",
+        "label": "Status",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "warehouseAcceptedAt",
+        "name": "x_warehouse_accepted_at",
+        "label": "Warehouse Accepted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "warehouseAcceptedByName",
+        "name": "x_warehouse_accepted_by_name",
+        "label": "Warehouse Accepted By Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "submittedAt",
+        "name": "x_submitted_at",
+        "label": "Submitted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "workflowType",
+        "name": "x_workflow_type",
+        "label": "Workflow Type",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "goodsDeliveryNoteSource",
+        "name": "x_goods_delivery_note_source",
+        "label": "Goods Delivery Note Source",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "goodsDeliveryNoteFileName",
+        "name": "x_goods_delivery_note_file_name",
+        "label": "Goods Delivery Note File Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "goodsDeliveryNoteHeaders",
+        "name": "x_goods_delivery_note_headers",
+        "label": "Goods Delivery Note Headers",
+        "type": "text",
+        "encoding": "JSON"
+      },
+      {
+        "source": "dispatchedToSiteAt",
+        "name": "x_dispatched_to_site_at",
+        "label": "Dispatched To Site At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "packagingPhotoURL",
+        "name": "x_packaging_photo_url",
+        "label": "Packaging Photo URL",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "packagingPhotoCapturedAt",
+        "name": "x_packaging_photo_captured_at",
+        "label": "Packaging Photo Captured At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "packagingPhotoFileName",
+        "name": "x_packaging_photo_file_name",
+        "label": "Packaging Photo File Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdByUid",
+        "name": "x_created_by_uid",
+        "label": "Created By Uid",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdByName",
+        "name": "x_created_by_name",
+        "label": "Created By Name",
+        "type": "char",
+        "encoding": "plain"
+      }
+    ]
+  },
+  "stocks": {
+    "model": "x_trucksphere_stocks",
+    "collection": "stocks",
+    "fields": [
+      {
+        "source": "createdBy",
+        "name": "x_created_by",
+        "label": "Created By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "createdAt",
+        "name": "x_created_at",
+        "label": "Created At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedBy",
+        "name": "x_updated_by",
+        "label": "Updated By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "updatedAt",
+        "name": "x_updated_at",
+        "label": "Updated At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedBy",
+        "name": "x_deleted_by",
+        "label": "Deleted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deletedAt",
+        "name": "x_deleted_at",
+        "label": "Deleted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "id",
+        "name": "x_id",
+        "label": "Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "deliveryOrderId",
+        "name": "x_delivery_order_id",
+        "label": "Delivery Order Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "jobId",
+        "name": "x_job_id",
+        "label": "Job Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "purchaseOrderId",
+        "name": "x_purchase_order_id",
+        "label": "Purchase Order Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "poNumber",
+        "name": "x_po_number",
+        "label": "Po Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "siteId",
+        "name": "x_site_id",
+        "label": "Site Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "siteName",
+        "name": "x_site_name",
+        "label": "Site Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "materialId",
+        "name": "x_material_id",
+        "label": "Material Id",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "materialName",
+        "name": "x_material_name",
+        "label": "Material Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "vendorName",
+        "name": "x_vendor_name",
+        "label": "Vendor Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "origin",
+        "name": "x_origin",
+        "label": "Origin",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "unit",
+        "name": "x_unit",
+        "label": "Unit",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "receiptStatus",
+        "name": "x_receipt_status",
+        "label": "Receipt Status",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "acceptedAt",
+        "name": "x_accepted_at",
+        "label": "Accepted At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "acceptedBy",
+        "name": "x_accepted_by",
+        "label": "Accepted By",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "inspectedAt",
+        "name": "x_inspected_at",
+        "label": "Inspected At",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "inspectorName",
+        "name": "x_inspector_name",
+        "label": "Inspector Name",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "mifNumber",
+        "name": "x_mif_number",
+        "label": "Mif Number",
+        "type": "char",
+        "encoding": "plain"
+      },
+      {
+        "source": "dispatchedQuantity",
+        "name": "x_dispatched_quantity",
+        "label": "Dispatched Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "receivedQuantity",
+        "name": "x_received_quantity",
+        "label": "Received Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "usableQuantity",
+        "name": "x_usable_quantity",
+        "label": "Usable Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "damagedQuantity",
+        "name": "x_damaged_quantity",
+        "label": "Damaged Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "quarantinedQuantity",
+        "name": "x_quarantined_quantity",
+        "label": "Quarantined Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "excessQuantity",
+        "name": "x_excess_quantity",
+        "label": "Excess Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "shortageQuantity",
+        "name": "x_shortage_quantity",
+        "label": "Shortage Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "consumedQuantity",
+        "name": "x_consumed_quantity",
+        "label": "Consumed Quantity",
+        "type": "float",
+        "encoding": "plain"
+      },
+      {
+        "source": "remainingQuantity",
+        "name": "x_remaining_quantity",
+        "label": "Remaining Quantity",
+        "type": "float",
+        "encoding": "plain"
+      }
+    ]
+  }
+}

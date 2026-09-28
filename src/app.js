@@ -2,7 +2,6 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
 
 // Import Firebase config (must be initialized before any routes that use it)
 const { db, admin } = require('../config/firebase');
@@ -12,6 +11,21 @@ const redis = require('../config/redis');
 
 // Initialize real-time snapshot cache (eliminates repeated Firestore reads)
 const snapshotStore = require('./utils/snapshotStore');
+require('./modules/stocks/sync').startStockSync(snapshotStore);
+require('./modules/purchase-orders/deliveryAlerts').startDeliveryAlertSync(snapshotStore);
+
+// Import security middleware
+const {
+  authRateLimiter,
+  apiRateLimiter,
+  commandInjectionFilter,
+  inputSanitizer,
+  requestSizeLimiter,
+  requestLogger,
+  enforceHttpsInProduction,
+  helmetConfig,
+} = require('./middleware/securityMiddleware');
+const { auditLogger } = require('./middleware/auditMiddleware');
 
 // Start Redis connection in background, then init snapshot store
 // SnapshotStore will warm from Redis if available, then start Firestore listeners
@@ -29,6 +43,7 @@ const vehiclesRoutes = require('./modules/vehicles/routes');
 const materialsRoutes = require('./modules/materials/routes');
 const purchaseOrdersRoutes = require('./modules/purchase-orders/routes');
 const deliveryOrdersRoutes = require('./modules/delivery-orders/routes');
+const warehouseJobsRoutes = require('./modules/warehouse-jobs/routes');
 const weighbridgeRoutes = require('./modules/weighbridge/routes');
 const quarryRoutes = require('./modules/quarry/routes');
 const siteRoutes = require('./modules/site/routes');
@@ -36,74 +51,164 @@ const checkpointsRoutes = require('./modules/checkpoints/routes');
 const fuelRoutes = require('./modules/fuel/routes');
 const fuelAuthorizationRoutes = require('./modules/fuel-authorization/routes');
 const uploadsRoutes = require('./modules/uploads/routes');
+const customersRoutes = require('./modules/customers/routes');
+const fuelStationsRoutes = require('./modules/fuel-stations/routes');
+const reportsRoutes = require('./modules/reports/routes');
+const vendorReportRoutes = require('./modules/reports/vendorReportRoutes');
+const analyticsRoutes = require('./modules/analytics/routes');
+const usersRoutes = require('./modules/users/routes');
+const rolesRoutes = require('./modules/roles/routes');
+const masterDataRoutes = require('./modules/master-data/routes');
 const trackingRoutes = require('./modules/tracking/routes');
+const issuesRoutes = require('./modules/issues/routes');
+const notificationsRoutes = require('./modules/notifications/routes');
+const bulkImportRoutes = require('./modules/bulk-import/routes');
 const { getNextId } = require('./utils/counterService');
 
 const app = express();
 
-// Enable ETag for smart 304 responses — saves bandwidth for unchanged data
-app.set('etag', 'weak');
-
-// Middleware
-app.use(helmet());           // Security headers
-app.use(cors());             // Enable CORS
-app.use(express.json());     // Parse JSON bodies
-app.use(morgan('combined')); // Logging
-
-// ─── Client-side caching headers (stale-while-revalidate compatible) ───
+// Install response scrubbing before every security, parsing, and route
+// middleware so no HTTP failure can leak implementation details to a client.
 app.use((_req, res, next) => {
-  // Allow clients to cache API responses for 30 seconds
-  // stale-while-revalidate allows serving stale while re-fetching in background
-  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+  const sendJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (res.statusCode >= 400) {
+      const suppliedCode = String(payload?.code || payload?.errorCode || '').trim().toUpperCase();
+      const code = /^[A-Z0-9_:-]+$/.test(suppliedCode)
+        ? suppliedCode
+        : `HTTP_${res.statusCode}`;
+      return sendJson({ code, error: code });
+    }
+    return sendJson(payload);
+  };
   next();
 });
 
-// ─── Collection-to-cache-name mapping for ETag middleware ───
-const COLLECTION_ETAG_MAP = {
-  '/api/vendors': 'vendors',
-  '/api/drivers': 'drivers',
-  '/api/vehicles': 'vehicles',
-  '/api/materials': 'materials',
-  '/api/purchase-orders': 'purchaseOrders',
-  '/api/delivery-orders': 'deliveryOrders',
-  '/api/weighbridge': 'weighments',
-  '/api/quarries': 'quarries',
-  '/api/sites': 'sites',
-  '/api/checkpoints': 'checkpoints',
-  '/api/fuel': 'fuelRecords',
-  '/api/uploads': 'uploads',
+const configuredCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+// Authentication is bearer-token based, not cookie based.  Keep the browser
+// origin allow-list explicit and do not enable credentials: a wildcard origin
+// is never safe alongside credentialed requests.
+const allowedCorsOrigins = [...new Set([
+  'https://trucksphere.app',
+  'https://admin.trucksphere.app',
+  'https://truck-app.expo.app',
+  // Expo web development origins. Add a different development port through
+  // CORS_ALLOWED_ORIGINS rather than broadening this to a wildcard.
+  'http://localhost:8081',
+  'http://127.0.0.1:8081',
+  'http://localhost:19006',
+  'http://127.0.0.1:19006',
+  // Expo web served over the current LAN address during local device testing.
+  // Add other deliberate development origins through CORS_ALLOWED_ORIGINS.
+  'http://192.168.0.110:8081',
+  'http://192.168.0.110:19006',
+  'http://192.168.1.199:8081',
+  'http://192.168.1.91:8081',
+  'http://192.168.1.91:19006',
+  'http://192.168.47.223:8081',
+  'http://192.168.47.223:19006',
+  ...configuredCorsOrigins,
+])];
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Native clients and server-to-server calls have no Origin header. CORS
+    // does not apply to them, so they remain supported without weakening web
+    // origin checks.
+    if (!origin || allowedCorsOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.warn(`[CORS] Rejected origin: ${origin}`);
+    return callback(new Error('Origin is not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  // If an older browser cache still sends a conditional header during the
+  // rollout, allow the preflight; the API itself no longer emits 304s.
+  allowedHeaders: ['Authorization', 'Content-Type', 'If-None-Match', 'ngrok-skip-browser-warning'],
+  exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+  credentials: false,
+  maxAge: 86400,
+  optionsSuccessStatus: 204,
 };
 
-/**
- * ETag middleware — returns 304 Not Modified when data hasn't changed.
- * Client sends If-None-Match header with previous ETag.
- * If the snapshot hash matches, the server responds with 304 (no body).
- */
-app.use((req, res, next) => {
-  // Only process GET requests on API routes
-  if (req.method !== 'GET') return next();
+// ─── Trust proxy for accurate IP detection behind load balancers ───
+app.set('trust proxy', 1);
 
-  const basePath = Object.keys(COLLECTION_ETAG_MAP).find(prefix =>
-    req.path.startsWith(prefix)
-  );
-  if (!basePath) return next();
+// Collection responses are authenticated and real-time. Disable framework
+// ETags so a browser cannot answer a GET with a stale 304/body pairing.
+app.set('etag', false);
 
-  const cacheName = COLLECTION_ETAG_MAP[basePath];
-  const currentETag = snapshotStore.getHash(cacheName);
-  const clientETag = req.get('If-None-Match');
+// ─── Security Middleware (order matters) ───
 
-  // Always set ETag on the response
-  if (currentETag) {
-    res.set('ETag', `W/"${currentETag}"`);
-    res.set('Last-Modified', new Date(snapshotStore.getTimestamp(cacheName)).toUTCString());
-  }
+// 1. Helmet with hardened security headers
+app.use(enforceHttpsInProduction);
+app.use(helmet(helmetConfig));
 
-  // If client's ETag matches, return 304 Not Modified
-  if (clientETag && currentETag && clientETag === `W/"${currentETag}"`) {
-    return res.status(304).end();
-  }
+// 2. CORS — handle preflight before routing, then apply the same explicit
+// policy to the actual request. This covers Authorization-bearing requests
+// from Expo web without using a wildcard origin.
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
 
+// 3. Parse JSON bodies with size limit
+app.use(express.json({ limit: '10mb' }));
+
+// 4. Request size limiter
+app.use(requestSizeLimiter(10485760)); // 10MB max body
+
+// 5. Input sanitization (XSS, SQL injection, NoSQL injection prevention)
+app.use(commandInjectionFilter);
+app.use(inputSanitizer);
+
+// 6. Rate limiting — auth routes get stricter limits
+app.use('/api/auth', authRateLimiter);
+app.use('/api', apiRateLimiter);
+
+// 7. Audit logging (fire-and-forget to Firestore auditLogs)
+app.use(auditLogger);
+
+// 8. HTTP request logging
+app.use(requestLogger);
+
+// ─── API caching headers ───
+app.use((_req, res, next) => {
+  // API responses are account-scoped and are also used to update a live UI.
+  // Do not let a browser or intermediary replay an empty/outdated response.
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, private',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  res.removeHeader('ETag');
   next();
+});
+
+// Temporary diagnostics for the collections that feed the management
+// dashboard. Enable with API_DEBUG_LOGGING=true; no request bodies or tokens
+// are logged.
+const debugCollectionPaths = [
+  '/api/drivers',
+  '/api/vehicles',
+  '/api/purchase-orders',
+  '/api/delivery-orders',
+  '/api/vendors',
+];
+app.use((req, res, next) => {
+  if (process.env.API_DEBUG_LOGGING !== 'true' || !debugCollectionPaths.some((path) => req.path.startsWith(path))) {
+    return next();
+  }
+  res.on('finish', () => {
+    console.info(`[API debug] ${req.method} ${req.path} -> ${res.statusCode}`, {
+      cacheControl: res.getHeader('Cache-Control'),
+      hasETag: Boolean(res.getHeader('ETag')),
+    });
+  });
+  return next();
 });
 
 // ─── Server-Sent Events (SSE) endpoint for real-time collection updates ───
@@ -163,6 +268,13 @@ function notifySSEClients(collectionName, data) {
 // Make notifySSEClients available on the app for routes to use
 app.set('notifySSEClients', notifySSEClients);
 
+// snapshotStore is the single Firestore onSnapshot listener for delivery
+// orders. Broadcast only a change signal; each connected client subsequently
+// reloads its own authorized and role-scoped collection.
+snapshotStore.subscribe('deliveryOrders', () => {
+  notifySSEClients('deliveryOrders');
+});
+
 // ─── Counter API for sequential IDs ───
 app.get('/api/counter/:entityType', async (req, res) => {
   try {
@@ -183,23 +295,41 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Firebase connection test endpoint
-app.get('/api/test-firebase', async (req, res) => {
-  try {
-    // Write a test document
-    const testRef = db.collection('_test').doc('connection');
-    await testRef.set({
-      message: 'Firebase is connected!',
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    // Read it back
-    const snapshot = await testRef.get();
-    const data = snapshot.data();
-    res.json({ success: true, data });
-  } catch (error) {
-    console.error('Firebase test failed:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// Client-safe integration flags. Never expose integration credentials here.
+app.get('/api/feature-flags', (_req, res) => {
+  res.json({
+    iprsEnabled: String(process.env.IPRS_ENABLED || '').trim().toLowerCase() === 'true',
+    kraEnabled: String(process.env.KRA_ENABLE || '').trim().toLowerCase() === 'true',
+  });
+});
+
+// This endpoint writes to Firestore and must never be exposed in production.
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/test-firebase', async (_req, res) => {
+    try {
+      const testRef = db.collection('_test').doc('connection');
+      await testRef.set({
+        message: 'Firebase is connected!',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      const snapshot = await testRef.get();
+      res.json({ success: true, data: snapshot.data() });
+    } catch (error) {
+      console.error('Firebase test failed:', error.message);
+      res.status(500).json({ success: false, error: 'Firebase connection test failed.' });
+    }
+  });
+}
+
+const securityContact = process.env.SECURITY_CONTACT || 'mailto:security@trucksphere.app';
+const securityPolicy = process.env.SECURITY_POLICY_URL || 'https://trucksphere.app/security';
+app.get(['/.well-known/security.txt', '/security.txt'], (_req, res) => {
+  res.type('text/plain').send([
+    `Contact: ${securityContact}`,
+    `Policy: ${securityPolicy}`,
+    'Preferred-Languages: en',
+    'Expires: 2027-07-24T00:00:00.000Z',
+  ].join('\n'));
 });
 
 // Mount routes
@@ -211,6 +341,8 @@ app.use('/api/vehicles', vehiclesRoutes);
 app.use('/api/materials', materialsRoutes);
 app.use('/api/purchase-orders', purchaseOrdersRoutes);
 app.use('/api/delivery-orders', deliveryOrdersRoutes);
+app.use('/api/warehouse-jobs', warehouseJobsRoutes);
+app.use('/api/stocks', require('./modules/stocks/routes'));
 app.use('/api/weighbridge', weighbridgeRoutes);
 app.use('/api/quarries', quarryRoutes);
 app.use('/api/sites', siteRoutes);
@@ -218,23 +350,35 @@ app.use('/api/checkpoints', checkpointsRoutes);
 app.use('/api/fuel', fuelRoutes);
 app.use('/api/fuel-authorization', fuelAuthorizationRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/customers', customersRoutes);
+app.use('/api/fuel-stations', fuelStationsRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/roles', rolesRoutes);
+app.use('/api/master-data', masterDataRoutes);
 app.use('/api/track', trackingRoutes);
+app.use('/api/issues', issuesRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/bulk-imports', bulkImportRoutes);
+app.use('/api/admin/reports', reportsRoutes);
+app.use('/api/vendor/reports', vendorReportRoutes);
 
 // 404 handler for unmatched routes
 app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({ code: 'ROUTE_NOT_FOUND' });
 });
 
 // Global error handler
-// Always includes the error message so the client can surface it to the user.
-// In development, the full stack trace is also included.
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.message, err.stack);
   const statusCode = err.statusCode || 500;
-  res.status(statusCode).json({ 
-    error: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  });
+  const rawCode = String(err.code || '').trim().toUpperCase();
+  const code = /^[A-Z0-9_:-]+$/.test(rawCode) ? rawCode : `HTTP_${statusCode}`;
+  // Validation and identity mismatches are expected user-facing outcomes, not
+  // unhandled server faults. Keep stack traces for genuine server failures.
+  if (statusCode >= 500) console.error('Unhandled error:', err.message, err.stack);
+  else console.info('Request rejected:', code);
+  res.status(statusCode).json({ code });
 });
 
 module.exports = app;

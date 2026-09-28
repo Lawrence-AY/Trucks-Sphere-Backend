@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const service = require('./service');
+const { verifyToken } = require('../../middleware/authMiddleware');
+const { MANAGEMENT_ROLES, requireRoles } = require('../../middleware/authorizationMiddleware');
+router.use(verifyToken, requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'storeman'));
+const run = (fn) => async (req, res, next) => { try { res.json(await fn(req)); } catch (error) { next(error); } };
+router.get('/', run(() => service.list()));
+router.get('/:id/movements', run((req) => service.history(req.params.id)));
+router.post('/:id/movements', run((req) => service.change(req.params.id, req.body, req.user)));
+module.exports = router;

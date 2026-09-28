@@ -22,6 +22,12 @@
  *   - weighments
  *   - checkpoints
  *   - uploads
+ *   - customers
+ *   - fuelStations
+ *   - users
+ *   - roles
+ *   - siteGeolocations
+ *   - warehouseJobs
  */
 const { db } = require('../../config/firebase');
 const cacheService = require('./cacheService');
@@ -31,6 +37,7 @@ const store = new Map();           // collectionName → array of { id, ...data 
 const ready = new Map();           // collectionName → boolean (listener has received first snapshot)
 const hashes = new Map();          // collectionName → latest SHA-256 hash (for ETag)
 const timestamps = new Map();      // collectionName → last update timestamp
+const changeSubscribers = new Map(); // collectionName → Set<(change) => void>
 
 // ─── Subscribers for readiness notifications ───
 const readinessSubscribers = [];
@@ -51,6 +58,12 @@ function notifyReady(collectionName) {
  * Any writes to Firestore are reflected in the local cache within milliseconds.
  * Changes are also persisted to Redis asynchronously.
  */
+function reportSnapshotRecord(name, doc) {
+  const data = doc.data();
+  if (name !== 'trackingReportSessions') return { id: doc.id, ...data };
+  const { orderId, personnelName, securityLocation, status, startedAt, decidedAt, reason, driverPhotoURL } = data;
+  return { id: doc.id, orderId: orderId || '', personnelName: personnelName || '', securityLocation: securityLocation || '', status: status || '', startedAt: startedAt || '', decidedAt: decidedAt || '', reason: reason || '', driverPhotoURL: driverPhotoURL || '' };
+}
 function watchCollection(name, ref) {
   ready.set(name, false);
   store.set(name, []);
@@ -59,13 +72,28 @@ function watchCollection(name, ref) {
 
   ref.onSnapshot(
     (snapshot) => {
-      const docs = [];
-      snapshot.forEach(doc => docs.push({ id: doc.id, ...doc.data() }));
+      // The initial snapshot is a list of `added` changes. Every later
+      // snapshot carries only Firestore's changed documents, preserving
+      // references for all untouched records.
+      const byId = new Map((store.get(name) || []).map(item => [item.id, item]));
+      const changes = snapshot.docChanges();
+      changes.forEach(change => {
+        const record = reportSnapshotRecord(name, change.doc);
+        if (change.type === 'removed') byId.delete(change.doc.id);
+        else byId.set(change.doc.id, record);
+      });
+      const docs = Array.from(byId.values());
       store.set(name, docs);
 
       const hash = cacheService.generateHash(docs);
       hashes.set(name, hash);
       timestamps.set(name, Date.now());
+
+      // Readers triggered by a change must see the newly committed snapshot.
+      changes.forEach(change => emitChange(name, {
+        type: change.type, id: change.doc.id,
+        record: reportSnapshotRecord(name, change.doc),
+      }));
 
       // Persist to Redis asynchronously (fire-and-forget)
       cacheService.persistSnapshot(name, docs).catch(() => {});
@@ -82,6 +110,21 @@ function watchCollection(name, ref) {
  * Try to warm a collection from Redis before Firestore listener connects.
  * Returns true if warm data was loaded, false otherwise.
  */
+function emitChange(collectionName, change) {
+  const subscribers = changeSubscribers.get(collectionName);
+  if (!subscribers) return;
+  subscribers.forEach(callback => {
+    try { callback(change); } catch (error) { console.error(`[Snapshot] Subscriber error for ${collectionName}:`, error.message); }
+  });
+}
+
+/** Subscribe backend features to document-level collection changes. */
+function subscribe(collectionName, callback) {
+  if (!changeSubscribers.has(collectionName)) changeSubscribers.set(collectionName, new Set());
+  changeSubscribers.get(collectionName).add(callback);
+  return () => changeSubscribers.get(collectionName)?.delete(callback);
+}
+
 async function warmFromRedis(name) {
   try {
     const cached = await cacheService.loadSnapshot(name);
@@ -119,6 +162,14 @@ async function init() {
     { name: 'weighments', ref: db.collection('weighbridgeRecords') },
     { name: 'checkpoints', ref: db.collection('checkpoints') },
     { name: 'uploads', ref: db.collection('uploads') },
+    { name: 'customers', ref: db.collection('customers') },
+    { name: 'fuelStations', ref: db.collection('fuelStations') },
+    { name: 'users', ref: db.collection('users') },
+    { name: 'roles', ref: db.collection('roles') },
+    { name: 'siteGeolocations', ref: db.collection('siteGeolocations') },
+    { name: 'warehouseJobs', ref: db.collection('warehouseJobs') },
+    { name: 'trackingReportSessions', ref: db.collection('trackingSecuritySessions') },
+    { name: 'stocks', ref: db.collection('stocks') },
   ];
 
   // Phase 1: Warm from Redis (parallel)
@@ -195,7 +246,23 @@ async function invalidateRedisCache(collectionName) {
   await cacheService.invalidate(collectionName);
 }
 
+// Publish a committed write immediately instead of waiting for the listener.
+function applyCommittedUpdate(collectionName, id, updates) {
+  const docs = [...getAll(collectionName)];
+  const index = docs.findIndex((item) => item.id === id);
+  const record = { ...(index >= 0 ? docs[index] : {}), ...updates, id };
+  if (index >= 0) docs[index] = record;
+  else docs.push(record);
+  store.set(collectionName, docs);
+  hashes.set(collectionName, cacheService.generateHash(docs));
+  timestamps.set(collectionName, Date.now());
+  emitChange(collectionName, { type: index >= 0 ? 'modified' : 'added', id, record });
+  cacheService.persistSnapshot(collectionName, docs).catch(() => {});
+  return record;
+}
+
 module.exports = {
+  applyCommittedUpdate,
   init,
   waitUntilReady,
   getAll,
@@ -203,5 +270,6 @@ module.exports = {
   isReady,
   getHash,
   getTimestamp,
+  subscribe,
   invalidateRedisCache,
 };

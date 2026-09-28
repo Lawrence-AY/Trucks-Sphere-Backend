@@ -1,0 +1,3 @@
+require('dotenv').config();
+const {createClient}=require('../src/integrations/odooSync');
+(async()=>{const call=createClient();const mappings=require('../src/integrations/odoo-live-contract.json');for(const c of Object.values(mappings)){if(!c.fields.some(f=>f.source==='vendorId'))continue;const views=await call('ir.ui.view','search_read',{domain:[['model','=',c.model],['mode','=','primary'],['type','in',['list','form']]],fields:['id','type','arch_db']});console.log(JSON.stringify({model:c.model,views:views.map(v=>({id:v.id,type:v.type,hasVendorId:v.arch_db.includes('x_vendor_id')}))}));}})().catch(()=>{console.error('View inspection failed');process.exitCode=1;});

@@ -116,8 +116,22 @@ const checkpointsService = {
    * Uses snapshot caches for efficiency.
    */
   getActiveDeliveries() {
+    const now = new Date();
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
     const deliveryOrders = snapshotStore.getAll('deliveryOrders')
-      .filter(d => ['assigned', 'at_quarry', 'in_transit', 'active'].includes(d.status));
+      .filter(d => {
+        // Exclude completed/cancelled — they are no longer active
+        if (['completed', 'cancelled'].includes(d.status)) {
+          return false;
+        }
+        // Only include jobs created within the last 48 hours
+        if (d.createdAt) {
+          const createdAt = d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt);
+          return createdAt >= fortyEightHoursAgo;
+        }
+        return false; // exclude if no createdAt
+      });
 
     const allCheckpoints = snapshotStore.getAll(COLLECTION_NAME);
 

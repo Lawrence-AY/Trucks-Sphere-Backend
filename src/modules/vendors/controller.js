@@ -1,8 +1,18 @@
 const vendorsService = require('./service');
+const kraService = require('../../integrations/kraService');
+
+function vendorScope(req) {
+  return req.user?.role === 'vendor' ? req.user?.entityId || '' : '';
+}
 
 exports.findAll = async (req, res, next) => {
   try {
     const items = await vendorsService.findAll(req.query);
+    const vendorId = vendorScope(req);
+    if (vendorId) {
+      const data = items.data.filter((item) => item.id === vendorId || item.vendorId === vendorId);
+      return res.json({ ...items, data, total: data.length, totalPages: data.length ? 1 : 0 });
+    }
     res.json(items);
   } catch (err) { next(err); }
 };
@@ -10,6 +20,7 @@ exports.findAll = async (req, res, next) => {
 exports.findById = async (req, res, next) => {
   try {
     const item = await vendorsService.findById(req.params.id);
+    if (vendorScope(req) && (!item || (item.id !== vendorScope(req) && item.vendorId !== vendorScope(req)))) return res.status(404).json({ error: 'Not found' });
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json(item);
   } catch (err) { next(err); }
@@ -18,6 +29,34 @@ exports.findById = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   try {
     const item = await vendorsService.create(req.body);
+    res.status(201).json(item);
+  } catch (err) { next(err); }
+};
+
+exports.findDocuments = async (req, res, next) => {
+  try {
+    const item = await vendorsService.findById(req.params.id);
+    if (!item || (vendorScope(req) && item.id !== vendorScope(req) && item.vendorId !== vendorScope(req))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    res.json(Array.isArray(item.documents) ? item.documents : []);
+  } catch (err) { next(err); }
+};
+
+exports.previewUsername = async (req, res, next) => {
+  try {
+    const username = await vendorsService.previewUsername(req.query.contactPerson || req.query.companyName);
+    res.json({ username });
+  } catch (err) { next(err); }
+};
+
+exports.validateKraPin = async (req, res, next) => {
+  try { res.json(await kraService.validatePin(req.body?.kraPin || req.body?.KRAPIN)); } catch (err) { next(err); }
+};
+
+exports.createWithAccount = async (req, res, next) => {
+  try {
+    const item = await vendorsService.createWithAccount(req.body);
     res.status(201).json(item);
   } catch (err) { next(err); }
 };

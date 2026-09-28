@@ -1,3 +1,6 @@
+const { receiptReference } = require('../../utils/receiptReference');
+const snapshotStore = require('../../utils/snapshotStore');
+const { isSupersededForFuel } = require('../../utils/fuelEligibility');
 /**
  * Fuel Authorization Service
  * Handles the fuel authorization workflow:
@@ -8,8 +11,15 @@
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
 const { sendSMS, generateOTP } = require('../sms/service');
+const girService = require('../../integrations/girService');
 
 const authCollectionRef = db.collection('fuelAuthorizations');
+const ALPHANUMERIC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function temporaryFuelCode() {
+  let code = '';
+  for (let i = 0; i < 3; i += 1) code += ALPHANUMERIC[Math.floor(Math.random() * ALPHANUMERIC.length)];
+  return code;
+}
 
 /**
  * Create a new fuel authorization request.
@@ -34,7 +44,7 @@ const authCollectionRef = db.collection('fuelAuthorizations');
 async function createAuthorization(params) {
   const {
     vendorId, vendorName, vendorPhone,
-    driverId, driverName, driverPhone,
+    driverId, driverCode, driverName, driverPhone,
     vehicleId, plateNumber,
     requestedBy, requestedByEmail,
     fuelAmount = 0,
@@ -44,6 +54,10 @@ async function createAuthorization(params) {
   if (!vendorId) throw new Error('vendorId is required');
   if (!driverId) throw new Error('driverId is required');
   if (!vehicleId) throw new Error('vehicleId is required');
+
+  const jobs = snapshotStore.getAll('deliveryOrders');
+  const job = jobs.find((item) => item.jobId === jobId || item.id === jobId);
+  if (job && isSupersededForFuel(job, jobs)) throw Object.assign(new Error('This driver or truck has a newer job. Refresh the fuel queue.'), { statusCode: 409, code: 'FUEL_JOB_SUPERSEDED' });
 
   // Generate 6-digit OTP
   const otp = generateOTP();
@@ -60,6 +74,7 @@ async function createAuthorization(params) {
     vendorName: vendorName || '',
     vendorPhone: vendorPhone || '',
     driverId,
+    driverCode: driverCode || '',
     driverName: driverName || '',
     driverPhone: driverPhone || '',
     vehicleId,
@@ -113,6 +128,20 @@ async function verifyOTP(authId, otp, authorize) {
 
   const data = doc.data();
 
+  // A duplicate tap/retry can arrive after the first verification completed.
+  // Treat an already-authorized request as idempotent and do not activate the
+  // GIR/FMS session a second time.
+  if (data.status === 'authorized') {
+    return {
+      status: 'authorized',
+      authorized: true,
+      message: 'Fuel dispensing authorized successfully.',
+      ...data,
+      fuelCode: data.fuelCode || null,
+      girDriverCode: data.girDriverCode || null,
+    };
+  }
+
   if (data.status !== 'pending') {
     throw new Error(`Authorization request is already ${data.status}`);
   }
@@ -129,11 +158,26 @@ async function verifyOTP(authId, otp, authorize) {
   }
 
   const now = new Date().toISOString();
+  const fuelCode = temporaryFuelCode();
   const updates = {
     status: authorize ? 'authorized' : 'denied',
     updatedAt: now,
     ...(authorize ? { authorizedAt: now } : { deniedAt: now }),
+    ...(authorize ? { fuelCode } : {}),
   };
+
+  if (authorize) {
+    const girSession = await girService.activateFuelSession({
+      driverId: data.driverId,
+      baseDriverCode: data.driverCode || data.driverId || '',
+      vehicleId: data.vehicleId,
+      vendorId: data.vendorId,
+      jobId: receiptReference(snapshotStore.getAll('deliveryOrders').find(job => job.id === data.deliveryOrderId || job.jobId === data.jobId || job.id === data.jobId)),
+      fuelCode,
+    });
+    updates.girDriverCode = girSession.activeCode || null;
+
+  }
 
   await docRef.update(updates);
 
@@ -145,6 +189,8 @@ async function verifyOTP(authId, otp, authorize) {
       : 'Fuel dispensing has been denied.',
     ...data,
     ...updates,
+    fuelCode: updates.fuelCode || data.fuelCode || null,
+    girDriverCode: updates.girDriverCode || data.girDriverCode || null,
   };
 }
 
@@ -188,20 +234,48 @@ async function getAuthorizationStatus(authId) {
  * Get all pending authorizations for a vendor.
  */
 async function getPendingForVendor(vendorId) {
-  const snapshot = await authCollectionRef
-    .where('vendorId', '==', vendorId)
-    .where('status', '==', 'pending')
-    .orderBy('createdAt', 'desc')
-    .get();
+  try {
+    const snapshot = await authCollectionRef
+      .where('vendorId', '==', vendorId)
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'desc')
+      .get();
 
-  const results = [];
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    // Don't expose OTP in list
-    const { otp, ...safe } = data;
-    results.push(safe);
-  });
-  return results;
+    const results = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Don't expose OTP in list
+      const { otp, ...safe } = data;
+      results.push(safe);
+    });
+    return results;
+  } catch (err) {
+    // Fallback: if the composite index hasn't been deployed yet,
+    // query without orderBy and sort in memory.
+    if (err.code === 9 || (err.message && err.message.includes('index'))) {
+      console.warn('[FuelAuth] Composite index missing, using fallback sort:', err.message);
+      const snapshot = await authCollectionRef
+        .where('vendorId', '==', vendorId)
+        .where('status', '==', 'pending')
+        .get();
+
+      const results = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const { otp, ...safe } = data;
+        results.push(safe);
+      });
+
+      // Sort in memory by createdAt descending
+      results.sort((a, b) => {
+        const dateA = a.createdAt || '';
+        const dateB = b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+      return results;
+    }
+    throw err;
+  }
 }
 
 module.exports = {

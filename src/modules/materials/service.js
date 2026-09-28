@@ -1,5 +1,6 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
+const { getNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('materials');
 
 const COLLECTION_NAME = 'materials';
@@ -8,7 +9,7 @@ const materialsService = {
   findAll(query = {}) {
     const { search, status, category, page = 1, limit = 50 } = query;
 
-    let results = snapshotStore.getAll(COLLECTION_NAME);
+    let results = snapshotStore.getAll(COLLECTION_NAME).map((item) => item.isWarehouseMaterial ? { ...item, category: 'Warehouse' } : item);
 
     // Sort by name ascending
     results = [...results].sort((a, b) =>
@@ -42,14 +43,18 @@ const materialsService = {
 
   async create(data) {
     try {
-      const docRef = collectionRef.doc(data.id || undefined);
+      const materialId = await getNextId('material');
+      const docRef = collectionRef.doc(materialId);
       const item = {
         ...data,
+        ...(data.isWarehouseMaterial ? { category: 'Warehouse' } : {}),
+        id: materialId,
+        materialId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(item);
-      return { id: docRef.id, ...item };
+      return { id: materialId, ...item };
     } catch (error) {
       console.error('materialsService.create error:', error);
       throw error;
@@ -61,7 +66,12 @@ const materialsService = {
       const docRef = collectionRef.doc(id);
       const doc = await docRef.get();
       if (!doc.exists) return null;
-      const updates = { ...data, updatedAt: new Date().toISOString() };
+      const material = { id, ...doc.data(), ...data };
+      const updates = {
+        ...data,
+        ...(material.isWarehouseMaterial ? { category: 'Warehouse' } : {}),
+        updatedAt: new Date().toISOString(),
+      };
       await docRef.update(updates);
       return { id, ...doc.data(), ...updates };
     } catch (error) {

@@ -56,6 +56,10 @@ async function sendSMS(mobile, message) {
   }
 }
 
+function isSmsConfigured() {
+  return Boolean(SMS_CONFIG.baseUrl && SMS_CONFIG.userid && SMS_CONFIG.password && SMS_CONFIG.senderid);
+}
+
 /**
  * Normalise a Kenyan mobile number to 2547XXXXXXXX format.
  * Accepts: 07XXXXXXXX, +2547XXXXXXXX, 2547XXXXXXXX, 7XXXXXXXX
@@ -80,4 +84,4 @@ function generateOTP() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-module.exports = { sendSMS, generateOTP, normaliseMobile };
+module.exports = { sendSMS, isSmsConfigured, generateOTP, normaliseMobile };
