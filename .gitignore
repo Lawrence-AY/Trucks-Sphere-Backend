@@ -1,0 +1,6 @@
+.env
+node_modules
+config/truck-d18ad-firebase-adminsdk-fbsvc-2ef616d98d.json
+config/truck2sphere-57b00-firebase-adminsdk-fbsvc-b38391ce11.json
+config/jobs-app-36698-firebase-adminsdk-eg4oi-2894943154.json 
+config/*firebase-adminsdk*.json
