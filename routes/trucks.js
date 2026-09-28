@@ -3,6 +3,8 @@ const express = require('express');
 const router = express.Router();
 const { db, admin } = require('../config/firebase');
 const { authenticate } = require('../src/middleware/authMiddleware');
+const { MANAGEMENT_ROLES, requireRoles } = require('../src/middleware/authorizationMiddleware');
+const managementOnly = requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE);
 
 // GET all trucks (public for now, but you can add authentication if needed)
 router.get('/', async (req, res) => {
@@ -82,7 +84,7 @@ router.put('/:id', authenticate, async (req, res) => {
 });
 
 // DELETE a truck (authenticated)
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', authenticate, managementOnly, async (req, res) => {
   try {
     const docRef = db.collection('trucks').doc(req.params.id);
     const doc = await docRef.get();
