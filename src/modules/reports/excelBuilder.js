@@ -294,14 +294,46 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   addSheet(wb, `Store Activity${suffix}`, [
     'Inspector', 'Inspected At (EAT)', 'Material Source', 'MRF Number', 'Quantity Received', 'PO Number', 'Material',
-    'Material Type / Unit', 'Attached Images', 'Receipt Status', 'Failure / Deficiency', 'Warehouse Job ID',
+    'Material Type / Unit', 'Warehouse Dispatched Items', 'Site In (EAT)', 'Site Weigh In (T)',
+    'Attached Images', 'Receipt Status', 'Failure / Deficiency', 'Warehouse Job ID',
   ], (data.storeActivity || []).map((r) => ({
     'Inspector': r.inspectorName, 'Inspected At (EAT)': r.inspectedAtEAT,
     'Material Source': r.materialSource, 'MRF Number': r.warehouseMrf,
     'Quantity Received': r.receivedQuantity, 'PO Number': r.poNumber,
     'Material': r.materialName, 'Material Type / Unit': r.materialType,
+    'Warehouse Dispatched Items': r.warehouseDispatchedItems, 'Site In (EAT)': r.siteInTimeEAT, 'Site Weigh In (T)': r.siteWeighIn,
     'Attached Images': r.images, 'Receipt Status': r.receiptStatus,
     'Failure / Deficiency': r.failureReason, 'Warehouse Job ID': r.warehouseJobId,
+  })));
+
+  // ─── Sheet: Warehouse ───
+  addSheet(wb, `Warehouse${suffix}`, [
+    'Job ID', 'PO Number', 'Vendor', 'Driver', 'Plate', 'MRF Source', 'MRF Number',
+    'Dispatched At (EAT)', 'Items', 'Receipt Status', 'Accepted At (EAT)', 'Accepted By',
+    'Received Items', 'MIF #', 'Inspector', 'Inspected At (EAT)', 'Inspection Result',
+    'Denied At (EAT)', 'Denial Reason', 'Tracking Activity', 'Tracking Photos',
+  ], (data.warehouse || []).map((r) => ({
+    'Job ID': r.jobId,
+    'PO Number': r.poNumber,
+    'Vendor': r.vendorName,
+    'Driver': r.driverName,
+    'Plate': r.plateNumber,
+    'MRF Source': r.mrfSource,
+    'MRF Number': r.warehouseMrf,
+    'Dispatched At (EAT)': r.dispatchedAt,
+    'Items': r.warehouseItems,
+    'Receipt Status': r.warehouseReceiptStatus,
+    'Accepted At (EAT)': r.warehouseAcceptedAt,
+    'Accepted By': r.warehouseAcceptedBy,
+    'Received Items': r.warehouseReceivedItems,
+    'MIF #': r.mrfNumber,
+    'Inspector': r.inspectorName,
+    'Inspected At (EAT)': r.inspectionAtEAT,
+    'Inspection Result': r.inspectionResult,
+    'Denied At (EAT)': r.warehouseDeniedAt,
+    'Denial Reason': r.warehouseDenialReason,
+    'Tracking Activity': r.trackingActivity,
+    'Tracking Photos': r.trackingPhotos,
   })));
 
   addSheet(wb, `Flagged${suffix}`, [

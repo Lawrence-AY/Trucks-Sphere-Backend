@@ -38,6 +38,7 @@ exports.exportExcel = async (req, res, next) => {
     const data = {      masterAudit: reportsService.buildMasterAudit(options),
       materialInspections: reportsService.buildMaterialInspectionReport(options),
       storeActivity: reportsService.buildStoreActivityReport(options),
+      warehouse: reportsService.buildMasterAudit(options).filter((r) => r.origin === 'Warehouse'),
       flagged: reportsService.buildFlaggedReport(options),
       drivers: reportsService.buildDriverReport(),
       fuel: reportsService.buildFuelReport(options),

@@ -310,12 +310,6 @@ const warehouseJobsService = {
       const deliveryOrderRef = deliveryOrdersCollection.doc(jobId.replace(/\//g, '-'));
       const existing = await transaction.get(docRef);
       const existingDeliveryOrder = await transaction.get(deliveryOrderRef);
-      // Allocate the RN in the job transaction: concurrent creates cannot reuse
-      // a number, and a failed job write does not consume one.
-      const receiptCounterRef = db.collection('counters').doc('auto_ids');
-      const receiptCounter = await transaction.get(receiptCounterRef);
-      const receiptSequence = Number(receiptCounter.data()?.receipt_note_counter || 0) + 1;
-      const receiptNoteId = `${purchaseOrder.poNumber || warehouseReference}/RN${String(receiptSequence).padStart(3, '0')}`;
       if (existing.exists || existingDeliveryOrder.exists) {
         const error = new Error('Could not allocate a unique warehouse job number. Please retry.');
         error.statusCode = 409;
@@ -329,7 +323,6 @@ const warehouseJobsService = {
         trackingId: generateTrackingId(),
         id: docRef.id,
         deliveryOrderId: deliveryOrderRef.id,
-        receiptNoteId,
         jobId,
         warehouseReference,
         pomatReference,
@@ -362,7 +355,6 @@ const warehouseJobsService = {
         jobKey: warehouseReference,
         warehouseJobId: docRef.id,
         isWarehouseDelivery: true,
-        receiptNoteId,
         deliveryOrigin: 'warehouse',
         // Populate the shared source fields used by downstream job views and
         // reports, which otherwise fall back to a quarry origin.
@@ -403,7 +395,6 @@ const warehouseJobsService = {
 
       //const writeStocks = await require('../stocks/service').prepare(transaction, deliveryOrder);
       //writeStocks();
-      transaction.set(receiptCounterRef, { receipt_note_counter: receiptSequence }, { merge: true });
       transaction.set(docRef, item);
       transaction.set(deliveryOrderRef, deliveryOrder);
       return { item, deliveryOrder };

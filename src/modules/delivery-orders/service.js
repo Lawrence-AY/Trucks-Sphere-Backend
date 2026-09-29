@@ -486,7 +486,11 @@ const delivery_ordersService = {
         .includes(normalizeJobStatus(existing.status));
       const isNowCompleted = [JOB_STATUS.SITE_WEIGHED_OUT, JOB_STATUS.COMPLETED]
         .includes(normalizeJobStatus(updates.status, normalizeJobStatus(existing.status)));
-      if (isNowCompleted && !existing.receiptNoteId && !updates.receiptNoteId) {
+      // Warehouse shipments must record site weigh-out before a receipt note is
+      // allocated; quarry deliveries allocate it on completion (site weigh-out).
+      const siteWeighOutRecorded = updates.siteWeighOutWeight != null || existing.siteWeighOutWeight != null;
+      const readyForReceiptNote = !isWarehouseReceipt(existing) || siteWeighOutRecorded;
+      if (isNowCompleted && readyForReceiptNote && !existing.receiptNoteId && !updates.receiptNoteId) {
         const allocated = existing.receiptNote || existing.grnNumber || `${existing.jobId || id}/${await getNextId('receipt_note')}`;
         updates.receiptNoteId = await db.runTransaction(async transaction => {
           const current = await transaction.get(docRef);

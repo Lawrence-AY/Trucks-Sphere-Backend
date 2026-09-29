@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function setup(location) {
-  const record = { token: 'secret', status: 'active', securityLocation: location };
+  const record = { token: 'secret', status: 'active', securityLocation: location, expiresAt: new Date(Date.now() + 60 * 1000).toISOString(), lastActivityAt: new Date().toISOString() };
   const session = { exists: true, id: 'session1', data: () => record, ref: { update: async value => Object.assign(record, value) } };
   const exports = {};
   const mocks = {
@@ -50,4 +50,30 @@ test('gate decision cannot bypass photo capture', async () => {
   req.body.outcome = 'verified';
   await controller.recordSecurityDecision(req, res, error => { throw error; });
   assert.equal(res.statusCode, 400);
+});
+
+test('expired session cannot attach a vehicle', async () => {
+  const { controller, req, res, record } = setup('Gate');
+  record.expiresAt = new Date(Date.now() - 1000).toISOString();
+  await controller.attachSecuritySessionVehicle(req, res, error => { throw error; });
+  assert.equal(res.statusCode, 403);
+});
+
+test('idle session (over 5 minutes) cannot attach a vehicle', async () => {
+  const { controller, req, res, record } = setup('Gate');
+  record.lastActivityAt = new Date(Date.now() - 6 * 60 * 1000).toISOString();
+  await controller.attachSecuritySessionVehicle(req, res, error => { throw error; });
+  assert.equal(res.statusCode, 403);
+});
+
+test('a completed session can select another vehicle within the window', async () => {
+  const { controller, req, res, record } = setup('Gate');
+  record.status = 'verified';
+  record.decidedAt = new Date().toISOString();
+  record.reason = '';
+  await controller.attachSecuritySessionVehicle(req, res, error => { throw error; });
+  assert.equal(res.statusCode, 200);
+  assert.equal(record.status, 'active');
+  assert.equal(record.decidedAt, null);
+  assert.equal(record.reason, '');
 });

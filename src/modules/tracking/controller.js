@@ -17,6 +17,18 @@ const securityCode = () => crypto.randomInt(36 ** 5).toString(36).toUpperCase().
 const now = () => new Date().toISOString();
 const SECURITY_LOCATIONS = new Set(['gate', 'checkpoint 1', 'checkpoint 2', 'checkpoint 3']);
 
+const SESSION_ABSOLUTE_TTL_MS = 20 * 60 * 1000; // 20-minute absolute expiry
+const SESSION_IDLE_TTL_MS = 5 * 60 * 1000; // 5-minute idle timeout
+
+function isSessionUsable(sessionData = {}) {
+  const nowMs = Date.now();
+  const expiresAt = sessionData.expiresAt ? new Date(sessionData.expiresAt).getTime() : 0;
+  const lastActivityAt = sessionData.lastActivityAt
+    ? new Date(sessionData.lastActivityAt).getTime()
+    : sessionData.startedAt ? new Date(sessionData.startedAt).getTime() : nowMs;
+  return expiresAt > nowMs && (nowMs - lastActivityAt) <= SESSION_IDLE_TTL_MS;
+}
+
 async function notifyFlagStakeholders(order, flag, resolved = false, denied = false) {
   const siteFlag = flag.source === 'operator_site';
   const users = await db.collection('users').get();
@@ -97,8 +109,9 @@ exports.startSecuritySession = async (req, res, next) => {
     }
     if (personnel.empty) return res.status(403).json({ error: 'Invalid security code.' });
     const person = personnel.docs[0]; const token = crypto.randomBytes(24).toString('hex');
-    const record = { token, plateNumber: '', personnelId: person.id, personnelName: person.data().name, securityLocation: person.data().location || '', orderId: '', startedAt: now(), startLocation: req.body?.location || null, status: 'active' };
-    const doc = await db.collection('trackingSecuritySessions').add(record); res.status(201).json({ id: doc.id, token, personnelName: record.personnelName, securityLocation: record.securityLocation });
+    const started = now();
+    const record = { token, plateNumber: '', personnelId: person.id, personnelName: person.data().name, securityLocation: person.data().location || '', orderId: '', startedAt: started, startLocation: req.body?.location || null, status: 'active', expiresAt: new Date(Date.now() + SESSION_ABSOLUTE_TTL_MS).toISOString(), lastActivityAt: started };
+    const doc = await db.collection('trackingSecuritySessions').add(record); res.status(201).json({ id: doc.id, token, personnelName: record.personnelName, securityLocation: record.securityLocation, expiresAt: record.expiresAt });
   } catch (err) { next(err); }
 };
 exports.attachSecuritySessionVehicle = async (req, res, next) => {
@@ -106,8 +119,12 @@ exports.attachSecuritySessionVehicle = async (req, res, next) => {
     const session = await db.collection('trackingSecuritySessions').doc(req.params.sessionId).get();
     const token = String(req.body?.token || '');
     const plateNumber = String(req.body?.plateNumber || '').trim().toUpperCase();
-    if (!session.exists || session.data().token !== token || session.data().status !== 'active') {
+    const sessionData = session.data() || {};
+    if (!session.exists || sessionData.token !== token) {
       return res.status(403).json({ error: 'Invalid security session.' });
+    }
+    if (!isSessionUsable(sessionData)) {
+      return res.status(403).json({ error: 'Security session expired. Please start a new session.' });
     }
     if (plateNumber.length < 3) return res.status(400).json({ error: 'Enter a valid vehicle registration number.' });
     const order = trackingService.findByPlate(plateNumber);
@@ -119,19 +136,21 @@ exports.attachSecuritySessionVehicle = async (req, res, next) => {
       driverPhotoURL = result.url;
     }
     const photosCaptured = Boolean(driverPhotoURL);
-    await session.ref.update({ plateNumber, orderId: order?.id || '', vehicleSelectedAt: now(), driverPhotoURL, photosCaptured, photosCapturedAt: photosCaptured ? now() : null });
+    await session.ref.update({ plateNumber, orderId: order?.id || '', vehicleSelectedAt: now(), driverPhotoURL, photosCaptured, photosCapturedAt: photosCaptured ? now() : null, status: 'active', decidedAt: null, reason: '', lastActivityAt: now() });
     return res.json({ id: session.id, plateNumber, orderId: order?.id || '' });
   } catch (err) { next(err); }
 };
 exports.recordSecurityDecision = async (req, res, next) => {
   try {
     const session = await db.collection('trackingSecuritySessions').doc(req.params.sessionId).get();
-    const body = req.body || {}; if (!session.exists || session.data().token !== body.token) return res.status(403).json({ error: 'Invalid security session.' });
+    const body = req.body || {};
+    const sessionData = session.data() || {};
+    if (!session.exists || sessionData.token !== body.token) return res.status(403).json({ error: 'Invalid security session.' });
+    if (!isSessionUsable(sessionData)) return res.status(403).json({ error: 'Security session expired. Please start a new session.' });
     const outcome = body.outcome === 'flagged' ? 'flagged' : body.outcome === 'verified' ? 'verified' : '';
     if (!outcome || (outcome === 'flagged' && !String(body.reason || '').trim())) return res.status(400).json({ error: 'A flagged trip requires a reason.' });
-    const sessionData = session.data();
     if (String(sessionData.securityLocation || '').trim().toLowerCase() === 'gate' && !sessionData.driverPhotoURL) return res.status(400).json({ error: 'Capture the driver photo at the gate before continuing.' });
-    const update = { status: outcome, reason: outcome === 'flagged' ? String(body.reason).trim() : '', decidedAt: now(), decisionLocation: body.location || null, decidedBy: sessionData.personnelName };
+    const update = { status: outcome, reason: outcome === 'flagged' ? String(body.reason).trim() : '', decidedAt: now(), decisionLocation: body.location || null, decidedBy: sessionData.personnelName, lastActivityAt: now() };
     await session.ref.update(update);
     if (outcome === 'flagged') {
       const order = trackingService.findByPlate(sessionData.plateNumber);

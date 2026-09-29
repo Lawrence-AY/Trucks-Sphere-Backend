@@ -442,9 +442,17 @@ function buildStoreActivityReport(options = {}) {
   return getDeliveries(options).flatMap((delivery) => {
     const inspection = delivery.materialInspection || {};
     const receipts = inspection.materialReceipts || [];
+    // Only pull the warehouse-specific fields the Store Activity report needs.
+    // Spreading the full warehouse report used to duplicate lifecycle timestamp
+    // columns (siteInTime/siteOutTime/quarryInTimeEAT/quarryOutTimeEAT, etc.).
+    const warehouse = warehouseReportFields(delivery, formatEAT);
     return receipts.map((line) => ({
       inspectorName: inspection.inspectorName || '',
-      ...warehouseReportFields(delivery, formatEAT),
+      materialSource: warehouse.materialSource || '',
+      warehouseMrf: warehouse.warehouseMrf || '',
+      warehouseDispatchedItems: warehouse.warehouseItems || '',
+      siteInTimeEAT: warehouse.siteInTimeEAT || '',
+      siteWeighIn: warehouse.siteWeighIn ?? '',
       inspectedAtEAT: formatEAT(inspection.inspectedAt || delivery.updatedAt),
       receivedQuantity: line.receivedQuantity ?? '',
       poNumber: delivery.poNumber || delivery.purchaseOrderId || '',

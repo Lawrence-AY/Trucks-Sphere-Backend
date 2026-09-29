@@ -90,12 +90,12 @@ test('warehouse creation accepts a mixed PO without fleet and preserves every pr
     { productName: 'Paint', quantity: 4, unit: 'Litres' }, { productName: 'Bolts', quantity: 20, unit: 'Pieces' },
   ] });
   assert.equal(result.driverId, undefined);
-  assert.equal(result.receiptNoteId, 'PO0001/V001/RN042');
+  assert.equal(result.receiptNoteId, undefined);
   assert.equal(result.vehicleId, undefined);
   assert.equal(result.jobId, 'WH0002/V001/J0001');
   const delivery = writes.find((entry) => entry.ref.collection === 'deliveryOrders').data;
   assert.equal(delivery.materialId, 'MAT002');
-  assert.equal(delivery.receiptNoteId, result.receiptNoteId);
+  assert.equal(delivery.receiptNoteId, undefined);
   assert.equal(delivery.materials.length, 2);
   assert.notEqual(delivery.materials[0].materialId, delivery.materials[1].materialId);
   assert.equal(delivery.status, 'DISPATCHED');
@@ -106,12 +106,12 @@ test('warehouse creation accepts a mixed PO without fleet and preserves every pr
   assert.equal(records.warehouseJobs[0].trackingId, delivery.trackingId);
   // assert.equal(writes.filter((entry) => entry.ref.collection === 'stocks').length, 2);
   const next = await module.exports.create({ purchaseOrderId: 'PO1', items: [{ productName: 'Paint', quantity: 1, unit: 'Litres' }] });
-  assert.equal(next.receiptNoteId, 'PO0001/V001/RN043');
+  assert.equal(next.receiptNoteId, undefined);
   // The warehouse picker accepts a material's public ID as well as its doc ID.
   records.materials[1].materialId = 'MAT002';
   records.materials[1].id = 'material-document-2';
   const aliased = await module.exports.create({ purchaseOrderId: 'PO1', items: [{ productName: 'Paint', quantity: 1, unit: 'Litres' }] });
-  assert.equal(aliased.receiptNoteId, 'PO0001/V001/RN044');
+  assert.equal(aliased.receiptNoteId, undefined);
   records.materials[1].isWarehouseMaterial = false;
   records.purchaseOrders[0].isWarehouseMaterial = true;
   await module.exports.create({ purchaseOrderId: 'PO1', items: [{ productName: 'Paint', quantity: 1, unit: 'Litres' }] });
