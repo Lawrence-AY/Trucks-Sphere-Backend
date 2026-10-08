@@ -173,6 +173,7 @@ async function applyUpdateWithBackorder(docRef, id, updates) {
   return db.runTransaction(async (transaction) => {
     const sourceSnapshot = await transaction.get(docRef);
     if (!sourceSnapshot.exists) return { backorder: null };
+    require('./storeReceiving').assertGenericUpdate(sourceSnapshot.data(), updates);
     const writeStocks = await stockService.prepare(transaction, { ...sourceSnapshot.data(), ...updates, id });
     writeStocks();
 
@@ -318,6 +319,7 @@ const delivery_ordersService = {
    */
   async create(data) {
     try {
+      require('./storeReceiving').assertGenericUpdate({ ...data, materialInspection: null }, data);
       if (data.purchaseOrderId) {
         const poSnapshot = await purchaseOrdersCollection.doc(data.purchaseOrderId).get();
         const po = poSnapshot.exists ? poSnapshot.data() : null;
@@ -397,6 +399,21 @@ const delivery_ordersService = {
    * update — Optimized for quarry workflow speed.
    * Uses in-memory snapshot cache to avoid a Firestore read for the current state.
    */
+  async updateFresh(id, data) {
+    const docRef = collectionRef.doc(id);
+    const doc = await docRef.get();
+    if (!doc.exists) throw Object.assign(new Error('Job not found'), { code: 'JOB_NOT_FOUND' });
+    const existing = doc.data();
+    for (const field of ['siteWeighInWeight', 'siteWeighOutWeight']) {
+      if (data[field] == null || existing[field] == null) continue;
+      if (Math.abs(Number(data[field]) - Number(existing[field])) > 0.000001) {
+        throw Object.assign(new Error('App and bridge weights conflict'), { code: 'APP_WEIGHT_CONFLICT' });
+      }
+      return { ...existing, id };
+    }
+    return this._applyUpdate(docRef, id, existing, data);
+  },
+
   async update(id, data) {
     try {
       const docRef = collectionRef.doc(id);
@@ -420,6 +437,7 @@ const delivery_ordersService = {
 
   async _applyUpdate(docRef, id, existing, data) {
     try {
+      require('./storeReceiving').assertGenericUpdate(existing, data);
       validateWarehouseUpdate(existing, data);
       const updates = { ...data, updatedAt: new Date().toISOString() };
       // MIF identifiers are generated on the server so offline/retried mobile

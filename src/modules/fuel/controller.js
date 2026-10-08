@@ -76,7 +76,11 @@ exports.delete = async (req, res, next) => {
 exports.confirm = async (req, res, next) => {
   try {
     const result = await fuelService.confirm(req.query.authorizationId, req.user.email, req.query);
-    res.json({ ...result.transaction, receiptNoteId: result.receiptNoteId });
+    res.json({ ...result.transaction, receiptNoteId: result.receiptNoteId,
+      jobId: result.authorization.jobId,
+      otp: String(result.authorization.fuelCode || ''),
+      authorizationCode: String(result.authorization.otp || ''),
+    });
   } catch (err) {
     if (err.code === 'FMS_TRANSACTION_PENDING') return res.json({ status: 'pending', code: err.code });
     next(err);

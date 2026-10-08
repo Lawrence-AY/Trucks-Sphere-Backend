@@ -156,7 +156,8 @@ exports.getCategorySummary = async (req, res, next) => {
         break;
       }
       case 'purchase-orders': {
-        const pos = reportsService.buildPOReport(options);
+        const poRows = reportsService.buildPOReport(options);
+        const pos = [...new Map(poRows.map(row => [row.purchaseOrderId || row.poNumber, row])).values()];
         data = {
           total: pos.length,
           open: pos.filter(p => ['approved', 'pending', 'in_progress'].includes(p.status)).length,
@@ -219,6 +220,10 @@ exports.exportCategoryCSV = async (req, res, next) => {
       case 'purchase-orders':
         rows = reportsService.buildPOReport(options);
         filename = `PurchaseOrders_${new Date().toISOString().slice(0, 10)}.csv`;
+        break;
+      case 'fulfilled-purchase-orders':
+        rows = reportsService.buildPOReport({ ...options, fulfilledOnly: true });
+        filename = `Fulfilled_PurchaseOrders_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'quarry-ops':
         rows = reportsService.buildMasterAudit(options).filter(r => r.quarryInTimeEAT);

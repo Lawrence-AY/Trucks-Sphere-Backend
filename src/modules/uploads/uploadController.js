@@ -245,6 +245,37 @@ exports.uploadReceiptNote = [
 ];
 
 /** Attach evidence to an MIF inspection and retain it against its material line. */
+exports.uploadReceivingPhoto = [
+  upload.single('file'), validateUploadedFile,
+  async (req, res, next) => {
+    try {
+      if (!req.file || !req.file.mimetype.startsWith('image/')) return res.status(400).json({ error: 'A material photo is required.' });
+      const workflow = require('../delivery-orders/storeReceiving');
+      const actor = await require('../delivery-orders/controller').getStoreActor(req.user);
+      const ref = db.collection('deliveryOrders').doc(req.params.deliveryOrderId);
+      const check = (doc) => {
+        if (!doc.exists) throw Object.assign(new Error('Delivery not found.'), { statusCode: 404 });
+        workflow.assertAccess(doc.data(), actor);
+        workflow.assertIncoming(doc.data());
+        const index = Number(req.query.lineIndex);
+        if (!Number.isInteger(index) || index < 0 || index >= workflow.linesFor(doc.data()).length) throw Object.assign(new Error('Select a valid material line.'), { statusCode: 400 });
+        return index;
+      };
+      check(await ref.get());
+      const { url } = await uploadFile(req.file.buffer, req.file.originalname, 'Material receiving', req.params.deliveryOrderId, req.file.mimetype);
+      const saved = await db.runTransaction(async tx => {
+        const doc = await tx.get(ref);
+        const lineIndex = check(doc);
+        const updates = { receivingEvidence: [...(doc.data().receivingEvidence || []), { lineIndex, url, uploadedAt: new Date().toISOString(), uploadedByUid: actor.uid }] };
+        tx.update(ref, updates);
+        return { ...doc.data(), ...updates, id: doc.id };
+      });
+      require('../../utils/snapshotStore').applyCommittedUpdate('deliveryOrders', saved.id, saved);
+      res.json({ success: true, photoURL: url });
+    } catch (error) { next(error); }
+  },
+];
+
 exports.uploadInspectionPhoto = [
   upload.single('file'),
   validateUploadedFile,
@@ -254,10 +285,12 @@ exports.uploadInspectionPhoto = [
       const ref = db.collection('deliveryOrders').doc(req.params.deliveryOrderId);
       const doc = await ref.get();
       if (!doc.exists) return res.status(404).json({ error: 'Delivery order not found' });
+      if (doc.data().receivingStatus) return res.status(409).json({ error: 'Receiving evidence is sealed after intake.' });
       const { url } = await uploadFile(req.file.buffer, req.file.originalname, 'Material inspections', req.params.deliveryOrderId, req.file.mimetype);
       await db.runTransaction(async (transaction) => {
         const latest = await transaction.get(ref);
         if (!latest.exists) throw Object.assign(new Error('Delivery order not found'), { statusCode: 404 });
+        if (latest.data().receivingStatus) throw Object.assign(new Error('Receiving evidence is sealed after intake.'), { statusCode: 409 });
       const inspection = latest.data().materialInspection || {};
       const photos = Array.isArray(inspection.photoURLs) ? inspection.photoURLs : [];
       const materialId = String(req.query.materialId || '').trim();

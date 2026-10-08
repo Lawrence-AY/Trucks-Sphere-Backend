@@ -1,4 +1,5 @@
 const { normalizeJobStatus } = require('../../utils/jobLifecycle');
+const { isBulkMaterial } = require('../../utils/receivingRoute');
 
 const round = (value) => Math.round((value + Number.EPSILON) * 1e6) / 1e6;
 const quantity = (value) => value != null && String(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
@@ -12,7 +13,6 @@ function buildDeliverySummary(po, deliveries, byMaterial = false) {
   const lines = po.materials?.length ? po.materials : [po];
   const groups = new Map();
   for (const line of lines) {
-    if (line.isWarehouseMaterial || po.isWarehouseMaterial) continue;
     const ordered = quantity(line.quantity);
     if (ordered == null) continue;
     const unit = unitKey(line.unit || po.unit);
@@ -32,13 +32,18 @@ function buildDeliverySummary(po, deliveries, byMaterial = false) {
   let tripCount = 0;
   for (const trip of deliveries) {
     if (String(trip.purchaseOrderId || '') !== String(po.id) || trip.isBackorder) continue;
-    if (!['COMPLETED', 'SITE_WEIGHED_OUT'].includes(normalizeJobStatus(trip.status))) continue;
+    if (!isBulkMaterial(trip) && !trip.materialInspection?.materialReceipts?.length) continue;
+    if (trip.receivingStatus && trip.receivingStatus !== 'inventory_added') continue;
+    if (trip.receivingStatus === 'inventory_added' && trip.storeQualityInspection?.result !== 'Pass') continue;
+    if (normalizeJobStatus(trip.status) === 'CANCELLED') continue;
+    if (trip.receivingStatus !== 'inventory_added' && !['COMPLETED', 'SITE_WEIGHED_OUT'].includes(normalizeJobStatus(trip.status))) continue;
     const id = trip.id || trip.jobId;
     if (!id || seen.has(id)) continue;
     seen.add(id);
     tripCount += 1;
-    if (trip.isWarehouseDelivery || trip.deliveryOrigin === 'warehouse') {
+    if (trip.receivingStatus === 'inventory_added' || !isBulkMaterial(trip) || trip.isWarehouseDelivery || trip.deliveryOrigin === 'warehouse') {
       for (const receipt of trip.materialInspection?.materialReceipts || []) {
+        if (receipt.initialVisualInspection !== 'Pass') continue;
         const group = findGroup({ ...receipt, unit: receipt.unit || trip.unit });
         if (group) group.deliveredQuantity += quantity(receipt.receivedQuantity) || 0;
       }
@@ -57,9 +62,25 @@ function buildDeliverySummary(po, deliveries, byMaterial = false) {
     const orderedQuantity = round(group.orderedQuantity);
     const deliveredQuantity = round(group.deliveredQuantity);
     const variance = round(deliveredQuantity - orderedQuantity);
-    return { unit: group.unit, ...(byMaterial ? { materialId: group.materialId, materialName: group.materialName } : {}), orderedQuantity, deliveredQuantity, variance, overDelivered: variance > 0 };
+    return { unit: group.unit, ...(byMaterial ? { materialId: group.materialId, materialName: group.materialName } : {}), orderedQuantity, deliveredQuantity, variance, excessQuantity: Math.max(0, variance), overDelivered: variance > 0 };
   });
-  return { tripCount, totals, ...(!byMaterial ? { materials: buildDeliverySummary(po, deliveries, true).totals } : {}), overDelivered: totals.some((group) => group.overDelivered) };
+  const materials = !byMaterial ? buildDeliverySummary(po, deliveries, true).totals : totals;
+  return { tripCount, totals, ...(!byMaterial ? { materials } : {}), overDelivered: materials.some((group) => group.overDelivered) };
 }
 
-module.exports = { buildDeliverySummary };
+function fulfillmentUpdates(po, summary, now) {
+  const materials = summary.materials || [];
+  const targetsDefined = (po.materials?.length ? po.materials : [po]).every(line => quantity(line.quantity) > 0);
+  const fulfilled = targetsDefined && materials.length > 0 && materials.every(line => line.orderedQuantity > 0 && line.deliveredQuantity >= line.orderedQuantity);
+  const cancelled = ['cancelled', 'canceled', 'archived'].includes(String(po.status).toLowerCase());
+  return { deliverySummary: summary, updatedAt: now,
+    ...(summary.totals.length === 1 ? { quantityDelivered: summary.totals[0].deliveredQuantity, excessQuantity: summary.totals[0].excessQuantity } : {}),
+    ...(fulfilled && !cancelled ? { status: 'completed', fulfilledAt: po.fulfilledAt || now, fulfillmentSource: 'approved_receipts' } : {}),
+  };
+}
+function formatExcess(totals = []) {
+  const units = new Map();
+  for (const line of totals) units.set(line.unit, (units.get(line.unit) || 0) + Math.max(0, Number(line.excessQuantity ?? line.variance) || 0));
+  return [...units].filter(([, value]) => value > 0).map(([unit, value]) => `${round(value)} ${unit}`).join('; ') || '0';
+}
+module.exports = { buildDeliverySummary, fulfillmentUpdates, formatExcess };

@@ -114,7 +114,7 @@ function canAccessDelivery(item, user, userEntity) {
   if (normalizedRole === 'operator_quarry') {
     return Boolean(
       (userEntity?.quarryId && item?.quarryId === userEntity.quarryId) ||
-      (userEntity?.quarryLocation && String(item?.quarryName || '').trim().toLowerCase() === String(userEntity.quarryLocation).trim().toLowerCase()) ||
+      (userEntity?.quarryLocation && matchesId(item?.quarryLocation || item?.quarryName, userEntity.quarryLocation)) ||
       (user?.uid && isOwnedBy(item, user.uid)),
     );
   }
@@ -286,6 +286,9 @@ exports.update = async (req, res, next) => {
       return res.status(400).json({ error: 'Use the warehouse acceptance or denial action.' });
     }
     if (!canAccessDelivery(existing, req.user, entity)) return res.status(404).json({ error: 'Not found' });
+    if (normalizeRole(req.user?.role) === 'storeman') {
+      return res.status(403).json({ error: 'Use the store receiving or quality inspection action.' });
+    }
     if (normalizeRole(req.user?.role) === 'inspector') {
       // The write middleware adds updatedBy for audit purposes before this
       // controller runs, so allow that server-controlled companion field.
@@ -330,6 +333,21 @@ exports.receiveLot = async (req, res, next) => {
     res.json(updated);
   } catch (err) { next(err); }
 };
+
+// Actor identity and site assignment are resolved from the authenticated profile.
+exports.getStoreActor = async (user) => {
+  const entity = await getUserEntity(user);
+  return { uid: user.uid, role: normalizeRole(user.role), siteId: entity?.siteId || '',
+    displayName: entity?.displayName || user.displayName || user.email || '', email: user.email || '' };
+};
+const storeAction = (stage) => async (req, res, next) => {
+  try {
+    const actor = await exports.getStoreActor(req.user);
+    res.json(await require('./storeReceivingService').transition(req.params.id, req.body || {}, actor, stage));
+  } catch (error) { next(error); }
+};
+exports.storeReceive = storeAction('receiving');
+exports.storeInspect = storeAction('inspection');
 
 exports.delete = async (req, res, next) => {
   try {

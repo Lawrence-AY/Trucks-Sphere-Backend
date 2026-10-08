@@ -12,6 +12,13 @@ async function startServer() {
     // Refresh-token encryption is used by authentication in every environment.
     // Fail fast here instead of accepting requests that will later fail with 500.
     assertCryptoConfiguration();
+    const accessBridge = require('./integrations/access-bridge/worker').startAccessBridge({
+      db: require('../config/firebase').db,
+      deliveries: require('./modules/delivery-orders/service'),
+    });
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+      accessBridge.stop().finally(() => process.exit(0));
+    });
     require('./integrations/odooSync').startOdooSync({ db: require('../config/firebase').db });
     processDueAccountDeletions().catch((error) => console.error('[Account deletion] Initial cleanup failed:', error.message));
     setInterval(() => {

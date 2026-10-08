@@ -16,6 +16,7 @@ async function persistDelivery(ref, updates) {
     const doc = await tx.get(ref);
     if (!doc.exists) throw Object.assign(new Error('Delivery not found'), { statusCode: 404 });
     const source = doc.data();
+    require('../delivery-orders/storeReceiving').assertGenericUpdate(source, updates);
     if (source.isWarehouseDelivery || source.deliveryOrigin === 'warehouse') {
       for (const key of ['materials', 'materialId', 'quantityOrdered', 'additionalItems', 'isWarehouseDelivery', 'deliveryOrigin']) {
         if (Object.prototype.hasOwnProperty.call(updates, key) && JSON.stringify(updates[key]) !== JSON.stringify(source[key])) {
@@ -33,6 +34,7 @@ async function deleteDelivery(ref) {
   return db.runTransaction(async (tx) => {
     const doc = await tx.get(ref);
     if (!doc.exists) return;
+    if (doc.data().receivingStatus) throw Object.assign(new Error('Receiving history must be retained.'), { statusCode: 409 });
     if (stockRows({ ...doc.data(), id: doc.id }).length) throw Object.assign(new Error('Deliveries tracked in stocks cannot be deleted. Their receipt history must be retained.'), { statusCode: 409 });
     tx.delete(ref);
   });
@@ -53,6 +55,12 @@ async function change(id, data, actor) {
     let next;
     if (data.type === 'usage') next = issue(previous, data.quantity);
     else if (data.type === 'receipt') {
+      if (previous.deliveryOrderId) {
+        const delivery = await tx.get(db.collection('deliveryOrders').doc(previous.deliveryOrderId));
+        if (delivery.data()?.receivingStatus || !delivery.data()?.materialInspection?.materialReceipts?.length) {
+          throw Object.assign(new Error('Receive and approve the delivery through quality inspection before adding inventory.'), { statusCode: 409 });
+        }
+      }
       const amount = Number(data.quantity);
       if (!Number.isFinite(amount) || amount <= 0) throw Object.assign(new Error('Enter a positive receipt quantity.'), { statusCode: 400 });
       next = balance({ ...previous, receivedQuantity: Number(previous.receivedQuantity || 0) + amount, usableQuantity: Number(previous.usableQuantity || 0) + amount }, previous);

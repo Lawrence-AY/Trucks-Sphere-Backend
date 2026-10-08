@@ -4,10 +4,11 @@ const API_KEY = String(process.env.GIR_FMS_API_KEY || '').trim();
 function enabled() { return Boolean(BASE_URL && API_KEY); }
 function headers() { return { 'Content-Type': 'application/json', 'X-Klervi-API-Key': API_KEY }; }
 async function request(path, options = {}) {
-  const response = await fetch(`${BASE_URL}/api-impexp${path}`, { signal: AbortSignal.timeout(20000), ...options, headers: { ...headers(), ...(options.headers || {}) } });
+  const { envelope = false, ...fetchOptions } = options;
+  const response = await fetch(`${BASE_URL}/api-impexp${path}`, { signal: AbortSignal.timeout(20000), ...fetchOptions, headers: { ...headers(), ...(options.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(body.message || body.error || `GIR/FMS request failed (${response.status})`), { statusCode: 502, code: 'GIR_FMS_REQUEST_FAILED' });
-  return body?.result ?? body;
+  return envelope ? body : body?.result ?? body;
 }
 async function findByXfield(resource, field, value) {
   if (!enabled() || !value) return null;
@@ -90,15 +91,31 @@ async function setJobReference({ driverId, vehicleId, vendorId, jobId }) {
 }
 async function findFuelTransaction(expected) {
   if (!enabled()) throw Object.assign(new Error('FMS is not configured.'), { statusCode: 503 });
-  const response = await request('/transac_fuels?limit=500', { method: 'GET' });
-  const records = Array.isArray(response) ? response : response.data || response.items;
-  if (!Array.isArray(records)) throw Object.assign(new Error('Unexpected FMS transaction response.'), {statusCode: 502});
   const [driver, vehicle] = await Promise.all([
     findByXfield('drivers', 'driverid', expected.driverId),
     findByXfield('vehicles', 'vehicleid', expected.vehicleId),
   ]);
-  return require('../utils/fmsTransaction').selectFuelTransaction(records, {
+  const driverJob = driver?.xfields?.jobid || driver?.xfields?.jobID;
+  const vehicleJob = vehicle?.xfields?.jobid || vehicle?.xfields?.jobID;
+  if (!driverJob || driverJob !== vehicleJob || ![expected.jobId, expected.receiptNoteId].includes(driverJob)) {
+    throw Object.assign(new Error('GIR driver and vehicle must have the same authorized job reference.'), { statusCode: 409, code: 'FMS_REFERENCE_MISMATCH' });
+  }
+  const records = new Map();
+  const cursors = new Set();
+  let cursor = '';
+  while (true) {
+    const page = await request(`/transac_fuels${cursor ? `?last_id=${encodeURIComponent(cursor)}` : ''}`, { envelope: true });
+    if (!Array.isArray(page.result)) throw Object.assign(new Error('Unexpected FMS transaction response.'), { statusCode: 502 });
+    // GIR emits multiple ledger entries for edits to one physical transaction.
+    for (const row of page.result) records.set(row.transac_id || row.id, row);
+    if (!page.more) break;
+    cursor = page.result.at(-1)?.id;
+    if (!cursor || cursors.has(cursor)) throw Object.assign(new Error('Invalid FMS transaction pagination.'), { statusCode: 502 });
+    cursors.add(cursor);
+  }
+  return require('../utils/fmsTransaction').selectFuelTransaction([...records.values()], {
     ...expected, fmsDriverId: driver?.id, fmsVehicleId: vehicle?.id,
+    fmsDriver: driver, fmsVehicle: vehicle,
   });
 }
 module.exports = {

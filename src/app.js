@@ -344,6 +344,7 @@ app.use('/api/delivery-orders', deliveryOrdersRoutes);
 app.use('/api/warehouse-jobs', warehouseJobsRoutes);
 app.use('/api/stocks', require('./modules/stocks/routes'));
 app.use('/api/weighbridge', weighbridgeRoutes);
+app.use('/api/access-bridge', require('./integrations/access-bridge/routes'));
 app.use('/api/quarries', quarryRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/checkpoints', checkpointsRoutes);

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function fixture({ failFirstClear = false } = {}) {
  const cleared=[];
- const auth={status:'authorized',requestedByEmail:'agent@test',jobId:'J1',driverId:'D1',vehicleId:'T1',vendorId:'V001',girDriverCode:'D11234',authorizedAt:'2026-01-01T00:00:00Z'};
+ const auth={status:'authorized',requestedByEmail:'agent@test',jobId:'J1',driverId:'D1',vehicleId:'T1',vendorId:'V001',girDriverCode:'D11234',otp:'012345',fuelCode:'234',authorizedAt:'2026-01-01T00:00:00Z'};
  const records=new Map([['fuelAuthorizations/A1',auth]]);
  const ref=(key)=>({key,get:async()=>({exists:records.has(key),data:()=>records.get(key)})});
  const db={collection:name=>({doc:id=>ref(name+'/'+id)}),runTransaction:async fn=>fn({get:r=>r.get(),set:(r,d)=>records.set(r.key,d),update:(r,d)=>records.set(r.key,{...records.get(r.key),...d})})};
@@ -15,9 +15,9 @@ function fixture({ failFirstClear = false } = {}) {
  return {service:module.exports,records,cleared};
 }
 test('finalization uses FMS volume and records the transaction once on retry',async()=>{
- const {service,records,cleared}=fixture(); const request={authorizationId:'A1',jobId:'J1',dispensedByEmail:'agent@test',fmsTransactionId:'TX1',fuelAmount:999,vendorId:'V001'};
+ const {service,records,cleared}=fixture(); const request={authorizationId:'A1',jobId:'J1',dispensedByEmail:'agent@test',fmsTransactionId:'TX1',fuelAmount:999,vendorId:'V001',otp:'forged',authorizationCode:'forged'};
  const first=await service.create(request); const second=await service.create(request);
- assert.equal(cleared.length,2); assert.equal(cleared[0].driverId,'D1'); assert.equal(cleared[0].vehicleId,'T1'); assert.equal(first.driverCode,'D1'); assert.equal(first.fuelAmount,21.5); assert.equal(first.receiptNoteId,'J1/RN001'); assert.equal(first.id,second.id);
+ assert.equal(first.otp,'234'); assert.equal(first.authorizationCode,'012345'); assert.equal(cleared.length,2); assert.equal(cleared[0].driverId,'D1'); assert.equal(cleared[0].vehicleId,'T1'); assert.equal(first.driverCode,'D1'); assert.equal(first.fuelAmount,21.5); assert.equal(first.receiptNoteId,'J1/RN001'); assert.equal(first.id,second.id);
  assert.equal([...records.keys()].filter(k=>k.startsWith('fuelRecords/')).length,1);
 });
 test('confirmation cannot use another operator authorization',async()=>{

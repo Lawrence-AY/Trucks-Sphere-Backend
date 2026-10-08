@@ -85,7 +85,7 @@ function startOdooSync({ db, env = process.env, logger = console, call, watch = 
   let request;
   try { request = call || createClient(env); } catch { logger.error('[Odoo] Invalid server configuration; synchronization disabled.'); return { stop() {} }; }
   const owner = randomUUID();
-  const live = env.ODOO_MAPPING_PROFILE === 'spadestest';
+  const live = ['spadestest', 'spadestest-duplicate'].includes(env.ODOO_MAPPING_PROFILE);
   const mappings = live ? require('./odoo-live-contract.json') : contracts;
   const sent = new Map();
   let validated = false;

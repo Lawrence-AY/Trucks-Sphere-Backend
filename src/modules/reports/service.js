@@ -1,3 +1,4 @@
+const { buildDeliverySummary, formatExcess } = require('../purchase-orders/deliverySummary');
 const { dispatchMaterials } = require('../../utils/dispatchMaterials');
 const { warehouseReportFields } = require('./warehouseReport');
 /**
@@ -315,12 +316,15 @@ function buildMasterAudit(options = {}) {
     return {
       // Order
       jobId: d.jobId || '',
+      poExcessQuantity: formatExcess(buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials),
+      poExcessFlag: buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered,
       trackingActivity: snapshotStore.getAll('trackingReportSessions').filter(session => session.orderId === d.id).sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt))).map(session => [session.personnelName, session.securityLocation, session.status, formatEAT(session.decidedAt || session.startedAt), session.reason].filter(Boolean).join(' / ')).join(' | '),
       trackingPhotos: snapshotStore.getAll('trackingReportSessions').filter(session => session.orderId === d.id && session.driverPhotoURL).map(session => session.driverPhotoURL).join(' | '),
       dispatchedAt: formatEAT(d.weighOutAt || d.dispatchedAt || d.dispatchedToSiteAt || d.warehouseSubmittedAt),
       poNumber: d.poNumber || po.poNumber || '',
       jobStatusCode: d.status || '',
       jobStatus: formatJobStatus(d.status),
+      captureMethod: d.accessBridgeSource ? 'TruckSphere Listener' : 'TruckSphere App',
       // PO details
       poQuantity: Number(po.quantity || 0),
       // Vendor
@@ -576,7 +580,9 @@ function buildVendorReport(options = {}) {
     return {
       vendorName: v.companyName || '',
       activePOs: vendorPOs.filter((p) => ['approved', 'in_progress', 'pending'].includes(p.status)).length,
-      fulfilledPOs: vendorPOs.filter((p) => p.status === 'completed' || p.status === 'delivered').length,
+      fulfilledPOs: vendorPOs.filter((p) => ['completed', 'delivered', 'fulfilled'].includes(String(p.status).toLowerCase())).length,
+      excessQuantity: formatExcess(vendorPOs.flatMap(po => buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials)),
+      excessFlag: vendorPOs.some(po => buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered),
       totalPOs: vendorPOs.length,
       deliveryCount: vendorDeliveries.length,
       insuranceCompany: insurance.insuranceCompany,
@@ -595,45 +601,23 @@ function buildVendorReport(options = {}) {
  * ─── Purchase Order Report ───
  */
 function buildPOReport(options = {}) {
-  const poDocs = snapshotStore.getAll('purchaseOrders');
-  // Use ALL deliveries for progress % calculation (not time-filtered)
-  const allDeliveries = snapshotStore.getAll('deliveryOrders');
-  // Use time-filtered deliveries for preview/displays within the selected period
-  const periodDeliveries = getDeliveries(options);
-
-  return poDocs.flatMap((po) => {
-    const allPoDeliveries = allDeliveries.filter((d) => d.purchaseOrderId === po.id);
-    // Use site net weight as the delivered quantity (site data is the verified receiving weight).
-    // Compute siteNet per delivery: siteWeighIn - siteWeighOut, falling back to stored siteNetWeight or netWeight.
-    // Delivered Qty uses site net data (siteWeighIn - siteWeighOut) ONLY — no quarry fallback.
-    const totalDeliveredQty = allPoDeliveries.reduce((sum, d) => sum + (d.materialInspection?.materialReceipts || []).reduce((lineSum, line) => lineSum + Math.max(0, Number(line.receivedQuantity) || 0), 0), 0);
-    const periodPoDeliveries = periodDeliveries.filter((d) => d.purchaseOrderId === po.id);
-    // Period delivered qty also uses site net data ONLY — no quarry fallback.
-    const periodDeliveredQty = periodPoDeliveries.reduce((sum, d) => sum + (d.materialInspection?.materialReceipts || []).reduce((lineSum, line) => lineSum + Math.max(0, Number(line.receivedQuantity) || 0), 0), 0);
-
-    const lines = Array.isArray(po.materials) && po.materials.length
-      ? po.materials
-      : [{ materialId: po.materialId, materialName: po.materialName, quantity: po.quantity, unit: po.unit }];
-    return lines.map((line) => {
-      const lineDeliveries = allPoDeliveries.filter((delivery) => !line.materialId || delivery.materialId === line.materialId || (delivery.materialInspection?.materialReceipts || []).some((receipt) => String(receipt.materialId || '') === String(line.materialId || '')));
-      const deliveredQuantity = lineDeliveries.reduce((sum, delivery) => sum + (delivery.materialInspection?.materialReceipts || []).filter((receipt) => String(receipt.materialId || '') === String(line.materialId || '')).reduce((receiptSum, receipt) => receiptSum + Math.max(0, Number(receipt.receivedQuantity) || 0), 0), 0);
-      const targetQty = Number(line.quantity || 0);
-      const progress = targetQty > 0 ? Math.min(100, Math.round((deliveredQuantity / targetQty) * 100)) : 0;
-      return {
-      poNumber: po.poNumber || '',
-      vendorName: po.vendorName || '',
-      materialName: line.materialName || '',
-      materialId: line.materialId || '',
-      unit: line.isWarehouseMaterial ? '' : line.unit || 'units',
-      targetQuantity: line.isWarehouseMaterial ? '' : targetQty,
-      deliveredQuantity: line.isWarehouseMaterial ? '' : deliveredQuantity,
-      remainingQuantity: line.isWarehouseMaterial ? '' : Math.max(0, targetQty - deliveredQuantity),
-      progressPercent: progress,
-      status: po.status || '',
-      createdAt: formatEAT(po.createdAt),
-      };
+  const deliveries = snapshotStore.getAll('deliveryOrders');
+  return snapshotStore.getAll('purchaseOrders').filter(po => !options.vendorId || po.vendorId === options.vendorId)
+    .filter(po => !options.fulfilledOnly || ['completed', 'delivered', 'fulfilled'].includes(String(po.status).toLowerCase()))
+    .filter(po => !options.fulfilledOnly || !options.filter || options.filter === 'all' || withinTimeframe(po.fulfilledAt || po.updatedAt || po.createdAt, options))
+    .flatMap(po => {
+      const summary = buildDeliverySummary(po, deliveries);
+      const lines = summary.materials.length ? summary.materials : [{ materialId: po.materialId || '', materialName: po.materialName || '', unit: '', orderedQuantity: null, deliveredQuantity: null }];
+      return lines.map(line => ({
+        purchaseOrderId: po.id, poNumber: po.poNumber || po.id, vendorName: po.vendorName || '',
+        materialName: line.materialName, materialId: line.materialId, unit: line.unit,
+        targetQuantity: line.orderedQuantity ?? '', deliveredQuantity: line.deliveredQuantity ?? '',
+        remainingQuantity: line.orderedQuantity == null ? '' : Math.max(0, line.orderedQuantity - line.deliveredQuantity),
+        excessQuantity: line.excessQuantity || 0, excessFlag: Boolean(line.overDelivered),
+        progressPercent: line.orderedQuantity > 0 ? Math.min(100, Math.round(line.deliveredQuantity / line.orderedQuantity * 100)) : 0,
+        status: po.status || '', fulfilledAt: formatEAT(po.fulfilledAt), createdAt: formatEAT(po.createdAt),
+      }));
     });
-  });
 }
 
 /**

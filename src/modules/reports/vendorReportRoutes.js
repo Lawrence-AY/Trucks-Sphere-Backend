@@ -235,6 +235,10 @@ router.get('/export/csv/:category', async (req, res, next) => {
         rows = vendorReportService.buildVendorPOReport(vendorId, options);
         filename = `Vendor_PurchaseOrders_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
+      case 'fulfilled-purchase-orders':
+        rows = vendorReportService.buildVendorPOReport(vendorId, { ...options, fulfilledOnly: true });
+        filename = `Vendor_FulfilledPurchaseOrders_${new Date().toISOString().slice(0, 10)}.csv`;
+        break;
       default:
         return res.status(400).json({ error: `Unknown category: ${category}` });
     }
@@ -265,7 +269,8 @@ router.get('/summary', async (req, res, next) => {
     const fuel = vendorReportService.buildVendorFuelReport(vendorId, options);
     const drivers = vendorReportService.buildVendorDriverReport(vendorId);
     const trucks = vendorReportService.buildVendorTruckReport(vendorId);
-    const pos = vendorReportService.buildVendorPOReport(vendorId, options);
+    const poRows = vendorReportService.buildVendorPOReport(vendorId, options);
+        const pos = [...new Map(poRows.map(row => [row.purchaseOrderId || row.poNumber, row])).values()];
 
     const totalTonnage = deliveries.reduce(
       (sum, d) => sum + (Number(d.quantityDelivered) || 0),
@@ -381,7 +386,8 @@ router.get('/summary/:category', async (req, res, next) => {
         break;
       }
       case 'purchase-orders': {
-        const pos = vendorReportService.buildVendorPOReport(vendorId, options);
+        const poRows = vendorReportService.buildVendorPOReport(vendorId, options);
+        const pos = [...new Map(poRows.map(row => [row.purchaseOrderId || row.poNumber, row])).values()];
         data = {
           total: pos.length,
           open: pos.filter((p) =>

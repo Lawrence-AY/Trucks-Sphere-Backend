@@ -117,6 +117,8 @@ function buildVendorMasterAudit(vendorId, options = {}) {
 
     return {
       jobId: d.jobId || '',
+      poExcessQuantity: require('../purchase-orders/deliverySummary').formatExcess(require('../purchase-orders/deliverySummary').buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials),
+      poExcessFlag: require('../purchase-orders/deliverySummary').buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered,
 
       dispatchedAt: formatEAT(d.weighOutAt || d.dispatchedAt || d.dispatchedToSiteAt || d.warehouseSubmittedAt),
       poNumber: d.poNumber || po.poNumber || '',
@@ -242,33 +244,7 @@ function buildVendorFuelReport(vendorId, options = {}) {
  * Build vendor purchase orders report.
  */
 function buildVendorPOReport(vendorId, options = {}) {
-  const poDocs = snapshotStore.getAll('purchaseOrders').filter((p) => p.vendorId === vendorId);
-  const allDeliveries = snapshotStore.getAll('deliveryOrders');
-
-  return poDocs.flatMap((po) => {
-    const allPoDeliveries = allDeliveries.filter((d) => d.purchaseOrderId === po.id);
-    const lines = Array.isArray(po.materials) && po.materials.length
-      ? po.materials
-      : [{ materialId: po.materialId, materialName: po.materialName, quantity: po.quantity, unit: po.unit }];
-    return lines.map((line) => {
-      const deliveredQuantity = allPoDeliveries.reduce((sum, delivery) => sum + (delivery.materialInspection?.materialReceipts || []).filter((receipt) => String(receipt.materialId || '') === String(line.materialId || '')).reduce((receiptSum, receipt) => receiptSum + Math.max(0, Number(receipt.receivedQuantity) || 0), 0), 0);
-      const targetQty = Number(line.quantity || 0);
-      const progress = targetQty > 0 ? Math.min(100, Math.round((deliveredQuantity / targetQty) * 100)) : 0;
-      return {
-      poNumber: po.poNumber || '',
-      vendorName: po.vendorName || '',
-      materialName: line.materialName || '',
-      materialId: line.materialId || '',
-      unit: line.isWarehouseMaterial ? '' : line.unit || 'units',
-      targetQuantity: line.isWarehouseMaterial ? '' : targetQty,
-      deliveredQuantity: line.isWarehouseMaterial ? '' : deliveredQuantity,
-      remainingQuantity: line.isWarehouseMaterial ? '' : Math.max(0, targetQty - deliveredQuantity),
-      progressPercent: progress,
-      status: po.status || '',
-      createdAt: formatEAT(po.createdAt),
-      };
-    });
-  });
+  return require('./service').buildPOReport({ ...options, vendorId });
 }
 
 module.exports = {

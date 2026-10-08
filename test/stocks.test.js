@@ -70,7 +70,7 @@ function fixture() {
     },
   };
   const module = { exports: {} };
-  vm.runInNewContext(fs.readFileSync(require.resolve('../src/modules/stocks/service'), 'utf8'), { module, require: (name) => name === './model' ? model : { db } });
+  vm.runInNewContext(fs.readFileSync(require.resolve('../src/modules/stocks/service'), 'utf8'), { module, require: (name) => name === './model' ? model : name === '../delivery-orders/storeReceiving' ? require('../src/modules/delivery-orders/storeReceiving') : { db } });
   return { service: module.exports, records, ref };
 }
 test('delivery update and stock write are atomic; retries preserve used quantities', async () => {

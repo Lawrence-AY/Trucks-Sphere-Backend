@@ -14,6 +14,31 @@ function load(relative, overrides) {
   return module.exports;
 }
 
+test('quarry operators share location-only jobs and retain access isolation', async () => {
+  const jobs = [
+    { id: 'pending', status: 'CREATED', quarryId: '', quarryName: 'Quarry', quarryLocation: 'Ngomeni', createdByUid: 'other-shift' },
+    { id: 'legacy', quarryName: 'Ngomeni' },
+    { id: 'different', quarryLocation: 'Another quarry', quarryName: 'Ngomeni' },
+    { id: 'unassigned', quarryName: 'Quarry' },
+  ];
+  const controller = load('../src/modules/delivery-orders/controller', {
+    './service': { findAll: () => ({ data: jobs }), findById: async (id) => jobs.find(job => job.id === id) },
+    '../../utils/snapshotStore': { getAll: () => jobs },
+    '../../../config/firebase': { db: { collection: () => ({ doc: () => ({ get: async () => ({ exists: true, data: () => ({ quarryLocation: ' ngomeni ' }) }) }) }) } },
+  });
+  const user = { uid: 'current-shift', role: 'operator_quarry' };
+  let result;
+  let status;
+  const res = { json: value => { result = value; }, status: value => { status = value; return res; } };
+  const next = error => { throw error; };
+  await controller.findAll({ user, query: {} }, res, next);
+  assert.deepEqual(Array.from(result.data, job => job.id), ['pending', 'legacy']);
+  await controller.findById({ user, params: { id: 'pending' } }, res, next);
+  assert.equal(result.id, 'pending');
+  await controller.findById({ user, params: { id: 'different' } }, res, next);
+  assert.equal(status, 404);
+});
+
 test('fuel eligibility retires the previous job when either the driver or truck has a newer assignment', () => {
   const { isFuelReady } = require('../src/utils/fuelEligibility');
   const old = { id: 'old', driverId: 'D1', vehicleId: 'T1', plateNumber: 'KAA 123A', status: 'SITE_WEIGHED_OUT', createdAt: '2026-09-01T10:00:00Z' };

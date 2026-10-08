@@ -29,7 +29,7 @@ function buildCSV(rows) {
 
   rows = rows.map((row, index) => ({ 'No.': index + 1, ...row }));
   const headers = Object.keys(rows[0]);
-  const headerLine = headers.map(escapeCsvField).join(',');
+  const headerLine = headers.map((key) => escapeCsvField(key === 'captureMethod' ? 'Captured By' : key)).join(',');
   const dataLines = rows.map((row) =>
     headers.map((key) => escapeCsvField(row[key])).join(',')
   );

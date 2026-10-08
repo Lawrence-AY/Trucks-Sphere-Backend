@@ -1,4 +1,5 @@
 const { createHash } = require('node:crypto');
+const { isBulkMaterial } = require('../../utils/receivingRoute');
 const warehouse = (d) => Boolean(d.isWarehouseDelivery) || d.deliveryOrigin === 'warehouse';
 const number = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const round = (n) => Math.round((n + Number.EPSILON) * 1e6) / 1e6;
@@ -6,6 +7,9 @@ function fail(message) { throw Object.assign(new Error(message), { statusCode: 4
 function stockRows(delivery) {
   const wh = warehouse(delivery);
   const inspected = delivery.materialInspection;
+  // Preserve historical inspected receipts and the bulk weighbridge workflow.
+  // New countable receipts cannot become inventory through truck completion.
+  if (!wh && !isBulkMaterial(delivery) && !inspected?.materialReceipts?.length) return [];
   const completed = ['COMPLETED', 'SITE_WEIGHED_OUT'].includes(String(delivery.status).toUpperCase());
   if (!wh && !inspected?.mrfNumber && !completed) return [];
   const lines = wh ? (delivery.materials?.length ? delivery.materials : [
@@ -15,8 +19,9 @@ function stockRows(delivery) {
     { materialId: delivery.materialId, materialName: delivery.materialName, quantity: delivery.quantityOrdered, unit: 'Tonnes', receivedQuantity: delivery.siteNetWeight ?? delivery.quantityDelivered },
   ];
   return lines.map((line, index) => {
-    const receipt = wh ? inspected?.materialReceipts?.find((r) => String(r.materialId) === String(line.materialId)) : line;
-    const hasReceipt = Boolean(receipt && (inspected?.mrfNumber || completed));
+    const receipt = wh ? inspected?.materialReceipts?.find((r) => delivery.receivingStatus ? r.lineIndex === index : String(r.materialId) === String(line.materialId)) : line;
+    const approved = !delivery.receivingStatus || (delivery.receivingStatus === 'inventory_added' && delivery.storeQualityInspection?.result === 'Pass');
+    const hasReceipt = Boolean(approved && receipt && (inspected?.mrfNumber || completed));
     const sent = Math.max(0, number(line.quantity ?? line.orderedQuantity));
     const received = hasReceipt ? Math.max(0, number(receipt.receivedQuantity)) : 0;
     const passed = hasReceipt && (receipt.initialVisualInspection === 'Pass' || (!inspected?.mrfNumber && completed));
@@ -24,7 +29,7 @@ function stockRows(delivery) {
     const damaged = hasReceipt ? wh && receipt.damagedQuantity != null
       ? Math.min(received, Math.max(0, number(receipt.damagedQuantity))) : passed ? 0 : received : 0;
     return {
-      id: createHash('sha256').update(`${delivery.id}:${line.materialId || index}`).digest('hex'),
+      id: createHash('sha256').update(`${delivery.id}:${line.materialId || index}${delivery.receivingStatus && lines.filter(other => other.materialId === line.materialId).length > 1 ? `:${index}` : ''}`).digest('hex'),
       deliveryOrderId: delivery.id, jobId: delivery.jobId || delivery.id, purchaseOrderId: delivery.purchaseOrderId || '', poNumber: delivery.poNumber || delivery.purchaseOrderNumber || '',
       siteId: delivery.siteId || '', siteName: delivery.siteName || delivery.siteId || 'Unassigned',
       materialId: line.materialId || '', materialName: line.materialName || line.productName || delivery.materialName || '',
@@ -33,7 +38,7 @@ function stockRows(delivery) {
       damagedQuantity: damaged, quarantinedQuantity: damaged,
       excessQuantity: hasReceipt ? Math.max(0, round(received - sent)) : 0,
       shortageQuantity: wh && hasReceipt ? Math.max(0, round(sent - received)) : 0,
-      receiptStatus: hasReceipt ? damaged > 0 && damaged < received ? 'Partially accepted' : passed ? 'Inspected - Pass' : 'Quarantined' : delivery.warehouseAcceptedAt ? 'Accepted - awaiting inspection' : 'Dispatched',
+      receiptStatus: delivery.receivingStatus || (hasReceipt ? damaged > 0 && damaged < received ? 'Partially accepted' : passed ? 'Inspected - Pass' : 'Quarantined' : delivery.warehouseAcceptedAt ? 'Accepted - awaiting receiving' : 'Dispatched'),
       acceptedAt: delivery.warehouseAcceptedAt || delivery.receivedAt || '', acceptedBy: delivery.warehouseAcceptedByName || delivery.receivedByName || '',
       inspectedAt: inspected?.inspectedAt || '', inspectorName: inspected?.inspectorName || '', mifNumber: inspected?.mrfNumber || '',
     };

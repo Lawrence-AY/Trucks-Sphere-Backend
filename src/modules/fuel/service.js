@@ -115,6 +115,8 @@ const fuelService = {
         driverId: confirmed.authorization.driverId,
         driverCode: confirmed.authorization.driverCode || confirmed.authorization.driverId,
         girDriverCode: confirmed.authorization.girDriverCode || '',
+        otp: String(confirmed.authorization.fuelCode || ''),
+        authorizationCode: String(confirmed.authorization.otp || ''),
         vehicleId: confirmed.authorization.vehicleId,
         fmsTransactionId: confirmed.transaction.id,
         fuelAmount: girVolume,

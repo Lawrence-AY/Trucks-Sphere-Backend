@@ -27,6 +27,9 @@ router.post('/receipt-note/:weighRecordId', uploadController.uploadReceiptNote);
 router.post('/inspection-photo/:deliveryOrderId', requireRoles(
   MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'inspector', 'storeman'
 ), uploadController.uploadInspectionPhoto);
+router.post('/receiving-photo/:deliveryOrderId', requireRoles(
+  MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, 'storeman'
+), uploadController.uploadReceivingPhoto);
 
 // Wildcard route for driver-photo-weigh-out to handle jobIds with slashes
 // (e.g., POMAT006/V003/D033/T033/J0001). Express would normally split on /

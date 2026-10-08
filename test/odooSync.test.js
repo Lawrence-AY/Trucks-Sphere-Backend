@@ -105,7 +105,8 @@ test('stocks are exported only after inspection and live driver dates retain nat
   assert.equal(payload.x_source_id,'D1');assert.equal(payload.x_license_expiry,'2027-01-20');assert.equal(payload.x_status,'active');assert.equal(payload.x_name,'Driver');assert.equal(payload.x_email,undefined);
 });
 
-test('worker retries failed records and never writes source data', async () => {
+for (const profile of ['', 'spadestest-duplicate']) test('worker retries failed records with mapping profile: ' + (profile || 'default'), async () => {
+  const mappings = profile ? require('../src/integrations/odoo-live-contract.json') : contracts;
   let leaseData;
   let failCreate = true;
   let remote;
@@ -130,7 +131,7 @@ test('worker retries failed records and never writes source data', async () => {
   };
   const call = async (model, method, body) => {
     if (method === 'fields_get') {
-      const c = Object.values(contracts).find(c => c.model === model);
+      const c = Object.values(mappings).find(c => c.model === model);
       return { x_name: { type: 'char' }, ...Object.fromEntries(c.fields.map(f => [f.name, { type: f.type }])) };
     }
     if (method === 'search_read') return remote ? [remote] : [];
@@ -139,7 +140,7 @@ test('worker retries failed records and never writes source data', async () => {
     remote = { id: 8, ...body.vals_list[0] };
     return [8];
   };
-  const worker = startOdooSync({ db, call, watch: false, env: { ODOO_ENABLED: 'true' }, logger: {
+  const worker = startOdooSync({ db, call, watch: false, env: { ODOO_ENABLED: 'true', ODOO_MAPPING_PROFILE: profile }, logger: {
     info: (_, counts) => { summaries.push(counts); finish(); }, error: message => assert.equal(message, '[Odoo] Record export failed'),
   } });
   try {
@@ -150,7 +151,7 @@ test('worker retries failed records and never writes source data', async () => {
     failCreate = false;
     await worker.tick();
     assert.equal(summaries[1].created, 1);
-    assert.equal(remote.x_id, 'D001');
+    assert.equal(remote[profile ? 'x_source_id' : 'x_id'], 'D001');
     assert.equal(leaseData, undefined);
   } finally { worker.stop(); }
 });

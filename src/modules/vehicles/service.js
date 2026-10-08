@@ -110,6 +110,12 @@ const vehiclesService = {
 
   async update(id, data) {
     try {
+      if (Object.hasOwn(data, 'capacity') && (data.capacity === '' || data.capacity == null || !Number.isFinite(Number(data.capacity)) || Number(data.capacity) <= 0)) {
+        throw Object.assign(new Error('Capacity must be a positive number.'), { statusCode: 400 });
+      }
+      if (Object.hasOwn(data, 'status') && !['active', 'inactive', 'on_trip', 'in_maintenance', 'out_of_service'].includes(data.status)) {
+        throw Object.assign(new Error('Choose a valid vehicle status.'), { statusCode: 400 });
+      }
       const docRef = collectionRef.doc(id);
       let result = null;
       await db.runTransaction(async (transaction) => {
@@ -132,6 +138,9 @@ const vehiclesService = {
         if (registrationNumber !== currentRegistration) {
           const reservation = await transaction.get(registrationRef.doc(registrationNumber));
           if (reservation.exists && reservation.data().vehicleId !== id) throw duplicateRegistrationError();
+          const matches = await transaction.get(collectionRef.where('registrationNumber', '==', registrationNumber));
+          const legacyMatches = await transaction.get(collectionRef.where('plateNumber', '==', registrationNumber));
+          if ([...matches.docs, ...legacyMatches.docs].some(doc => doc.id !== id)) throw duplicateRegistrationError();
           transaction.set(registrationRef.doc(registrationNumber), {
             vehicleId: id,
             registrationNumber,
@@ -149,7 +158,10 @@ const vehiclesService = {
         transaction.update(docRef, updates);
         result = { id, ...current, ...updates };
       });
-      if (result) await girService.syncVehicle(result);
+      if (result) {
+        snapshotStore.applyCommittedUpdate(COLLECTION_NAME, id, result);
+        await girService.syncVehicle(result);
+      }
       return result;
     } catch (error) {
       console.error('vehiclesService.update error:', error);

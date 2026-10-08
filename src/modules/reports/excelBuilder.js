@@ -93,7 +93,7 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 1: Master Audit ───
   addSheet(wb, `Master Audit${suffix}`, [
-    'Job ID', 'PO Number', 'PO Qty (T)', 'Job Status', 'Vendor',
+    'Job ID', 'PO Number', 'PO Qty (T)', 'PO Excess Quantity', 'PO Excess Flag', 'Job Status', 'Captured By', 'Vendor',
     'Vendor Insurance Company', 'Vendor Policy No', 'Vendor Insurance Start',
     'Vendor Insurance Commencing', 'Vendor Insurance Expiry', 'Vendor Insurance Supplier', 'Vendor Insurance Status',
     'Driver', 'License', 'Plate',
@@ -106,8 +106,11 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
   ], data.masterAudit.map((r) => ({
     'Job ID': r.jobId,
     'PO Number': r.poNumber,
+    'PO Excess Quantity': r.poExcessQuantity,
+    'PO Excess Flag': r.poExcessFlag ? 'EXCESS' : '',
     'PO Qty (T)': r.poQuantity,
     'Job Status': r.jobStatus,
+    'Captured By': r.captureMethod,
     'Vendor': r.vendorName,
     'Vendor Insurance Company': r.vendorInsuranceCompany,
     'Vendor Policy No': r.vendorInsuranceNumber,
@@ -236,12 +239,14 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
 
   // ─── Sheet 6: Vendors ───
   addSheet(wb, `Vendors${suffix}`, [
-    'Vendor Name', 'Active POs', 'Fulfilled POs', 'Total POs',
+    'Vendor Name', 'Active POs', 'Fulfilled POs', 'Total POs', 'Excess Quantity', 'Excess Flag',
     'Insurance Company', 'Policy No', 'Insurance Start', 'Insurance Commencing', 'Insurance Expiry', 'Insurance Supplier', 'Insurance Status', 'Status',
   ], data.vendors.map((r) => ({
     'Vendor Name': r.vendorName,
     'Active POs': r.activePOs,
     'Fulfilled POs': r.fulfilledPOs,
+    'Excess Quantity': r.excessQuantity,
+    'Excess Flag': r.excessFlag ? 'EXCESS' : '',
     'Total POs': r.totalPOs,
     'Insurance Company': r.insuranceCompany,
     'Policy No': r.insuranceNumber,
@@ -256,7 +261,7 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
   // ─── Sheet 7: Purchase Orders ───
   addSheet(wb, `Purchase Orders${suffix}`, [
     'PO Number', 'Vendor', 'Material', 'Unit', 'Target Qty', 'Delivered Qty',
-    'Remaining', 'Progress %', 'Status', 'Created At (EAT)',
+    'Remaining', 'Excess Quantity', 'Excess Flag', 'Progress %', 'Status', 'Created At (EAT)',
   ], data.purchaseOrders.map((r) => ({
     'PO Number': r.poNumber,
     'Vendor': r.vendorName,
@@ -265,10 +270,19 @@ async function buildExcelWorkbook(data, titleSuffix = '') {
     'Target Qty': r.targetQuantity,
     'Delivered Qty': r.deliveredQuantity,
     'Remaining': r.remainingQuantity,
+    'Excess Quantity': r.excessQuantity,
+    'Excess Flag': r.excessFlag ? 'EXCESS' : '',
     'Progress %': r.progressPercent,
     'Status': r.status,
     'Created At (EAT)': r.createdAt,
   })));
+
+  addSheet(wb, `Fulfilled Purchase Orders${suffix}`, ['PO Number', 'Vendor', 'Material', 'Unit', 'Ordered', 'Delivered', 'Excess Quantity', 'Excess Flag', 'Fulfilled At (EAT)'],
+    data.purchaseOrders.filter(row => ['completed', 'delivered', 'fulfilled'].includes(String(row.status).toLowerCase())).map(row => ({
+      'PO Number': row.poNumber, Vendor: row.vendorName, Material: row.materialName, Unit: row.unit,
+      Ordered: row.targetQuantity, Delivered: row.deliveredQuantity, 'Excess Quantity': row.excessQuantity,
+      'Excess Flag': row.excessFlag ? 'EXCESS' : '', 'Fulfilled At (EAT)': row.fulfilledAt,
+    })));
 
   // ─── Sheet 8: Material Inspection Forms ───
   addSheet(wb, `Material Inspections${suffix}`, [

@@ -23,6 +23,23 @@ test('master audit includes warehouse driver, truck, tracking and denial details
   assert.equal(row.driverName,'Shipment Driver');assert.equal(row.plateNumber,'KAA 123B');assert.equal(row.trackingId,undefined);
   assert.equal(row.warehouseReceiptStatus,'Denied');assert.equal(row.warehouseDenialReason,'Wrong goods');assert.equal(row.poQuantity,'');assert.equal(row.siteNet,'');assert.match(row.dispatchedAt,/2026/);
 });
+test('master audit distinguishes listener captures from app entries and exports the source', async () => {
+  const rows = reports([
+    { id: 'listener', accessBridgeSource: 'TruckSphere-Listener' },
+    { id: 'app' },
+  ]).buildMasterAudit();
+  assert.deepEqual(rows.map(row => row.captureMethod), ['TruckSphere Listener', 'TruckSphere App']);
+  const emptyReports = Object.fromEntries(['drivers','materials','fuel','trucks','vendors','purchaseOrders','materialInspections','storeActivity','flagged'].map(key => [key, []]));
+  const workbook = new (require('exceljs').Workbook)();
+  await workbook.xlsx.load(await require('../src/modules/reports/excelBuilder').buildExcelWorkbook({ ...emptyReports, masterAudit: rows }));
+  const sheet = workbook.worksheets[0];
+  const headers = sheet.getRow(1).values;
+  const capturedByColumn = headers.indexOf('Captured By');
+  assert.ok(capturedByColumn > 0);
+  assert.equal(sheet.getRow(2).getCell(capturedByColumn).value, 'TruckSphere Listener');
+  assert.equal(sheet.getRow(3).getCell(capturedByColumn).value, 'TruckSphere App');
+  assert.match(require('../src/modules/reports/csvBuilder').buildCSV([{ captureMethod: 'TruckSphere Listener' }]), /^No\.,Captured By\r\n1,TruckSphere Listener$/);
+});
 test('quarry net is not reduced twice and partial site weights do not become a delivered net', () => {
   const [row] = reports([{id:'q',weighInWeight:10,netWeight:20,siteWeighInWeight:30}]).buildMasterAudit();
   assert.equal(row.quarryNet,20);assert.equal(row.siteNet,'');assert.equal(row.quantityDelivered,0);
@@ -59,4 +76,17 @@ test('warehouse reports preserve multiple MRF sources and numbers and recover li
  assert.equal(row.warehouseMrf, 'MRF56 | MRF57');
  assert.match(row.warehouseItems, /Shoes.*MRF Source: BATA.*MRF: MRF56/);
  assert.match(row.warehouseItems, /Gloves.*MRF Source: ACME.*MRF: MRF57/);
+});
+
+test('PO, vendor and master reports expose approved excess while ignoring pending and failed receipts', () => {
+  const po = { id: 'po1', poNumber: 'PO1/V1', vendorId: 'V1', status: 'completed', materials: [{ materialId: 'bolts', materialName: 'Bolts', quantity: 10, unit: 'Pieces' }] };
+  const approved = { id: 'one', jobId: 'JOB1', vendorId: 'V1', purchaseOrderId: 'po1', status: 'ARRIVED_AT_SITE', receivingStatus: 'inventory_added', storeQualityInspection: { result: 'Pass' }, materialInspection: { materialReceipts: [{ materialId: 'bolts', receivedQuantity: 12, unit: 'Pieces', initialVisualInspection: 'Pass' }] } };
+  const report = reports([approved, { ...approved, id: 'two', receivingStatus: 'inspection_rejected' }, { ...approved, id: 'three', receivingStatus: 'received_pending_inspection' }], { purchaseOrders: [po], vendors: [{ id: 'V1', companyName: 'Vendor' }] });
+  const row = report.buildPOReport({ fulfilledOnly: true })[0];
+  assert.equal(row.deliveredQuantity, 12);
+  assert.equal(row.excessQuantity, 2);
+  assert.equal(row.excessFlag, true);
+  assert.equal(report.buildVendorReport()[0].fulfilledPOs, 1);
+  assert.equal(report.buildVendorReport()[0].excessQuantity, '2 pieces');
+  assert.equal(report.buildMasterAudit()[0].poExcessQuantity, '2 pieces');
 });
