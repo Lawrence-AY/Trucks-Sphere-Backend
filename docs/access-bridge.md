@@ -1,41 +1,56 @@
-# Firebase Access bridge
+﻿# Firebase Access bridge
 
-The Access listener reads Access/WinScale and sends changed captures to the main TruckSphere API. Firebase Firestore stores observations, retry status, source snapshots and job links. There is no SQLite runtime or separate backend/dashboard.
+The listener uploads WinScale rows to `POST /api/access-bridge/captures`. The backend authenticates `TARTIM_API_KEY` and `TARTIM_SOURCE_ID`, stores changed rows, then resolves them asynchronously. No listener changes are required.
 
 ## Configuration
 
-Merge `docs/access-bridge.env.example` into the main backend `.env`, set the bridge key and Access column mappings, then enable `TARTIM_ENABLED=true`. Site IDs are resolved from the matched TruckSphere delivery or purchase order. Configure `TARTIM_SOURCE_WEIGHT_UNIT=kg` or `tonnes` when the Access scale unit is known. Otherwise the matched site must supply `weighbridgeWeightUnit`. Product units are never used as scale units. The existing backend Firebase configuration is used.
+Set `TARTIM_ENABLED=true`, `TARTIM_SOURCE_ID=Tunaylar-WinScale`, a shared random `TARTIM_API_KEY` of at least 32 characters, and `TARTIM_UTC_OFFSET=+03:00`. `TARTIM_WEIGHING_MODE=loading` is the default and implements the empty-first, loaded-second contract. Input and ticket weights are kilograms. `TARTIM_SOURCE_WEIGHT_UNIT` does not override this loading contract.
 
-Set the listener's `TARTIM_API_URL` to `https://YOUR-API/api/access-bridge/captures` (localhost HTTP is allowed for development), and set the same `TARTIM_API_KEY` and `TARTIM_SOURCE_ID` in both applications. Use a random key of at least 32 characters. The listener has no Firebase service-account credentials. Run the main backend with `npm.cmd start`, then run `npm.cmd start` in `ToUse/access-listener` on the Access workstation. Node 24+ is required for the listener.
+`TARTIM_WEIGHING_MODE=unloading` retains the existing scheduled site-delivery/warehouse workflow (loaded first, empty second, application weights in tonnes). Use that only for a source actually measuring unloading; it does not use the new loading-ticket resolver.
 
-Vehicle registration is the primary link to an existing Site Schedule job. Plates are normalized for case, spaces and hyphens. Legacy jobs without a stored plate can resolve their vehicle ID through the fleet registry. Supplied driver, company, origin, destination and material confirm the scheduled context; they never overwrite conflicting job relationships. The captured fields and timestamps are retained in the job's accessCapture metadata.
+The backend uses its existing Firebase service-account environment. The requested production project is `trucksphere`; verify the Render service account and `FIREBASE_PROJECT_ID` together before deployment. This workspace currently specifies `trucksphere-demo`. Changing only a project name is not a credential migration. No environment secrets are included in logs or browser exports.
 
-DIGER3_ISIM identifies the driver by name or registered ID/national ID/licence. DIGER5_ISIM can identify the exact trip/job, PO number or document ID; configure TARTIM_DRIVER_FIELD and TARTIM_PO_FIELD for other columns. When a plate has multiple active schedules, matching context must identify exactly one. Ambiguity or conflicting context blocks processing. The truck must exist in the fleet registry for both site and warehouse captures (`UNKNOWN_TRUCK` otherwise).
+## Mapping and resolution
 
-Without a matching schedule, a registered truck and driver can create a custom job against one open purchase order. Supply its ID/PO number in DIGER5_ISIM, or identify it uniquely using destination (DIGER2_ISIM), material (MALZEME_KODU/MALZEME_ADI) and optional vendor (FIRMA_ADI). The order supplies site, material, vendor, unit, storage lot and banker. Missing or ambiguous references remain blocked; the bridge does not invent orders, drivers or trucks. A truck or driver already assigned to an active job cannot create another job. Warehouse captures require an existing shipment so product quantities and shipment references are preserved.
+- `PLAKA`: normalized truck registration. Match `vehicles`; otherwise create a stable `AB-{plate}` record and reserve `vehicleRegistrations/{plate}` atomically.
+- `FIRMA_ADI`: vendor/company; match names or create an explicitly bridge-created vendor.
+- `DIGER3_ISIM`: driver name (configurable with `TARTIM_DRIVER_FIELD`). Match case-insensitively, including existing IDs/licences/national IDs. Duplicate names prefer the captured vendor, then the lexically smallest ID. Unknown names create stable driver records marked `registrationIncomplete`; no licence or national ID is fabricated. A missing name remains `DRIVER_NAME_REQUIRED`.
+- `DIGER1_ISIM`: loading point, e.g. HINDI. `DIGER2_ISIM`: destination/site, e.g. MANDA BAY.
+- `DIGER4_ISIM`: delivery note/description. `MALZEME_ADI` / `MALZEME_KODU`: material name/code. `OPERATOR_ADI`: operator.
+- `DIGER5_ISIM` (or `TARTIM_PO_FIELD`): optional existing PO reference. Without a reference, match an existing open PO by vendor, site and material. Associate only one unambiguous match. Missing, closed or ambiguous POs leave `purchaseOrderId: null` and `poResolution: unmatched|ambiguous`. **The bridge never creates a PO or custom site order.** The capture is still saved and processed.
 
-Access form time may precede job creation by at most two minutes, provided the job existed before the server observed the upload. Older captures cannot attach to future schedules. Existing jobs can retain an empty site ID when the source scale unit is explicitly configured.
+Unknown material/site names also create bridge-marked registry records so the ticket can retain stable relationships. Blank vendor/material/site values use explicit Unspecified labels rather than guessing a real entity.
 
-## Workflow
+## Loading ticket lifecycle and schema
 
-- Find the existing site schedule by registration and confirm job context, or create a custom job with `isUnscheduled=true` using the shared delivery service. The existing purchase-order number and shared per-PO job counter produce the job reference. Save the capture binding on creation so retries and the second weighing reuse the same document. Verify the registered truck and captured plate again at weigh-out.
-- Persist first weight through the shared delivery service. That write sets SITE_WEIGHED_IN and the site-arrival markers together. The app removes the job from Site Schedule and displays its saved first weight in Weights to Be Weighed Out through existing live sync. A failed weighing write leaves the job at its prior stage.
-- Convert `TARTIM1` to site weigh-in and `TARTIM2` to site weigh-out using the explicitly configured Access source unit, or the matched site's weighbridge unit, storing weights in tonnes. Captures are blocked if neither the explicit source unit nor the site unit is set. Existing scheduled jobs with no site ID can be weighed using the explicit source unit; no site is guessed or created. Timestamps use `TARTIM_UTC_OFFSET`, default `+03:00` for Nairobi. Second weight must be positive and below first weight.
-- Use the existing site-arrival, inventory and receipt-number services. Receipts are available in the app's existing receipt/history views. Automatic paper printing is not included.
-- Final weigh-out sets `SITE_WEIGHED_OUT`, generates the RN using the shared receipt counter, and moves the job into Site History. Delivery snapshot notifications refresh web subscribers; five-second polling also refreshes mobile and disconnected web streams without manual refresh. Warehouse inspection remains a separate step after weighing.
-- Warehouse deliveries retain their product units and quantities and proceed to inspection after weigh-out. Security flags and warehouse validation remain enforced.
-- Link waiting and completed Access records by source, normalized plate and first-weigh timestamp. Retries and restarts reuse the job. Conflicting app-entered weights are held rather than overwritten. Completed app entries may match if their weigh-in timestamp is within two minutes of the capture.
+`accessBridgeTickets/{sha256(source, normalized plate, first timestamp)}` stores:
 
-## Firebase and recovery
+- `status`: `in_yard` for ICERIDEKI_ARACLAR, `completed` for KAYITLAR.
+- `truckId`, `driverId`, `vendorId`, `materialId`, `siteId`, nullable `purchaseOrderId`, and `poResolution`.
+- `plateNumber`, `plateDate` (normalized plate plus local first-weigh date), `sourceId`.
+- `tareKg`, nullable `grossKg` and `netKg`, `weightUnit: kg`.
+- `firstAt`, `secondAt`, `ticketNumber`, mapped descriptive fields, `contentHash`, creation/update timestamps.
 
-`accessBridgeSources/{sourceId}` holds source health and the worker lease, with `snapshots` and `events` subcollections. Events are pending, processed, ignored or blocked. Blocked events retry after 30 seconds. The first upload of historical completed records is a baseline and does not create jobs; waiting vehicles are processed immediately. Reuse the source ID across restarts, but use a new one for a different Access database.
+A completed row updates the same yard ticket using its first-weigh identity. If its first time was corrected, one open yard ticket for the same plate and local date can match. Multiple candidates remain `AMBIGUOUS_YARD_CAPTURE`; separate trips are never merged arbitrarily. `NET` must equal loaded minus empty weight (0.001 kg tolerance); if absent it is calculated. Completed captures arriving before yard rows are supported; late yard rows cannot downgrade a completed ticket.
 
-The listener sends only changed rows after an acknowledged upload and sends a heartbeat after every successful scan. On restart it resends the source records; Firestore deduplicates them transactionally. During network outages it retries by rereading Access. Keep Access records until upload succeeds: without a local durable queue, records deleted from Access before a successful upload cannot be recovered.
+Combine each TARIH date and SAAT clock time using the configured offset. The Access zero-date is stripped from the clock and is rejected as a real date. Invalid calendar dates, reverse chronology, conflicting saved weights and inconsistent NET remain visible validation failures.
 
-Management users can GET `/api/access-bridge` with their normal login token to inspect the latest 100 events and source health. Listener credentials authorize only POST `/api/access-bridge/captures` for the configured source. Credentials and source routing are never taken from capture payloads.
+These are weighbridge tickets, not delivery-order receipts: loading completion does not assert that goods have arrived, update site inventory, or generate an RN. Existing delivery orders and the legacy unloading workflow remain separate. The event result carries `ticketId`; authorized management users can read `/api/access-bridge/tickets/:id`. Existing `/api/access-bridge` history exposes raw payloads and resolution outcomes.
 
-If Access entries do not appear in TruckSphere, check the listener for `Scan OK` and the bridge's `lastSuccess`. The startup banner alone does not confirm an upload. Each upload batch is committed in one Firestore transaction to avoid per-row transaction latency exhausting the listener's 30-second request timeout. A first scan or restart still needs to upload all source rows before reporting success.
+`accessBridgeTicketNumbers/{sha256(source, KAYIT_NO)}` maps a completed ticket number to its ticket document. Registry creation, registration reservation, ticket write and number mapping commit atomically. Stable IDs and payload hashes make retries safe across restarts. The original observations remain in `accessBridgeSources/{source}/snapshots` and `/events`.
 
-Uploaded captures are not necessarily jobs: historical completed baseline records are ignored, and other captures require a matching schedule or the confirmed custom-job context described above. Inspect each event's `status` and `reason` before re-entering data. This bridge only reads Access; it does not copy TruckSphere entries back into Access.
+## Logging and Firebase usage
 
-Automated tests use fake repositories and do not connect to live Firebase or Access hardware. Validate the actual driver-field mapping, weight units, scheduled/unmatched/warehouse deliveries and operator workflow before enabling production captures.
+Non-empty authenticated uploads log `[Access bridge] payload:` with `JSON.stringify(req.body)`, then `[Access bridge] record:` for every raw listener record. Worker attempts log `[Access bridge] processing record:` (including persisted raw data); `[Access bridge] resolution:` includes source, event, plate, truck/driver/PO IDs, PO resolution and ticket status. Failures log the event ID and reason. Raw logs contain business and driver information; apply your existing Render log retention/access controls.
+
+Empty uploads return immediately with zero Firestore reads/writes and no payload log spam. Changed rows use one ingestion transaction and `getAll` bulk reads. Repeated identical rows in a batch coalesce; conflicting copies reject the batch. KAYITLAR dedupes by normalized KAYIT_NO; yard rows by normalized plate/date/clock. Unchanged uploads cause no writes. The first non-empty upload initializes source state; empty heartbeats do not update persisted `lastSuccess`.
+
+The worker queries pending events independently of requests. It does not acquire/write a lease when idle. Active leases renew at most every 30 seconds within a batch. Registry collections are read once per worker batch (up to 100 events), and new entities are shared within that batch. These are full collection reads, not a claim of constant Firestore document cost. Exact ticket retries perform no ticket/registry writes, although event acknowledgements are written.
+
+## Deployment and migration
+
+Deploy the `accessBridgeTickets` composite index in `firestore.indexes.json` to the intended project before enabling the loading worker, then deploy/restart the Render backend with the configuration above. The Firestore schema additions are additive; no existing jobs, POs or snapshots are deleted or rewritten. Loading mode processes new completed BASELINE events rather than ignoring them.
+
+Existing blocked events retry automatically within 30 seconds after deployment. Already ignored/processed historical events do not automatically requeue; unchanged listener replays remain deduped. If historical reprocessing is needed, deliberately reset only the selected event status/nextAttemptAt after reviewing its source and date. Old yard snapshot keys may produce one extra event on replay after normalization; ticket identity still prevents duplicate tickets.
+
+Tests run against isolated fake Firestore stores; they do not write to Firebase or deploy to Render. Use `npm test` for the backend suite.

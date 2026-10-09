@@ -62,7 +62,8 @@ test('a historical upload uses one transaction and retries without duplicate eve
   assert.ok(events(db).every(event => event.event_type === 'BASELINE'));
   assert.equal((await store.observe(batch)).changed, 0);
   assert.equal(events(db).length, 20);
-  await assert.rejects(store.observe([batch[0], batch[0]]), /DUPLICATE_CAPTURE/);
+  assert.equal((await store.observe([batch[0], batch[0]])).changed, 0);
+  await assert.rejects(store.observe([batch[0], { ...batch[0], row: { ...batch[0].row, TARTIM1: 5 } }]), /CONFLICTING_DUPLICATE_CAPTURE/);
   assert.equal(events(db).length, 20);
 });
 test('invalid chunk causes no partial observation writes and sources are isolated', async () => {

@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const { readConfig } = require('./config');
 const { createProcessor } = require('./processor');
 const { createStore } = require('./store');
+const { createLoadingProcessor } = require('./loading');
 let current = { enabled: false };
 const status = () => current;
 function startAccessBridge({ db, deliveries, config = readConfig(), logger = console }) {
@@ -28,15 +29,27 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
       });
     },
   };
-  const processor = createProcessor({ repository, deliveries, config });
+  const processor = config.weighingMode === 'unloading'
+    ? createProcessor({ repository, deliveries, config })
+    : createLoadingProcessor({ db, config, logger });
   async function tick() {
     if (running || stopped) return;
     running = true;
     try {
-      if (!await store.claim(owner)) return;
-      for (const event of await store.pending()) {
-        if (stopped || !await store.claim(owner)) break;
-        try { await store.save(event.id, await processor(event)); }
+      const pending = await store.pending();
+      if (!pending.length || !await store.claim(owner)) return;
+      let renewedAt = Date.now();
+      processor.resetBatch?.();
+      for (const event of pending) {
+        if (stopped) break;
+        if (Date.now() - renewedAt > 30000) {
+          if (!await store.claim(owner)) break;
+          renewedAt = Date.now();
+        }
+        try {
+          logger.log('[Access bridge] processing record:', event.id, event.table_name, event.payload);
+          await store.save(event.id, await processor(event));
+        }
         catch (error) {
           await store.save(event.id, { status: 'blocked', reason: error.code || error.message });
           logger.warn('[Access bridge] Capture awaiting resolution:', event.id, error.code || error.message);

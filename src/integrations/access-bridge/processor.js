@@ -22,6 +22,9 @@ function captureTime(row, index, offset) {
   const date = String(row[`TARIH${index}`] || '').slice(0, 10);
   const time = String(row[`SAAT${index}`] || '').match(/^(?:\d{4}-\d{2}-\d{2}[T ])?(\d{2}:\d{2}:\d{2})/);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !time) throw blocked('CAPTURE_TIME_REQUIRED');
+  const calendar = new Date(`${date}T00:00:00Z`);
+  if (!Number.isFinite(calendar.getTime()) || calendar.toISOString().slice(0, 10) !== date || date === '1899-12-30'
+    || !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(time[1])) throw blocked('INVALID_CAPTURE_TIME');
   const value = new Date(`${date}T${time[1]}${offset}`);
   if (!Number.isFinite(value.getTime())) throw blocked('INVALID_CAPTURE_TIME');
   return value.toISOString();
