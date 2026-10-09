@@ -9,6 +9,46 @@ function reports(deliveries, collections = {}) {
   vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { module, require: name => name === '../../utils/snapshotStore' ? { getAll: collection => collection === 'deliveryOrders' ? deliveries : collections[collection] || [] } : require(path.resolve(path.dirname(filename), name)) });
   return module.exports;
 }
+
+test('material report combines exact material selection with the date range and resets to all materials', () => {
+  const delivery = (materialId, date, quantity) => ({
+    materialId, createdAt: date,
+    materialInspection: { materialReceipts: [{ materialId, receivedQuantity: quantity }] },
+  });
+  const service = reports([
+    delivery('m', '2026-10-09T10:00:00Z', 12),
+    delivery('m', '2026-09-01T10:00:00Z', 30),
+    delivery('s', '2026-10-09T10:00:00Z', 8),
+  ], { materials: [{ id: 'm', name: 'Murram' }, { id: 's', name: 'Sand' }] });
+  const rows = service.buildMaterialReport({ material: ' MURRAM ', filter: 'custom', startDate: '2026-10-01', endDate: '2026-10-10' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].materialName, 'Murram');
+  assert.equal(rows[0].totalDelivered, 12);
+  assert.equal(service.buildMaterialReport({ material: 'mur' }).length, 0);
+  assert.equal(service.buildMaterialReport({ material: '' }).length, 2);
+  assert.equal(service.buildMaterialReport()[0].totalDelivered, 42);
+});
+
+test('materials CSV forwards material and date filters to the report service', async () => {
+  const filename = require.resolve('../src/modules/reports/controller');
+  const module = { exports: {} };
+  let options;
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
+    module, exports: module.exports,
+    require: name => name === './service'
+      ? { buildMaterialReport: value => { options = value; return [{ materialName: 'Murram' }]; } }
+      : name === './csvBuilder' ? { buildCSV: () => 'Material\r\nMurram' } : {},
+  });
+  let body;
+  await module.exports.exportCategoryCSV(
+    { params: { category: 'materials' }, query: { material: 'murram', filter: 'month' } },
+    { setHeader() {}, send(value) { body = value; } },
+    error => { throw error; },
+  );
+  assert.equal(options.material, 'murram');
+  assert.equal(options.filter, 'month');
+  assert.ok(body);
+});
 test('summary counts canonical statuses and excludes warehouse units from tonnage', () => {
   const result = reports([
     { id:'a', status:'DISPATCHED', netWeight:20 },

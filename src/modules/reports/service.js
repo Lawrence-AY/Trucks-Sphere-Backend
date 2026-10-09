@@ -500,9 +500,12 @@ function buildDriverReport() {
 /**
  * ─── Materials Report ───
  */
-function buildMaterialReport() {
-  const matDocs = snapshotStore.getAll('materials');
-  const deliveries = snapshotStore.getAll('deliveryOrders');
+function buildMaterialReport(options = {}) {
+  const material = String(options.material || '').trim().toLowerCase();
+  const matDocs = snapshotStore.getAll('materials').filter((m) =>
+    !material || String(m.name || '').trim().toLowerCase() === material,
+  );
+  const deliveries = getDeliveries(options);
 
   return matDocs.map((m) => {
     const matDeliveries = deliveries.filter((d) => d.materialId === m.id || (d.materialInspection?.materialReceipts || []).some((line) => String(line.materialId || '') === String(m.id)));

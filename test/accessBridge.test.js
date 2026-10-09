@@ -6,6 +6,13 @@ const { validateWarehouseUpdate, warehouseWeighOutUpdates } = require('../src/mo
 const config = { sourceId: 'bridge', utcOffset: '+03:00' };
 const first = { PLAKA: 'KAA 123A', TARTIM1: 30000, TARIH1: '2026-10-02', SAAT1: '1899-12-30T10:00:00', TARTIM2: 0 };
 const second = { ...first, KAYIT_NO: 10, TARTIM2: 10000, TARIH2: '2026-10-02', SAAT2: '1899-12-30T11:00:00' };
+test('Tunaylar kilogram weights and legacy dates retain correct tonnes and local time',()=>{
+ const row={PLAKA:'KDQ532V',TARTIM1:34100,TARTIM2:11150,TARIH1:'2026-08-10T00:00:00',SAAT1:'1899-12-30T14:29:18',TARIH2:'2026-08-10T00:00:00',SAAT2:'1899-12-30T14:42:53'};
+ const result=capture(row,config,'kg');
+ assert.equal(result.first,34.1);assert.equal(result.second,11.15);
+ assert.equal(Number((result.first-result.second).toFixed(2)),22.95);
+ assert.equal(result.firstAt,'2026-08-10T11:29:18.000Z');
+});
 const scheduled = { id: 'scheduled', jobId: 'POMAT001/V001/D001/T001/J0001', siteId: 'S001', driverId: 'D001', vehicleId: 'T001', plateNumber: first.PLAKA, status: 'DISPATCHED', createdAt: '2026-10-01T00:00:00Z' };
 function fixture(jobs = [scheduled]) {
   const data = {

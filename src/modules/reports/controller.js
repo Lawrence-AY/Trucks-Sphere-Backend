@@ -20,6 +20,7 @@ function parseOptions(query) {
   if (start_date) options.startDate = start_date;
   if (end_date) options.endDate = end_date;
   if ((start_date || end_date) && !options.filter) options.filter = 'custom';
+  if (typeof query.material === 'string' && query.material.trim()) options.material = query.material.trim();
   return options;
 }
 
@@ -43,7 +44,7 @@ exports.exportExcel = async (req, res, next) => {
       drivers: reportsService.buildDriverReport(),
       fuel: reportsService.buildFuelReport(options),
       trucks: reportsService.buildTruckReport(),
-      materials: reportsService.buildMaterialReport(),
+      materials: reportsService.buildMaterialReport(options),
       vendors: reportsService.buildVendorReport(options),
       purchaseOrders: reportsService.buildPOReport(options),
     };
@@ -146,7 +147,7 @@ exports.getCategorySummary = async (req, res, next) => {
         break;
       }
       case 'materials': {
-        const materials = reportsService.buildMaterialReport();
+        const materials = reportsService.buildMaterialReport(options);
         data = {
           total: materials.length,
           types: materials.map(m => m.materialName).filter(Boolean),
@@ -214,7 +215,7 @@ exports.exportCategoryCSV = async (req, res, next) => {
         filename = `Drivers_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'materials':
-        rows = reportsService.buildMaterialReport();
+        rows = reportsService.buildMaterialReport(options);
         filename = `Materials_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
       case 'purchase-orders':

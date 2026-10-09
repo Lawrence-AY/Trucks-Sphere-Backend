@@ -256,7 +256,8 @@ const delivery_ordersService = {
     // Filter before pagination so older finalized jobs are not skipped.
     if (fuelReady === true || fuelReady === 'true') {
       const allJobs = snapshotStore.getAll(COLLECTION_NAME);
-      results = results.filter((item) => isFuelReady(item, allJobs));
+      const fuelRecords = snapshotStore.getAll('fuelRecords');
+      results = results.filter((item) => isFuelReady(item, allJobs, fuelRecords));
     }
     // Post-filter by jobId
     if (jobId) {

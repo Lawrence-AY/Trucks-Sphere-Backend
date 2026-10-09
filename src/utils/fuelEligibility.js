@@ -12,7 +12,11 @@ function isSupersededForFuel(job, jobs) {
     return (sameDriver || sameTruck) && assignedAt(other) > assignedAt(job);
   });
 }
-function isFuelReady(job, jobs) {
-  return !isWarehouseReceipt(job) && ['SITE_WEIGHED_OUT', 'COMPLETED'].includes(normalizeJobStatus(job.status)) && !isSupersededForFuel(job, jobs);
+function isFuelReady(job, jobs, fuelRecords = []) {
+  const ids = [job.id, job.jobId].filter(Boolean);
+  const fueled = fuelRecords.some((record) =>
+    [record.deliveryOrderId, record.jobId].some((id) => id && ids.includes(id)),
+  );
+  return !fueled && !isWarehouseReceipt(job) && ['SITE_WEIGHED_OUT', 'COMPLETED'].includes(normalizeJobStatus(job.status)) && !isSupersededForFuel(job, jobs);
 }
 module.exports = { isFuelReady, isSupersededForFuel };
