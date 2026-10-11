@@ -1,3 +1,4 @@
+const { toTonnes, storagePatch } = require('../../utils/deliveryWeightUnits');
 const { db } = require('../../../config/firebase');
 const { stockRows, balance, issue, validateInspection } = require('./model');
 const stocks = db.collection('stocks');
@@ -15,7 +16,7 @@ async function persistDelivery(ref, updates) {
   return db.runTransaction(async (tx) => {
     const doc = await tx.get(ref);
     if (!doc.exists) throw Object.assign(new Error('Delivery not found'), { statusCode: 404 });
-    const source = doc.data();
+    const source = toTonnes(doc.data());
     require('../delivery-orders/storeReceiving').assertGenericUpdate(source, updates);
     if (source.isWarehouseDelivery || source.deliveryOrigin === 'warehouse') {
       for (const key of ['materials', 'materialId', 'quantityOrdered', 'additionalItems', 'isWarehouseDelivery', 'deliveryOrigin']) {
@@ -25,9 +26,9 @@ async function persistDelivery(ref, updates) {
       }
     }
     if (updates.materialInspection) validateInspection(doc.data(), updates.materialInspection);
-    const write = await prepare(tx, { ...doc.data(), ...updates, id: doc.id });
+    const write = await prepare(tx, { ...source, ...updates, id: doc.id });
     write();
-    tx.update(ref, updates);
+    tx.update(ref, storagePatch(doc.data(), updates));
   });
 }
 async function deleteDelivery(ref) {

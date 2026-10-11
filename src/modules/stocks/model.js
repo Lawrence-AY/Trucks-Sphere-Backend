@@ -1,3 +1,4 @@
+const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { createHash } = require('node:crypto');
 const { isBulkMaterial } = require('../../utils/receivingRoute');
 const warehouse = (d) => Boolean(d.isWarehouseDelivery) || d.deliveryOrigin === 'warehouse';
@@ -5,6 +6,7 @@ const number = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const round = (n) => Math.round((n + Number.EPSILON) * 1e6) / 1e6;
 function fail(message) { throw Object.assign(new Error(message), { statusCode: 409 }); }
 function stockRows(delivery) {
+  delivery = toTonnes(delivery);
   const wh = warehouse(delivery);
   const inspected = delivery.materialInspection;
   // Preserve historical inspected receipts and the bulk weighbridge workflow.

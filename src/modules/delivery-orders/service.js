@@ -1,3 +1,4 @@
+const { toTonnes, toKilograms, storagePatch } = require('../../utils/deliveryWeightUnits');
 const { dispatchMaterials } = require('../../utils/dispatchMaterials');
 const { isFuelReady } = require('../../utils/fuelEligibility');
 /**
@@ -174,17 +175,17 @@ async function applyUpdateWithBackorder(docRef, id, updates) {
     const sourceSnapshot = await transaction.get(docRef);
     if (!sourceSnapshot.exists) return { backorder: null };
     require('./storeReceiving').assertGenericUpdate(sourceSnapshot.data(), updates);
-    const writeStocks = await stockService.prepare(transaction, { ...sourceSnapshot.data(), ...updates, id });
+    const writeStocks = await stockService.prepare(transaction, { ...toTonnes(sourceSnapshot.data()), ...updates, id });
     writeStocks();
 
     if (!isBackorderCreationEnabled()) {
-      transaction.update(docRef, updates);
+      transaction.update(docRef, storagePatch(sourceSnapshot.data(), updates));
       return { backorder: null };
     }
 
-    const source = { id, ...sourceSnapshot.data() };
+    const source = { id, ...toTonnes(sourceSnapshot.data()) };
     if (source.backorderDeliveryOrderId) {
-      transaction.update(docRef, updates);
+      transaction.update(docRef, storagePatch(sourceSnapshot.data(), updates));
       return {
         backorder: {
           id: source.backorderDeliveryOrderId,
@@ -197,7 +198,7 @@ async function applyUpdateWithBackorder(docRef, id, updates) {
 
     const plan = planSiteNetBackorder(source, updates);
     if (!plan) {
-      transaction.update(docRef, updates);
+      transaction.update(docRef, storagePatch(sourceSnapshot.data(), updates));
       return { backorder: null };
     }
 
@@ -215,7 +216,7 @@ async function applyUpdateWithBackorder(docRef, id, updates) {
 
     transaction.set(backorderRef, backorder);
     transaction.update(docRef, {
-      ...updates,
+      ...storagePatch(sourceSnapshot.data(), updates),
       backorderDeliveryOrderId: backorder.id,
       backorderJobId: backorder.jobId,
       backorderRemainingQuantity: plan.remainingQuantity,
@@ -245,6 +246,7 @@ const delivery_ordersService = {
 
     // Enrich with PO context from the snapshot cache (purchaseOrders rarely change)
     results = results
+      .map(toTonnes)
       .map(enrichWithPurchaseOrderContext)
       .map(enrichWithQuarryOperatorLocation);
 
@@ -308,7 +310,7 @@ const delivery_ordersService = {
   findById(id) {
     const doc = snapshotStore.getById(COLLECTION_NAME, id);
     if (!doc) return null;
-    return enrichWithQuarryOperatorLocation(enrichWithPurchaseOrderContext(doc));
+    return enrichWithQuarryOperatorLocation(enrichWithPurchaseOrderContext(toTonnes(doc)));
   },
 
   /**
@@ -319,6 +321,7 @@ const delivery_ordersService = {
    * across all quarries and sites.
    */
   async create(data) {
+    data = toTonnes(data);
     try {
       require('./storeReceiving').assertGenericUpdate({ ...data, materialInspection: null }, data);
       if (data.purchaseOrderId) {
@@ -384,7 +387,7 @@ const delivery_ordersService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await docRef.set(item);
+      await docRef.set(toKilograms(item));
       if (item.driverId || item.vehicleId) {
         girService.clearFuelSession({ driverId: item.driverId, vehicleId: item.vehicleId }).catch((error) => console.error('[GIR/FMS] Failed to clear previous fuel session:', error.message));
       }
@@ -401,10 +404,11 @@ const delivery_ordersService = {
    * Uses in-memory snapshot cache to avoid a Firestore read for the current state.
    */
   async updateFresh(id, data) {
+    data = toTonnes(data);
     const docRef = collectionRef.doc(id);
     const doc = await docRef.get();
     if (!doc.exists) throw Object.assign(new Error('Job not found'), { code: 'JOB_NOT_FOUND' });
-    const existing = doc.data();
+    const existing = toTonnes(doc.data());
     for (const field of ['siteWeighInWeight', 'siteWeighOutWeight']) {
       if (data[field] == null || existing[field] == null) continue;
       if (Math.abs(Number(data[field]) - Number(existing[field])) > 0.000001) {
@@ -437,6 +441,8 @@ const delivery_ordersService = {
   },
 
   async _applyUpdate(docRef, id, existing, data) {
+    existing = toTonnes(existing);
+    data = toTonnes(data);
     try {
       require('./storeReceiving').assertGenericUpdate(existing, data);
       validateWarehouseUpdate(existing, data);
@@ -544,7 +550,7 @@ const delivery_ordersService = {
       // Diagnostic verification of the exact document written. Remove this
       // direct read after the transition has been verified in production.
       const persistedDocument = await docRef.get();
-      const persisted = persistedDocument.data() || {};
+      const persisted = toTonnes(persistedDocument.data() || {});
       const receiptReference = updates.receiptNoteId || updates.receiptNote || persisted.receiptNoteId || persisted.receiptNote;
       if (receiptReference && (persisted.driverId || existing.driverId || persisted.vehicleId || existing.vehicleId)) {
         girService.setJobReference({
@@ -676,7 +682,7 @@ const delivery_ordersService = {
       const ref = collectionRef.doc(id);
       const snapshot = await transaction.get(ref);
       if (!snapshot.exists) return null;
-      const job = snapshot.data();
+      const job = toTonnes(snapshot.data());
       if (actor.siteId && job.siteId && actor.siteId !== job.siteId) throw Object.assign(new Error('Delivery belongs to another site.'), { statusCode: 403 });
       const updates = denialUpdates(job, actor, reason);
       transaction.update(ref, updates);
@@ -689,7 +695,7 @@ const delivery_ordersService = {
       const ref = collectionRef.doc(id);
       const snapshot = await transaction.get(ref);
       if (!snapshot.exists) return null;
-      const job = snapshot.data();
+      const job = toTonnes(snapshot.data());
       if (actor.siteId && job.siteId && actor.siteId !== job.siteId) {
         throw Object.assign(new Error('Delivery belongs to another site.'), { statusCode: 403 });
       }
@@ -717,7 +723,7 @@ const delivery_ordersService = {
       });
 
       const updated = await docRef.get();
-      return { id: docRef.id, ...updated.data() };
+      return { id: docRef.id, ...toTonnes(updated.data()) };
     } catch (error) {
       console.error('delivery_ordersService.receiveLot error:', error);
       throw error;

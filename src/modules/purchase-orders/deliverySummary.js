@@ -1,3 +1,4 @@
+const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isBulkMaterial } = require('../../utils/receivingRoute');
 
@@ -30,7 +31,8 @@ function buildDeliverySummary(po, deliveries, byMaterial = false) {
   };
   const seen = new Set();
   let tripCount = 0;
-  for (const trip of deliveries) {
+  for (const rawTrip of deliveries) {
+    const trip = toTonnes(rawTrip);
     if (String(trip.purchaseOrderId || '') !== String(po.id) || trip.isBackorder) continue;
     if (!isBulkMaterial(trip) && !trip.materialInspection?.materialReceipts?.length) continue;
     if (trip.receivingStatus && trip.receivingStatus !== 'inventory_added') continue;

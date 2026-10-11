@@ -1,3 +1,4 @@
+const { toTonnes } = require('./deliveryWeightUnits');
 /**
  * Snapshot Store — In-memory cache backed by Firestore onSnapshot listeners.
  * Eliminates repeated collection reads — every request returns snapshot data instantly.
@@ -59,7 +60,7 @@ function notifyReady(collectionName) {
  * Changes are also persisted to Redis asynchronously.
  */
 function reportSnapshotRecord(name, doc) {
-  const data = doc.data();
+  const data = name === 'deliveryOrders' ? toTonnes(doc.data()) : doc.data();
   if (name !== 'trackingReportSessions') return { id: doc.id, ...data };
   const { orderId, personnelName, securityLocation, status, startedAt, decidedAt, reason, driverPhotoURL } = data;
   return { id: doc.id, orderId: orderId || '', personnelName: personnelName || '', securityLocation: securityLocation || '', status: status || '', startedAt: startedAt || '', decidedAt: decidedAt || '', reason: reason || '', driverPhotoURL: driverPhotoURL || '' };
@@ -129,7 +130,7 @@ async function warmFromRedis(name) {
   try {
     const cached = await cacheService.loadSnapshot(name);
     if (cached && cached.docs && cached.docs.length > 0) {
-      store.set(name, cached.docs);
+      store.set(name, name === 'deliveryOrders' ? cached.docs.map(toTonnes) : cached.docs);
       hashes.set(name, cached.hash || '');
       timestamps.set(name, cached.updatedAt || 0);
       console.log(`[Snapshot] ${name} warmed from Redis — ${cached.docs.length} docs`);
@@ -248,6 +249,7 @@ async function invalidateRedisCache(collectionName) {
 
 // Publish a committed write immediately instead of waiting for the listener.
 function applyCommittedUpdate(collectionName, id, updates) {
+  if (collectionName === 'deliveryOrders') updates = toTonnes(updates);
   const docs = [...getAll(collectionName)];
   const index = docs.findIndex((item) => item.id === id);
   const record = { ...(index >= 0 ? docs[index] : {}), ...updates, id };

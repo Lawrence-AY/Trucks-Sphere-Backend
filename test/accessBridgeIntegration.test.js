@@ -75,6 +75,28 @@ function fixture() {
 const row = { PLAKA: 'KAA123A', DIGER3_ISIM: 'Driver', DIGER5_ISIM: 'POMAT001/V001', TARTIM1: 30000, TARIH1: '2026-10-02', SAAT1: '10:00:00' };
 const event = row => ({ event_type: 'INSERT', table_name: row.TARTIM2 ? 'KAYITLAR' : 'ICERIDEKI_ARACLAR', payload: JSON.stringify(row) });
 
+test('manual kg quarry and site weights persist as kg with compatible reads and bridge retries', async () => {
+  const f = fixture();
+  f.records.set('deliveryOrders/manual', { jobId: 'manual', purchaseOrderId: 'PO1',
+    driverId: 'D001', vehicleId: 'T001', status: 'DISPATCHED', weighInWeight: 10 });
+  await f.deliveries.update('manual', { weightUnit: 'kg', weighOutWeight: 30000, netWeight: 20000 });
+  let saved = f.records.get('deliveryOrders/manual');
+  assert.equal(saved.weightUnit, 'kg');
+  assert.equal(saved.weighInWeight, 10000);
+  assert.equal(saved.weighOutWeight, 30000);
+  await f.deliveries.update('manual', { weightUnit: 'kg', siteWeighInWeight: 30000 });
+  saved = f.records.get('deliveryOrders/manual');
+  assert.equal(saved.siteArrivalWeightVariance, 0);
+  assert.equal(saved.siteArrivalWeightVarianceTolerance, 5000);
+  // An automatic capture matching a manual kg weigh-in must bind and resume.
+  await f.process(event({ ...row, TARTIM2: 10000, TARIH2: '2026-10-02', SAAT2: '11:00:00' }));
+  saved = f.records.get('deliveryOrders/manual');
+  assert.equal(saved.siteNetWeight, 20000);
+  assert.equal(saved.quantityDelivered, 20);
+  assert.equal(f.deliveries.findById('manual').siteNetWeight, 20);
+  assert.equal(f.records.get('purchaseOrders/PO1').pendingQualityControl, 20);
+});
+
 test('unscheduled capture uses real shared job and receipt counters and survives a failed weigh-in', async () => {
   const f = fixture();
   const update = f.deliveries.updateFresh;
@@ -112,7 +134,8 @@ test('real delivery service preserves scheduled numbering, arrival markers, rece
   const second = { ...row, TARTIM2: 10000, TARIH2: '2026-10-02', SAAT2: '11:00:00' };
   const completed = await f.process(event(second));
   job = f.records.get(`deliveryOrders/${first.jobId}`);
-  assert.equal(job.siteWeighOutWeight, 10);
+  assert.equal(job.weightUnit, 'kg');
+  assert.equal(job.siteWeighOutWeight, 10000);
   assert.equal(job.quantityDelivered, 20);
   assert.equal(job.status, 'SITE_WEIGHED_OUT');
   assert.match(completed.receiptNoteId, /^POMAT001\/V001\/D001\/T001\/J0008\/RN\d+$/);
@@ -155,7 +178,7 @@ test('warehouse shipment with a registered plate and no site retains security ch
   f.records.get('deliveryOrders/warehouse').isFlagged = false;
   const result = await process(capture);
   const job = f.records.get('deliveryOrders/warehouse');
-  assert.equal(job.siteNetWeight, 11);
+  assert.equal(job.siteNetWeight, 11000);
   assert.equal(job.quantityDelivered, 8);
   assert.equal(job.status, 'SITE_WEIGHED_OUT');
   assert.equal(job.workflowStage, 'awaiting_inspection');
@@ -189,8 +212,8 @@ test('PO0017 first weight 2300 persists on the same trip through failure, retry,
   await createProcessor({ repository: f.repository, deliveries: f.deliveries, config })(first);
   const job = (await f.repository.all('deliveryOrders')).find(j => j.id === id);
   assert.equal(job.status, 'SITE_WEIGHED_IN');
-  assert.equal(job.siteWeighInWeight, 2300);
-  assert.equal(job.siteArrivalWeight, 2300);
+  assert.equal(job.siteWeighInWeight, 2300000);
+  assert.equal(job.siteArrivalWeight, 2300000);
   assert.equal(job.workflowStage, 'ready_for_site_weights');
   assert.equal(job.siteWeighInByName, 'HIM');
   assert.equal(job.accessCapture.explanation, 'Ngomeni Trials');
@@ -202,6 +225,6 @@ test('PO0017 first weight 2300 persists on the same trip through failure, retry,
   await process(second);
   const finished = f.records.get('deliveryOrders/' + id);
   assert.equal(finished.status, 'SITE_WEIGHED_OUT');
-  assert.equal(finished.siteNetWeight, 1300);
+  assert.equal(finished.siteNetWeight, 1300000);
   assert.equal((await f.repository.all('deliveryOrders')).length, 1);
 });

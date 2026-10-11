@@ -1,3 +1,4 @@
+const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { createHash } = require('node:crypto');
 const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
@@ -169,7 +170,7 @@ function createProcessor({ repository, deliveries, config }) {
     const driverValue = normalize(row[config.driverField || 'DIGER3_ISIM']);
     let capturedDriver = driverValue ? unique(drivers.filter(d =>
       [d.id, d.nationalId, d.licenseNumber, d.name, d.fullName].some(v => normalize(v) === driverValue)), 'AMBIGUOUS_DRIVER') : null;
-    const jobs = await repository.all('deliveryOrders');
+    const jobs = (await repository.all('deliveryOrders')).map(toTonnes);
     const orders = await repository.all('purchaseOrders');
     const orderFor = job => orders.find(order => (job.purchaseOrderId && order.id === job.purchaseOrderId)
       || (job.poNumber && normalize(order.poNumber) === normalize(job.poNumber)));
@@ -241,7 +242,7 @@ function createProcessor({ repository, deliveries, config }) {
     // even if the process dies between a job write and acknowledging the event.
     if (!job.accessBridgeKey) {
       if (job.siteWeighInWeight != null && Math.abs(Number(job.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('APP_WEIGHT_CONFLICT');
-      job = await repository.bind(job.id, weights.key, config.sourceId, siteId);
+      job = toTonnes(await repository.bind(job.id, weights.key, config.sourceId, siteId));
     } else if (job.accessBridgeKey !== weights.key) throw blocked('JOB_ALREADY_BOUND');
     if (job.siteWeighInWeight != null && Math.abs(Number(job.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('FIRST_WEIGHT_CHANGED');
     if (job.siteWeighOutWeight != null) {

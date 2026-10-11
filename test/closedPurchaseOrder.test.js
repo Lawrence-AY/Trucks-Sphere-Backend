@@ -7,7 +7,7 @@ test('job creation rejects closed purchase orders before assignment or ID alloca
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/modules/delivery-orders/service'), 'utf8'), {
    module, exports: module.exports, console: { error() {} },
-   require: name => name === '../../../config/firebase' ? { db: { collection: () => ({ doc: () => ({ get: async () => ({ exists: true, data: () => ({ status }) }) }) }) } } : {},
+   require: name => name.endsWith('deliveryWeightUnits') ? require('../src/utils/deliveryWeightUnits') : name.endsWith('storeReceiving') ? require('../src/modules/delivery-orders/storeReceiving') : name === '../../../config/firebase' ? { db: { collection: () => ({ doc: () => ({ get: async () => ({ exists: true, data: () => ({ status }) }) }) }) } } : {},
   });
   await assert.rejects(module.exports.create({ purchaseOrderId: 'po1' }), { code: 'PURCHASE_ORDER_CLOSED', statusCode: 409 });
  }

@@ -1,3 +1,4 @@
+const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { db } = require('../../../config/firebase');
 const stockService = require('../stocks/service');
 const snapshotStore = require('../../utils/snapshotStore');
@@ -12,7 +13,7 @@ async function transition(id, input, actor, stage) {
   const committed = await db.runTransaction(async tx => {
     const doc = await tx.get(ref);
     if (!doc.exists) throw Object.assign(new Error('Delivery not found.'), { statusCode: 404 });
-    const job = { ...doc.data(), id: doc.id };
+    const job = { ...toTonnes(doc.data()), id: doc.id };
     workflow.assertAccess(job, actor);
     const decisionKey = stage === 'receiving' ? 'storeReceiving' : 'storeQualityInspection';
     if (job[decisionKey]?.requestId === input.requestId && job[decisionKey]?.actorUid === actor.uid) return { job };
