@@ -19,10 +19,16 @@ function fixture(jobs = [scheduled]) {
     deliveryOrders: structuredClone(jobs), vehicles: [{ id: 'T001', plateNumber: first.PLAKA }],
     drivers: [{ id: 'D001', nationalId: '12345678', name: 'Driver' }], sites: [{ id: 'S001', name: 'Site', weighbridgeWeightUnit: 'kg' }],
     purchaseOrders: [{ id: 'PO1', poNumber: 'POMAT001/V001', vendorId: 'V001', siteId: 'S001', status: 'open', materialName: 'Sand' }],
+    vendors: [], materials: [],
   };
   const writes = [];
   const repository = {
-    all: async name => structuredClone(data[name]),
+    all: async name => structuredClone(data[name] || []),
+    async create(name, id, record) {
+      data[name] = data[name] || [];
+      data[name].push({ ...record, id });
+      return { ...record, id };
+    },
     async bind(id, key) { const job = data.deliveryOrders.find(j => j.id === id); job.accessBridgeKey = key; return structuredClone(job); },
   };
   const deliveries = {
@@ -262,18 +268,31 @@ test('a vehicle ID cannot override a conflicting scheduled plate or a pre-dispat
   }
 });
 
-test('custom captures require a registered driver and one open order before any writes', async () => {
-  for (const reason of ['REGISTERED_DRIVER_REQUIRED', 'PURCHASE_ORDER_REQUIRED', 'PURCHASE_ORDER_CLOSED', 'AMBIGUOUS_PURCHASE_ORDER', 'WEIGHT_UNIT_REQUIRED']) {
-    const f = fixture([]);
-    const row = { ...first, DIGER3_ISIM: 'Driver', DIGER5_ISIM: 'POMAT001/V001' };
-    if (reason === 'REGISTERED_DRIVER_REQUIRED') row.DIGER3_ISIM = '';
-    if (reason === 'PURCHASE_ORDER_REQUIRED') row.DIGER5_ISIM = 'UNKNOWN';
-    if (reason === 'PURCHASE_ORDER_CLOSED') f.data.purchaseOrders[0].status = 'closed';
-    if (reason === 'AMBIGUOUS_PURCHASE_ORDER') f.data.purchaseOrders.push({ ...f.data.purchaseOrders[0], id: 'PO2' });
-    if (reason === 'WEIGHT_UNIT_REQUIRED') delete f.data.sites[0].weighbridgeWeightUnit;
-    await assert.rejects(f.process(f.event(row)), { code: reason });
-    assert.equal(f.writes.length, 0);
-  }
+test('custom captures auto-provision entities and only block on ambiguity or a missing driver', async () => {
+  // A missing driver name still blocks without any writes.
+  const noDriver = fixture([]);
+  await assert.rejects(noDriver.process(noDriver.event({ ...first, DIGER3_ISIM: '' })), { code: 'DRIVER_NAME_REQUIRED' });
+  assert.equal(noDriver.writes.length, 0);
+
+  // Multiple matching open POs remain ambiguous and write nothing.
+  const ambiguous = fixture([]);
+  ambiguous.data.purchaseOrders.push({ ...ambiguous.data.purchaseOrders[0], id: 'PO2' });
+  await assert.rejects(ambiguous.process(ambiguous.event({ ...first, DIGER3_ISIM: 'Driver', DIGER5_ISIM: 'POMAT001/V001' })), { code: 'AMBIGUOUS_PURCHASE_ORDER' });
+  assert.equal(ambiguous.writes.length, 0);
+
+  // With no registered truck, driver, vendor, material or PO, everything is
+  // auto-provisioned and the capture resolves into a custom unscheduled job.
+  const auto = fixture([]);
+  auto.data.vehicles = []; auto.data.drivers = []; auto.data.sites = []; auto.data.purchaseOrders = [];
+  const outcome = await auto.process(auto.event({ ...first, DIGER3_ISIM: 'New Driver', DIGER2_ISIM: 'MANDA BAY', MALZEME_ADI: 'MURRAM', FIRMA_ADI: 'HINDI GEN AGENCY LTD' }));
+  assert.equal(outcome.status, 'processed');
+  assert.equal(auto.data.deliveryOrders.length, 1);
+  assert.equal(auto.data.deliveryOrders[0].isUnscheduled, true);
+  assert.ok(auto.data.vehicles.length >= 1);
+  assert.ok(auto.data.drivers.length >= 1);
+  assert.ok(auto.data.vendors.length >= 1);
+  assert.ok(auto.data.materials.length >= 1);
+  assert.ok(auto.data.purchaseOrders.length >= 1);
 });
 
 test('custom capture resolves destination and material without an explicit PO', async () => {

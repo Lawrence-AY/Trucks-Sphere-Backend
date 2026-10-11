@@ -4,6 +4,7 @@ const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
 const normalize = value => String(value ?? '').trim().toUpperCase();
 const plate = value => normalize(value).replace(/[\s-]/g, '');
 const blocked = code => Object.assign(new Error(code), { code });
+const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const CAPTURE_CLOCK_SKEW_MS = 120000;
 
 function scheduleExistedAtCapture(job, firstAt, observedAt) {
@@ -94,6 +95,68 @@ function customOrder(orders, row, config) {
   return order;
 }
 
+// A custom (unscheduled) capture still needs a truck, driver, vendor, site,
+// material and an open purchase order before it can become a delivery order.
+// Auto-provision whatever is missing so in-yard trucks flow through without
+// manual data entry. IDs are stable, so retries and repeat deliveries reuse them.
+async function resolveCustomCapture(repository, row, config, vehicle, capturedDriver) {
+  const toCreate = [];
+  const now = new Date().toISOString();
+  const stableId = (collection, value) => `AB-${hash([config.sourceId, collection, normalize(value)]).slice(0, 24)}`;
+
+  if (!vehicle) {
+    vehicle = { id: `AB-${plate(row.PLAKA)}`, plateNumber: plate(row.PLAKA), registrationNumber: plate(row.PLAKA), status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    toCreate.push(['vehicles', vehicle.id, vehicle]);
+  }
+
+  const vendors = (await repository.all('vendors')) || [];
+  const vendorName = String(row.FIRMA_ADI || '').trim() || `Unspecified vendor (${config.sourceId})`;
+  let vendor = vendors.find(v => [v.name, v.companyName, v.vendorName].some(n => normalize(n) === normalize(vendorName)));
+  if (!vendor) {
+    vendor = { id: stableId('vendors', vendorName), name: vendorName, companyName: vendorName, status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    toCreate.push(['vendors', vendor.id, vendor]);
+  }
+
+  if (!capturedDriver) {
+    const name = String(row[config.driverField || 'DIGER3_ISIM'] || '').trim();
+    if (!name) throw blocked('DRIVER_NAME_REQUIRED');
+    capturedDriver = { id: stableId('drivers', name), name, fullName: name, vendorId: vendor.id, status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    toCreate.push(['drivers', capturedDriver.id, capturedDriver]);
+  }
+
+  const sites = (await repository.all('sites')) || [];
+  const siteName = String(row.DIGER2_ISIM || '').trim() || `Unspecified site (${config.sourceId})`;
+  let site = sites.find(s => [s.id, s.name, s.siteName].some(n => normalize(n) === normalize(siteName)));
+  if (!site) {
+    site = { id: stableId('sites', siteName), name: siteName, siteName, weighbridgeWeightUnit: 'kg', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    toCreate.push(['sites', site.id, site]);
+  }
+
+  const materials = (await repository.all('materials')) || [];
+  const materialName = String(row.MALZEME_ADI || row.MALZEME_KODU || '').trim() || 'Unspecified material';
+  const materialCode = String(row.MALZEME_KODU || '').trim();
+  let material = materials.find(m => (materialCode && [m.id, m.code, m.materialCode].some(n => normalize(n) === normalize(materialCode)))
+    || [m.name, m.materialName].some(n => normalize(n) === normalize(materialName)));
+  if (!material) {
+    material = { id: stableId('materials', materialName), name: materialName, materialName, code: materialCode, unit: 'tonnes', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    toCreate.push(['materials', material.id, material]);
+  }
+
+  const orders = (await repository.all('purchaseOrders')) || [];
+  let order;
+  try { order = customOrder(orders, row, config); }
+  catch (error) { if (error.code !== 'PURCHASE_ORDER_REQUIRED' && error.code !== 'PURCHASE_ORDER_CLOSED') throw error; }
+  if (!order) {
+    const poId = stableId('purchaseOrders', `${vendorName}|${materialName}|${siteName}`);
+    order = { id: poId, poNumber: poId, vendorId: vendor.id, vendorName: vendor.name || vendor.companyName,
+      siteId: site.id, siteName: site.name || site.siteName,
+      materialId: material.id, materialName: material.name || material.materialName,
+      unit: 'tonnes', status: 'open', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: now };
+    toCreate.push(['purchaseOrders', order.id, order]);
+  }
+  return { vehicle, driver: capturedDriver, order, toCreate };
+}
+
 // Repository injection keeps matching testable without contacting production Firebase.
 function createProcessor({ repository, deliveries, config }) {
   return async event => {
@@ -101,11 +164,10 @@ function createProcessor({ repository, deliveries, config }) {
     const row = JSON.parse(event.payload);
     const identity = captureIdentity(row, config);
     const vehicles = await repository.all('vehicles');
-    const vehicle = unique(vehicles.filter(v => plate(v.registrationNumber || v.plateNumber) === plate(row.PLAKA)), 'AMBIGUOUS_TRUCK');
-    if (!vehicle) throw blocked('UNKNOWN_TRUCK');
+    let vehicle = unique(vehicles.filter(v => plate(v.registrationNumber || v.plateNumber) === plate(row.PLAKA)), 'AMBIGUOUS_TRUCK');
     const drivers = await repository.all('drivers');
     const driverValue = normalize(row[config.driverField || 'DIGER3_ISIM']);
-    const capturedDriver = driverValue ? unique(drivers.filter(d =>
+    let capturedDriver = driverValue ? unique(drivers.filter(d =>
       [d.id, d.nationalId, d.licenseNumber, d.name, d.fullName].some(v => normalize(v) === driverValue)), 'AMBIGUOUS_DRIVER') : null;
     const jobs = await repository.all('deliveryOrders');
     const orders = await repository.all('purchaseOrders');
@@ -126,10 +188,12 @@ function createProcessor({ repository, deliveries, config }) {
     let newOrder;
     if (!job) {
       // A different trip for a busy truck must never become a second custom job.
-      if (jobs.some(j => isActiveJob(j.status) && (j.vehicleId === vehicle.id || plate(j.plateNumber) === plate(row.PLAKA)))) throw blocked('UNMATCHED_SCHEDULE');
-      if (!capturedDriver) throw blocked('REGISTERED_DRIVER_REQUIRED');
+      if (jobs.some(j => isActiveJob(j.status) && (j.vehicleId === vehicle?.id || plate(j.plateNumber) === plate(row.PLAKA)))) throw blocked('UNMATCHED_SCHEDULE');
+      const custom = await resolveCustomCapture(repository, row, config, vehicle, capturedDriver);
+      vehicle = custom.vehicle;
+      capturedDriver = custom.driver;
       if (jobs.some(j => isActiveJob(j.status) && j.driverId === capturedDriver.id)) throw blocked('ACTIVE_JOB_RESOURCE_CONFLICT');
-      newOrder = customOrder(orders, row, config);
+      newOrder = custom.order;
       job = {
         purchaseOrderId: newOrder.id, poNumber: newOrder.poNumber,
         vendorId: newOrder.vendorId, vendorName: newOrder.vendorName || '', companyName: newOrder.companyName || newOrder.vendorName || '',
@@ -145,6 +209,11 @@ function createProcessor({ repository, deliveries, config }) {
       };
       // Warehouse dispatches require their existing shipment/product references.
       if (isWarehouseReceipt(newOrder) || normalize(job.materialSource) === 'WAREHOUSE') throw blocked('WAREHOUSE_SHIPMENT_REQUIRED');
+      // Persist auto-provisioned entities before the job references them.
+      for (const [collection, id, record] of custom.toCreate) await repository.create(collection, id, record);
+    } else if (!vehicle) {
+      // A scheduled job matched by plate still needs its truck registered.
+      throw blocked('UNKNOWN_TRUCK');
     }
     if ((plate(job.plateNumber) && plate(job.plateNumber) !== plate(row.PLAKA))
       || (job.vehicleId && job.vehicleId !== vehicle.id)

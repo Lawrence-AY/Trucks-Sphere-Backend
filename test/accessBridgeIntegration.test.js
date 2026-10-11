@@ -60,6 +60,10 @@ function fixture() {
   const deliveries = load('../src/modules/delivery-orders/service');
   const repository = {
     all: async name => (await collection(name).get()).docs.map(doc => ({ ...doc.data(), id: doc.id })),
+    async create(name, id, record) {
+      await collection(name).doc(id).set({ ...record, id });
+      return { ...record, id };
+    },
     async bind(id, key, source, siteId) {
       const doc = collection('deliveryOrders').doc(id);
       await doc.update({ accessBridgeKey: key, accessBridgeSource: source, siteId });

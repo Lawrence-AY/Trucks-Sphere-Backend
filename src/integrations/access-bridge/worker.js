@@ -15,6 +15,11 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
       const snapshot = await db.collection(collection).get();
       return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
     },
+    async create(collection, id, record) {
+      const ref = db.collection(collection).doc(id);
+      await ref.set({ ...record, id });
+      return { ...record, id };
+    },
     async bind(id, key, source, siteId) {
       const ref = db.collection('deliveryOrders').doc(id);
       return db.runTransaction(async transaction => {
