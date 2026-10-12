@@ -315,3 +315,36 @@ test('warehouse captures require a registered truck too', async () => {
   await assert.rejects(f.process(f.event(second)), { code: 'UNKNOWN_TRUCK' });
   assert.equal(f.writes.length, 0);
 });
+
+test('duplicate driver names resolve to the registered profile instead of stalling', async () => {
+  const f = fixture([]);
+  f.data.vehicles = []; f.data.drivers = [
+    { id: 'D-stub', name: 'Onesmus Kasyoka', registrationIncomplete: true, bridgeCreated: true },
+    { id: 'D-reg', name: 'Onesmus Kasyoka', fullName: 'Onesmus Kasyoka', nationalId: '99999999' },
+  ];
+  f.data.sites = []; f.data.purchaseOrders = []; f.data.materials = []; f.data.vendors = [];
+  const row = { ...first, DIGER3_ISIM: 'Onesmus Kasyoka', DIGER2_ISIM: 'MANDA BAY', MALZEME_ADI: 'MURRAM', FIRMA_ADI: 'HINDI GEN AGENCY LTD' };
+  await f.process(f.event(row));
+  assert.equal(f.data.deliveryOrders.length, 1);
+  assert.equal(f.data.deliveryOrders[0].driverId, 'D-reg');
+  assert.equal(f.data.deliveryOrders[0].isUnscheduled, true);
+});
+
+test('completed weigh-out attaches to an already weighed-in job even when the first-weigh time drifted', async () => {
+  const f = fixture();
+  await f.process(f.event(first)); // weigh-in records siteWeighInWeight + accessBridgeKey
+  // Completed record with a drifted first-weigh time -> different identity key,
+  // so it cannot match via accessBridgeKey; it must still weigh out.
+  const drifted = { ...second, SAAT1: '1899-12-30T10:00:30' };
+  await f.process(f.event(drifted));
+  assert.equal(f.data.deliveryOrders[0].siteWeighOutWeight, 10);
+  assert.equal(f.data.deliveryOrders[0].siteNetWeight, 20);
+  assert.equal(f.data.deliveryOrders[0].quantityDelivered, 20);
+});
+
+test('weigh-out does not fire for a waiting record with no second weigh', async () => {
+  const f = fixture();
+  await f.process(f.event(first));
+  assert.equal(f.data.deliveryOrders[0].siteWeighInWeight, 30);
+  assert.equal(f.data.deliveryOrders[0].siteWeighOutWeight, undefined);
+});

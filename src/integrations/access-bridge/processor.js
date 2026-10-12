@@ -7,6 +7,10 @@ const plate = value => normalize(value).replace(/[\s-]/g, '');
 const blocked = code => Object.assign(new Error(code), { code });
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const CAPTURE_CLOCK_SKEW_MS = 120000;
+// A completed weigh-out is minutes after its weigh-in; allow a full day so the
+// exit weigh still finds the job that recorded the entry weigh even when the
+// source clock skews or the two rows store slightly different first-weigh times.
+const WEIGH_OUT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function scheduleExistedAtCapture(job, firstAt, observedAt) {
   if (!job.createdAt || Date.parse(job.createdAt) <= Date.parse(firstAt)) return true;
@@ -53,6 +57,19 @@ function capture(row, config, weightUnit) {
 function unique(items, code) {
   if (items.length > 1) throw blocked(code);
   return items[0];
+}
+
+// Duplicate driver records (a bridge-created stub plus a manually registered
+// profile) share a name but must not stall the whole weighbridge. Prefer the
+// most complete record, then a stable id, so unscheduled captures resolve.
+function pickDriver(drivers, driverValue) {
+  const matches = drivers.filter(d =>
+    [d.id, d.nationalId, d.licenseNumber, d.name, d.fullName].some(v => normalize(v) === driverValue));
+  if (matches.length <= 1) return matches[0] || null;
+  return matches.slice().sort((a, b) => {
+    const complete = d => (d.registrationIncomplete ? 0 : 1);
+    return complete(b) - complete(a) || String(a.id).localeCompare(String(b.id));
+  })[0];
 }
 
 function matchesContext(job, row, config) {
@@ -168,8 +185,7 @@ function createProcessor({ repository, deliveries, config }) {
     let vehicle = unique(vehicles.filter(v => plate(v.registrationNumber || v.plateNumber) === plate(row.PLAKA)), 'AMBIGUOUS_TRUCK');
     const drivers = await repository.all('drivers');
     const driverValue = normalize(row[config.driverField || 'DIGER3_ISIM']);
-    let capturedDriver = driverValue ? unique(drivers.filter(d =>
-      [d.id, d.nationalId, d.licenseNumber, d.name, d.fullName].some(v => normalize(v) === driverValue)), 'AMBIGUOUS_DRIVER') : null;
+    let capturedDriver = driverValue ? pickDriver(drivers, driverValue) : null;
     const jobs = (await repository.all('deliveryOrders')).map(toTonnes);
     const orders = await repository.all('purchaseOrders');
     const orderFor = job => orders.find(order => (job.purchaseOrderId && order.id === job.purchaseOrderId)
@@ -177,6 +193,36 @@ function createProcessor({ repository, deliveries, config }) {
     const contextMatches = job => matchesContext({ ...job, poNumber: job.poNumber || orderFor(job)?.poNumber },
       capturedDriver && capturedDriver.id === job.driverId
         ? { ...row, [config.driverField || 'DIGER3_ISIM']: job.driverId } : row, config);
+    // A completed weigh-out must never be gated by schedule/PO/driver matching:
+    // the truck physically left, so attach the exit weigh to whichever job
+    // already recorded its weigh-in for this plate around the same first-weigh
+    // time. Schedule matching stays as non-blocking enrichment for weigh-in only.
+    const hasSecondWeigh = row.TARTIM2 != null && row.TARTIM2 !== '' && Number(row.TARTIM2) !== 0;
+    if (hasSecondWeigh) {
+      const weighOutTargets = jobs.filter(j =>
+        plate(j.plateNumber) === plate(row.PLAKA)
+        && j.siteWeighInWeight != null && j.siteWeighOutWeight == null
+        && j.siteWeighInAt && Math.abs(Date.parse(j.siteWeighInAt) - Date.parse(identity.firstAt)) <= WEIGH_OUT_MATCH_WINDOW_MS);
+      if (weighOutTargets.length) {
+        const target = weighOutTargets.slice().sort((a, b) =>
+          Math.abs(Date.parse(a.siteWeighInAt) - Date.parse(identity.firstAt))
+          - Math.abs(Date.parse(b.siteWeighInAt) - Date.parse(identity.firstAt)))[0];
+        const targetSiteId = target.siteId || '';
+        const allSites = await repository.all('sites');
+        const targetSite = allSites.find(s => s.id === targetSiteId);
+        const weights = capture(row, config, config.sourceWeightUnit || targetSite?.weighbridgeWeightUnit);
+        if (Math.abs(Number(target.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('FIRST_WEIGHT_CHANGED');
+        const actor = String(row.OPERATOR_ADI || 'Access weighbridge');
+        const net = weights.first - weights.second;
+        const updated = await deliveries.updateFresh(target.id, {
+          siteWeighOutWeight: weights.second, siteWeighOutAt: weights.secondAt, siteNetWeight: net,
+          ...(isWarehouseReceipt(target) ? {} : { quantityDelivered: net }),
+          receivedAt: weights.secondAt, receivedBy: actor, receivedLocation: target.siteName || '',
+          siteWeighOutByName: actor, status: 'SITE_WEIGHED_OUT',
+        });
+        return { status: 'processed', jobId: target.id, receiptNoteId: updated.receiptNoteId || null };
+      }
+    }
     let job = unique(jobs.filter(j => j.accessBridgeKey === identity.key), 'DUPLICATE_CAPTURE');
     if (!job) {
       const candidates = jobs.filter(j => (isSiteSchedule(j) || (j.siteWeighInAt && Math.abs(Date.parse(j.siteWeighInAt) - Date.parse(identity.firstAt)) <= CAPTURE_CLOCK_SKEW_MS))

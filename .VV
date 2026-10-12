@@ -1,0 +1,72 @@
+# .env
+PORT=5000
+
+# Firebase Storage bucket
+STORAGE_BUCKET=trucksphere-demo.firebasestorage.app
+
+# SMS Gateway 
+SMS_BASE_URL=https://smsportal.hostpinnacle.co.ke/SMSApi/send
+SMS_USERID=andrewmotindi
+SMS_PASSWORD=cz1yKFt8
+SMS_SENDERID=SPADESATLAS
+SMS_MSG_TYPE=text
+SMS_DUPLICATE_CHECK=true
+SMS_OUTPUT=json
+ 
+ 
+# Firebase Web API Key (for client-side auth)
+FIREBASE_API_KEY=AIzaSyASBSTfa68bu6gZpnPDKlXgygIPovRgkpI
+
+# Firebase Admin SDK Service Account 
+FIREBASE_TYPE=service_account
+FIREBASE_PROJECT_ID=trucksphere-demo
+FIREBASE_PRIVATE_KEY_ID=3397e3dae7aefcdfee94b7f7cb2da98c8af76bdf
+FIREBASE_PRIVATE_KEY=  -----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDBR/mhqR69SO2X\nXpnsDJge236/GvNoiJxU6UzUvxW9lXAF364O6fJ9BBoPvGr9w1BJ0l4yXf18rmlH\nzFhHKumJqM3LI5CgAUN2t3qTIj+e6I9VhbYetTxoGENTS38OVNBKJaQ/DGEiPbYE\n+AdImLk7Isz0Q8XL89Fte4oVgNSDiN38yGzu9Di+TwdnmNBRRvxEudJtFhaAINav\nUbUMWZtUUQQ/yXvRu8/nt+goGkUKqjfeqStQRVwu/2YeTVNRuouafPp00zIsoIjZ\n4qapzBOQJL5Isg7UwGrsVF0JNjvPPztrx5TFvAQjjxlobvwWcljxcuXSJkGlrz/Y\nSybQqIFnAgMBAAECggEAKlImON2dG3kyfOh775G6ZVdOY231SjhPctA6wIKusfpc\nswyNQjq7m+AgDL4G91Wi6OclNQYbkQdnig8WbU7aIAhUN1ysODzOltoJ/tmK8LKf\nX+yNOiAY//oAE+b+BRdRHEstsZh2VFcK2f+tKJo4RNiT5BBK6SOUAdMBI0A4SCx3\n+uWHIbImTg0iJIcSJ+6rSED9mOoLPFna+U+1K56hN69lxrlnDif4wfAXEje12CsH\nvEluBY7Ks/n4iNnRylyJAMvy6Y5M8pLYPlLOHq7+BDH3hmTdvF16gLYVWlnG9tnP\nFO/HWkqTSMz7D2sLbJok2RTzU77NMSUJ83RhedpWwQKBgQD1mCbI66c1nqcLU6zX\nno4nVFCINM6sa/cbzr/TAKxBA4ZSMJt5SAZrjwAW/8WyzDCnNQUWstSTs1Rzc1Ps\nHvBsXOSCqWrcXv9ktcjsMGz/0I4D1D2jptD1vnfduuAoFuYsep/Irn+8DSGd5/yf\nhNnY/xZJywjLvVarIkH/XGANVwKBgQDJeGgW19soueiPnkz4wGh+5kYBb3tBATKg\nT5eVRoQgy3Jc4+pLVPS+C9lx2i2t+BlyRqU3fevNG5ItYa6tzgZlXNVzBbjIiGEe\nIEObsR5Xluodvo3R8y9zf7MSgvqbbvom+gY3vAEh9RkspJ+x9LiMu9jfqeHlFfCy\n0NM50zGScQKBgErIjebYew4ExXDZheQST88CCZOwIM64AYLiLd8ecVVKsXgNfQot\nOGdAIBLgx15udtIzft0ujzR6gti04XUg5qzYjGyNEhEQjEwqXogtJsOuyc+4rRxM\nC40I9o75/I+4iVY58LW3DQZCKV5f6bjZR0ygQDUwMfl4Kg/qWpZblpP5AoGAMFs4\nEJOKxMGqch46t1HnQt4eW2XYnYeeESBJb8jXGc/7CRSjPaWMgLjzXgJSCHmOEgGm\n0iTlHfvKIB5cANd8bYPUr6Dl8yvYs5Rm5c2jTL6qPq1n+MZ30y8JWh4Z7Ii8ffJw\n35u+YdokSrTQp7PnP9Aug7CQyZ10glbg+/YW5eECgYBLlZSFsGCqSp1ZN8C4okZZ\nwn/weTVvg04F3K1qH+skAgTTd0RvnBTnizFxnUby++0KiraPoy9DAnmf1yV/ILet\n5bFyoKHH/3giLFWdDU8oQ/Syo/KvN4gkjctdkHqPcRDKUTqUsW+h1TPecbP5CqGs\nOCdEmWjQQ4d6JQ2NhGQMvQ==\n-----END PRIVATE KEY-----\n,
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@trucksphere-demo.iam.gserviceaccount.com
+FIREBASE_CLIENT_ID=118011460137561457052
+FIREBASE_AUTH_URI=https://accounts.google.com/o/oauth2/auth
+FIREBASE_TOKEN_URI=https://oauth2.googleapis.com/token
+FIREBASE_AUTH_PROVIDER_X509_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
+FIREBASE_CLIENT_X509_CERT_URL=https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40trucksphere-demo.iam.gserviceaccount.com
+FIREBASE_UNIVERSE_DOMAIN=googleapis.com
+
+#Encryption settings for sensitive data
+ENCRYPTION_SECRET=gFbPLQYFjBwefgvwxmvzqkvd7sHqUMbfvcVuEZ14cDgvQJbjlzsUFEhg6DySEsaf
+ENCRYPTION_SALT=VnoxHAWF4ffeev7z9YKibRyB3FFhqEfzfVMxDNJWcmw
+
+IPRS_URL=https://iprs.cowriex.io
+IPRS_USERNAME=AyedosCowrie
+IPRS_PASSWORD=zc6xBt
+IPRS_ENABLED=false
+IPRS_SESSION=/api/v1/auth/session
+IPRS_VERIFY_ID=/api/v1/iprs/verify/id
+BACKORDERS_ENABLED=false
+
+# GIR/FMS W250 integration (test environment)
+GIR_FMS_BASE_URL=https://test-w250-nodespaceglobal-ke-gir.klervi.net
+GIR_FMS_API_KEY=25ba58fb3adaddc76824d87fc1e1fcf9
+
+# KRA KYC integration
+KRA_ENABLE=false
+KRA_API_BASE_URL=https://kra.cowriex.io
+KRA_API_KEY=6c1b58f62c854c93fc42efc543ef2083540cef0a1d573bc2a7657d30ce3844fa
+KRA_API_SECRET=ed6a1d7620f23981e8099930b6c84ac1b2a3c1bb9eb1553f9a3aef94862d27b1
+KRA_PIN_VALIDATE_PATH=/api/kra/pin
+KRA_SESSION_PATH=/api/kra/session
+
+# Odoo 19 backend synchronization (enable after configuring and importing modules)
+ODOO_ENABLED=true
+ODOO_BASE_URL=https://spadestest-duplicate.odoo.com
+ODOO_DATABASE=spadestest-duplicate
+ODOO_API_KEY=84c3a0ef54cfb6d796490b9bbe3cd556eff32628
+ODOO_MAPPING_PROFILE=spadestest-duplicate
+
+
+TARTIM_ENABLED=true
+TARTIM_SOURCE_ID=Tunaylar-WinScale
+TARTIM_API_KEY=daf0c0a05804e9c199ad8ee977bad9aae9f1141493bd40b54ca03d88e39ef77b
+TARTIM_UTC_OFFSET=+03:00
+TARTIM_POLL_MS=3000
+TARTIM_WEIGHING_MODE=unloading
+
+TARTIM_SOURCE_WEIGHT_UNIT=kg
