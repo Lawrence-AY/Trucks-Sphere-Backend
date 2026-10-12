@@ -1,5 +1,6 @@
 const purchase_ordersService = require('./service');
 const { db } = require('../../../config/firebase');
+const snapshotStore = require('../../utils/snapshotStore');
 const { MANAGEMENT_ROLES, normalizeRole } = require('../../middleware/authorizationMiddleware');
 
 async function getUserEntity(user) {
@@ -28,6 +29,7 @@ function canViewPurchaseOrder(item, user, entity) {
   const role = normalizeRole(user?.role);
   if (isManagement(role)) return true;
   if (role === 'vendor') return matchesId(item?.vendorId, entity?.vendorId || user?.entityId);
+  if (role === 'storeman') return Boolean(item?.isWarehouseMaterial);
   if (role === 'operator_quarry' && item?.isWarehouseMaterial) return false;
   // Purchase orders no longer carry a quarry or site assignment. Both
   // operational teams must be able to select any active PO when creating a
@@ -39,7 +41,7 @@ function canViewPurchaseOrder(item, user, entity) {
 exports.findAll = async (req, res, next) => {
   try {
     const { role } = req.user;
-    let scopedQuery = { ...req.query };
+    let scopedQuery = { ...req.query, page: 1, limit: Math.max(snapshotStore.getAll('purchaseOrders').length, 1) };
     if (normalizeRole(role) === 'operator_quarry') scopedQuery.excludeWarehouse = true;
     const userEntity = await getUserEntity(req.user);
 
@@ -54,7 +56,9 @@ exports.findAll = async (req, res, next) => {
 
     const items = await purchase_ordersService.findAll(scopedQuery);
     const data = items.data.filter((item) => canViewPurchaseOrder(item, req.user, userEntity));
-    res.json({ ...items, data, total: data.length, totalPages: 1 });
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.max(Number(req.query.limit) || data.length || 1, 1);
+    res.json({ ...items, data: data.slice((page - 1) * limit, page * limit), total: data.length, page, totalPages: Math.ceil(data.length / limit) });
   } catch (err) { next(err); }
 };
 

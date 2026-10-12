@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
-function loadService() {
+function loadService(purchaseOrders = []) {
   const records = {
+    purchaseOrders,
     vendors: [{ id: 'V001', companyName: 'Vendor' }],
     materials: [
       { id: 'MAT001', name: 'Warehouse item', isWarehouseMaterial: true },
@@ -20,7 +21,7 @@ function loadService() {
       get: async () => ({ exists: false }), set: async () => {},
     }) }) } },
     '../../utils/snapshotStore': { getAll: (name) => records[name] || [] },
-    '../../utils/counterService': { getNextId: async () => 'PO0001' },
+    '../../utils/counterService': { getNextId: async () => 'PO0001', peekNextId: async () => 'PO0001' },
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/modules/purchase-orders/service.js'), 'utf8'), {
     module, require: (name) => dependencies[name], console: { error() {} },
@@ -63,4 +64,25 @@ test('PO units follow each saved material measurement type despite client overri
   ] });
   assert.equal(order.unit, 'Tonnes');
   assert.deepEqual(Array.from(order.materials, (line) => line.unit), ['Tonnes', 'Pieces']);
+});
+
+ test('purchase orders use PO####/V### and warehouse references retain WH###/V###', async () => {
+   for (const materialId of ['MAT001', 'MAT002']) {
+     const service = loadService();
+     const order = await service.create({ vendorId: 'V001', materialId, quantity: 10, poNumber: 'POMAT999/V001' });
+     const reference = materialId === 'MAT001' ? 'WH001' : 'PO0001';
+     assert.equal(order.poNumber, `${reference}/V001`);
+     assert.equal(order.id, `${reference}-V001`);
+     assert.equal(await service.previewNumber('V001', materialId), `${reference}/V001`);
+   }
+ });
+
+test('order selectors receive all orders by default and explicit pagination still works', () => {
+  const orders = Array.from({length: 75}, (_, i) => ({id: 'PO' + i, status: 'open'}));
+  const service = loadService(orders);
+  assert.equal(service.findAll().data.length, 75);
+  const page = service.findAll({page: 2, limit: 50});
+  assert.equal(page.data.length, 25);
+  assert.equal(page.total, 75);
+  assert.equal(page.totalPages, 2);
 });

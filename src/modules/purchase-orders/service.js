@@ -54,7 +54,7 @@ const purchase_ordersService = {
    * findAll reads from the in-memory snapshot cache.
    */
   findAll(query = {}) {
-    const { search, status, vendorId, quarryId, siteId, page = 1, limit = 50 } = query;
+    const { search, status, vendorId, quarryId, siteId, page = 1, limit = Math.max(snapshotStore.getAll(COLLECTION_NAME).length, 1) } = query;
 
     let results = snapshotStore.getAll(COLLECTION_NAME);
 
@@ -171,11 +171,11 @@ const purchase_ordersService = {
       vendorIdShort = normalizeVendorId(vendor.vendorId || vendor.id || payload.vendorId);
 
       // Warehouse-material orders use WH### so their source is obvious.
+      // Other purchase orders use PO####; both use the shared counter.
       // New PO numbering deliberately starts at PO0001, independently of
       // the retired POMAT sequence.
-      const poPrefix = material.isWarehouseMaterial ? 'WH' : 'PO';
       const sequence = await getNextId('purchase_order_v2');
-      const poNumber = `${poPrefix}${String(sequence).replace(/^PO/i, '')}/${vendorIdShort}`;
+      const poNumber = `${material.isWarehouseMaterial ? 'WH' : 'PO'}${String(Number(String(sequence).replace(/^PO/i, ''))).padStart(material.isWarehouseMaterial ? 4 : 4, '0')}/${vendorIdShort}`;
 
       const docId = poNumber.replace(/\//g, '-');
       const docRef = collectionRef.doc(docId);
@@ -256,8 +256,7 @@ const purchase_ordersService = {
       const vendorShort = normalizeVendorId(vendor?.vendorId || vendor?.id || vendorId);
       const sequence = await peekNextId('purchase_order_v2');
       const material = findReference('materials', materialId);
-      const prefix = material?.isWarehouseMaterial ? 'WH' : 'PO';
-      const formatted = `${prefix}${String(sequence).replace(/^PO/i, '')}`;
+      const formatted = `${material?.isWarehouseMaterial ? 'WH' : 'PO'}${String(Number(String(sequence).replace(/^PO/i, ''))).padStart(material?.isWarehouseMaterial ? 3 : 4, '0')}`;
       return vendorShort ? `${formatted}/${vendorShort}` : formatted;
     } catch (error) {
       console.error('purchase_ordersService.previewNumber error:', error);
