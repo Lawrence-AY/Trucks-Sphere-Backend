@@ -122,15 +122,17 @@ test('scheduled first weighing tolerates two minutes of Access clock skew after 
   assert.equal(f.data.deliveryOrders[0].siteWeighInWeight, 30);
 });
 
-test('clock skew does not attach historical captures to future schedules', async () => {
+test('historical captures that predate a schedule are recorded as unscheduled, not attached', async () => {
   for (const [createdAt, observed_utc] of [
     ['2026-10-02T07:02:01Z', '2026-10-02T07:03:44Z'],
     ['2026-10-02T07:00:54Z', '2026-10-02T07:00:53Z'],
     ['2026-10-02T07:00:54Z', undefined],
   ]) {
     const f = fixture([{ ...scheduled, createdAt }]);
-    await assert.rejects(f.process({ ...f.event(first), observed_utc }), { code: 'UNMATCHED_SCHEDULE' });
-    assert.equal(f.writes.length, 0);
+    const row = { ...first, DIGER3_ISIM: 'New Driver' };
+    await f.process({ ...f.event(row), observed_utc });
+    assert.equal(f.data.deliveryOrders.length, 2);
+    assert.equal(f.data.deliveryOrders[1].isUnscheduled, true);
   }
 });
 
@@ -260,11 +262,13 @@ test('conflicting context never changes or creates a job', async () => {
   }
 });
 
-test('a vehicle ID cannot override a conflicting scheduled plate or a pre-dispatch job', async () => {
+test('a conflicting scheduled plate or pre-dispatch job does not block the unscheduled capture', async () => {
   for (const patch of [{ plateNumber: 'OTHER' }, { status: 'CREATED' }]) {
     const f = fixture([{ ...scheduled, ...patch }]);
-    await assert.rejects(f.process(f.event(first)), { code: 'UNMATCHED_SCHEDULE' });
-    assert.equal(f.writes.length, 0);
+    const row = { ...first, DIGER3_ISIM: 'New Driver' };
+    await f.process(f.event(row));
+    assert.equal(f.data.deliveryOrders.length, 2);
+    assert.equal(f.data.deliveryOrders[1].isUnscheduled, true);
   }
 });
 
@@ -328,6 +332,16 @@ test('duplicate driver names resolve to the registered profile instead of stalli
   assert.equal(f.data.deliveryOrders.length, 1);
   assert.equal(f.data.deliveryOrders[0].driverId, 'D-reg');
   assert.equal(f.data.deliveryOrders[0].isUnscheduled, true);
+});
+
+test('driver names with irregular spacing reuse the same driver record', async () => {
+  const f = fixture([]);
+  f.data.vehicles = []; f.data.drivers = [{ id: 'D-drv', name: 'ABDALLA ALI', fullName: 'ABDALLA ALI' }];
+  f.data.sites = []; f.data.purchaseOrders = []; f.data.materials = []; f.data.vendors = [];
+  const row = { ...first, DIGER3_ISIM: 'ABDALLA  ALI', DIGER2_ISIM: 'MANDA BAY', MALZEME_ADI: 'MURRAM', FIRMA_ADI: 'HINDI GEN AGENCY LTD' };
+  await f.process(f.event(row));
+  assert.equal(f.data.drivers.length, 1);
+  assert.equal(f.data.deliveryOrders[0].driverId, 'D-drv');
 });
 
 test('completed weigh-out attaches to an already weighed-in job even when the first-weigh time drifted', async () => {

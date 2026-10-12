@@ -2,7 +2,7 @@ const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { createHash } = require('node:crypto');
 const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
-const normalize = value => String(value ?? '').trim().toUpperCase();
+const normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
 const plate = value => normalize(value).replace(/[\s-]/g, '');
 const blocked = code => Object.assign(new Error(code), { code });
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -234,12 +234,11 @@ function createProcessor({ repository, deliveries, config }) {
     }
     let newOrder;
     if (!job) {
-      // A different trip for a busy truck must never become a second custom job.
-      if (jobs.some(j => isActiveJob(j.status) && (j.vehicleId === vehicle?.id || plate(j.plateNumber) === plate(row.PLAKA)))) throw blocked('UNMATCHED_SCHEDULE');
+      // Unmatched weighbridge captures are real trips. Record them as unscheduled
+      // instead of parking them: schedule matching is enrichment, never a gate.
       const custom = await resolveCustomCapture(repository, row, config, vehicle, capturedDriver);
       vehicle = custom.vehicle;
       capturedDriver = custom.driver;
-      if (jobs.some(j => isActiveJob(j.status) && j.driverId === capturedDriver.id)) throw blocked('ACTIVE_JOB_RESOURCE_CONFLICT');
       newOrder = custom.order;
       job = {
         purchaseOrderId: newOrder.id, poNumber: newOrder.poNumber,
