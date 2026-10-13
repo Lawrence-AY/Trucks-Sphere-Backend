@@ -1,5 +1,6 @@
 .env
 .env.example 
+.env.backup-20261013
 .lenv.example 
 node_modules
 config/truck-d18ad-firebase-adminsdk-fbsvc-2ef616d98d.json

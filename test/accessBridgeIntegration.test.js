@@ -58,11 +58,18 @@ function fixture() {
   records.set('purchaseOrders/PO1', { poNumber: 'POMAT001/V001', vendorId: 'V001', siteId: 'S001', materialId: 'MAT001', materialName: 'Sand', quantity: 20, unit: 'tonnes', status: 'open' });
   records.set('jobCounters/PO1', { nextJobNumber: 7 });
   const deliveries = load('../src/modules/delivery-orders/service');
+  const nextIds = { vendor: 0, driver: 0, truck: 0, purchase_order_v2: 0 };
   const repository = {
     all: async name => (await collection(name).get()).docs.map(doc => ({ ...doc.data(), id: doc.id })),
     async create(name, id, record) {
       await collection(name).doc(id).set({ ...record, id });
       return { ...record, id };
+    },
+    async nextId(type) {
+      nextIds[type] = (nextIds[type] || 0) + 1;
+      const prefix = type === 'vendor' ? 'V' : type === 'driver' ? 'D' : type === 'truck' ? 'T' : 'PO';
+      const width = type === 'purchase_order_v2' ? 4 : 3;
+      return `${prefix}${String(nextIds[type]).padStart(width, '0')}`;
     },
     async bind(id, key, source, siteId) {
       const doc = collection('deliveryOrders').doc(id);

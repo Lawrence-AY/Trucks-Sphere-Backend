@@ -3,6 +3,7 @@ const { readConfig } = require('./config');
 const { createProcessor } = require('./processor');
 const { createStore } = require('./store');
 const { createLoadingProcessor } = require('./loading');
+const { getNextId } = require('../../utils/counterService');
 let current = { enabled: false };
 const status = () => current;
 function startAccessBridge({ db, deliveries, config = readConfig(), logger = console }) {
@@ -19,6 +20,9 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
       const ref = db.collection(collection).doc(id);
       await ref.set({ ...record, id });
       return { ...record, id };
+    },
+    async nextId(entityType) {
+      return getNextId(entityType);
     },
     async bind(id, key, source, siteId) {
       const ref = db.collection('deliveryOrders').doc(id);

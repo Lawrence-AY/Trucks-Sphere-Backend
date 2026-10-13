@@ -22,12 +22,19 @@ function fixture(jobs = [scheduled]) {
     vendors: [], materials: [],
   };
   const writes = [];
+  const nextIds = { vendor: 0, driver: 0, truck: 0, purchase_order_v2: 0 };
   const repository = {
     all: async name => structuredClone(data[name] || []),
     async create(name, id, record) {
       data[name] = data[name] || [];
       data[name].push({ ...record, id });
       return { ...record, id };
+    },
+    async nextId(type) {
+      nextIds[type] = (nextIds[type] || 0) + 1;
+      const prefix = type === 'vendor' ? 'V' : type === 'driver' ? 'D' : type === 'truck' ? 'T' : 'PO';
+      const width = type === 'purchase_order_v2' ? 4 : 3;
+      return `${prefix}${String(nextIds[type]).padStart(width, '0')}`;
     },
     async bind(id, key) { const job = data.deliveryOrders.find(j => j.id === id); job.accessBridgeKey = key; return structuredClone(job); },
   };

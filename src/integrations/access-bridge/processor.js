@@ -4,6 +4,11 @@ const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
 const normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
 const plate = value => normalize(value).replace(/[\s-]/g, '');
+// "v11", "11" or "V011" → "V011" (matches purchase-orders normalizeVendorId).
+const vendorShort = id => {
+  const match = String(id ?? '').trim().match(/^[Vv]?(\d+)$/);
+  return match ? `V${String(parseInt(match[1], 10)).padStart(3, '0')}` : String(id ?? '');
+};
 const blocked = code => Object.assign(new Error(code), { code });
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const CAPTURE_CLOCK_SKEW_MS = 120000;
@@ -116,14 +121,15 @@ function customOrder(orders, row, config) {
 // A custom (unscheduled) capture still needs a truck, driver, vendor, site,
 // material and an open purchase order before it can become a delivery order.
 // Auto-provision whatever is missing so in-yard trucks flow through without
-// manual data entry. IDs are stable, so retries and repeat deliveries reuse them.
+// manual data entry. IDs use the app's shared sequential counters (V/D/T/PO);
+// name matching on retries keeps the flow idempotent without duplicate entities.
 async function resolveCustomCapture(repository, row, config, vehicle, capturedDriver) {
   const toCreate = [];
   const now = new Date().toISOString();
   const stableId = (collection, value) => `AB-${hash([config.sourceId, collection, normalize(value)]).slice(0, 24)}`;
 
   if (!vehicle) {
-    vehicle = { id: `AB-${plate(row.PLAKA)}`, plateNumber: plate(row.PLAKA), registrationNumber: plate(row.PLAKA), status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    vehicle = { id: await repository.nextId('truck'), plateNumber: plate(row.PLAKA), registrationNumber: plate(row.PLAKA), status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
     toCreate.push(['vehicles', vehicle.id, vehicle]);
   }
 
@@ -131,14 +137,14 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
   const vendorName = String(row.FIRMA_ADI || '').trim() || `Unspecified vendor (${config.sourceId})`;
   let vendor = vendors.find(v => [v.name, v.companyName, v.vendorName].some(n => normalize(n) === normalize(vendorName)));
   if (!vendor) {
-    vendor = { id: stableId('vendors', vendorName), name: vendorName, companyName: vendorName, status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    vendor = { id: await repository.nextId('vendor'), name: vendorName, companyName: vendorName, status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
     toCreate.push(['vendors', vendor.id, vendor]);
   }
 
   if (!capturedDriver) {
     const name = String(row[config.driverField || 'DIGER3_ISIM'] || '').trim();
     if (!name) throw blocked('DRIVER_NAME_REQUIRED');
-    capturedDriver = { id: stableId('drivers', name), name, fullName: name, vendorId: vendor.id, status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    capturedDriver = { id: await repository.nextId('driver'), name, fullName: name, vendorId: vendor.id, status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
     toCreate.push(['drivers', capturedDriver.id, capturedDriver]);
   }
 
@@ -165,8 +171,10 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
   try { order = customOrder(orders, row, config); }
   catch (error) { if (error.code !== 'PURCHASE_ORDER_REQUIRED' && error.code !== 'PURCHASE_ORDER_CLOSED') throw error; }
   if (!order) {
-    const poId = stableId('purchaseOrders', `${vendorName}|${materialName}|${siteName}`);
-    order = { id: poId, poNumber: poId, vendorId: vendor.id, vendorName: vendor.name || vendor.companyName,
+    const poSeq = await repository.nextId('purchase_order_v2');
+    const poNumber = `${poSeq}/${vendorShort(vendor.id)}`;
+    const poId = poNumber.replace(/\//g, '-');
+    order = { id: poId, poNumber, vendorId: vendor.id, vendorName: vendor.name || vendor.companyName,
       siteId: site.id, siteName: site.name || site.siteName,
       materialId: material.id, materialName: material.name || material.materialName,
       unit: 'tonnes', status: 'open', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: now };
