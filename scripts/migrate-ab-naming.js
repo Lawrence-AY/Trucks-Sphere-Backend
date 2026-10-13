@@ -7,6 +7,8 @@ const APPLY = process.argv.includes('--apply');
 
 const pad = (n, w) => String(n).padStart(w, '0');
 const isAB = v => String(v ?? '').includes('AB-');
+// Firestore rejects `undefined`; strip such keys (e.g. a vehicle/delivery order with no vendorId).
+const clean = obj => { const out = {}; for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v; return out; };
 
 async function loadAll(name) {
   const snap = await db.collection(name).get();
@@ -216,13 +218,28 @@ async function main() {
     process.exit(0);
   }
 
+  // Guard against a partially-applied prior run: refuse if any target doc already exists.
+  const probe = [
+    db.collection('vendors').doc(abVendors[0] && vendorMap.get(abVendors[0].id)),
+    db.collection('drivers').doc(abDrivers[0] && driverMap.get(abDrivers[0].id)),
+    db.collection('vehicles').doc(abVehicles[0] && truckMap.get(abVehicles[0].id)),
+    db.collection('purchaseOrders').doc(abOrders[0] && poMap.get(abOrders[0].id)?.id),
+  ].filter(Boolean);
+  if (probe.length) {
+    const existing = await Promise.all(probe.map(ref => ref.get()));
+    if (existing.some(s => s.exists)) {
+      console.error('\nABORT: a target doc already exists (prior partial run?). Resolve manually or re-run after cleanup.');
+      process.exit(1);
+    }
+  }
+
   // ---- Apply ----
   console.log('\nApplying...');
   const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
 
   for (const batch of chunk(ops.sets, 450)) {
     const b = db.batch();
-    for (const op of batch) b.set(op.ref, op.data);
+    for (const op of batch) b.set(op.ref, clean(op.data));
     await b.commit();
     process.stdout.write('.');
   }
