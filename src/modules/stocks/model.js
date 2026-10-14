@@ -26,6 +26,8 @@ function stockRows(delivery) {
     const hasReceipt = Boolean(approved && receipt && (inspected?.mrfNumber || completed));
     const sent = Math.max(0, number(line.quantity ?? line.orderedQuantity));
     const received = hasReceipt ? Math.max(0, number(receipt.receivedQuantity)) : 0;
+    const piecesPerSet = String(line.unit || delivery.unit || '').toLowerCase() === 'sets' ? Math.max(1, Math.floor(number(line.piecesPerSet || receipt?.piecesPerSet))) : null;
+    const receivedBasePieces = piecesPerSet ? Math.round(received * piecesPerSet + number(line.loosePieces || receipt?.loosePieces)) : null;
     const passed = hasReceipt && (receipt.initialVisualInspection === 'Pass' || (!inspected?.mrfNumber && completed));
     // Historical failed receipts without a split remain fully quarantined.
     const damaged = hasReceipt ? wh && receipt.damagedQuantity != null
@@ -36,7 +38,7 @@ function stockRows(delivery) {
       siteId: delivery.siteId || '', siteName: delivery.siteName || delivery.siteId || 'Unassigned',
       materialId: line.materialId || '', materialName: line.materialName || line.productName || delivery.materialName || '',
       vendorName: delivery.vendorName || '', origin: wh ? 'Warehouse' : 'Quarry', unit: line.unit || delivery.unit || '',
-      dispatchedQuantity: sent, receivedQuantity: received, usableQuantity: round(received - damaged),
+      dispatchedQuantity: sent, receivedQuantity: received, usableQuantity: round(received - damaged), piecesPerSet, receivedBasePieces,
       damagedQuantity: damaged, quarantinedQuantity: damaged,
       excessQuantity: hasReceipt ? Math.max(0, round(received - sent)) : 0,
       shortageQuantity: wh && hasReceipt ? Math.max(0, round(sent - received)) : 0,
@@ -72,15 +74,25 @@ function balance(row, existing = {}) {
   if (row.usableQuantity < consumedQuantity) fail('Receipt correction would reduce stock below already recorded usage.');
   const remainingQuantity = round(row.usableQuantity - consumedQuantity);
   const unitCost = existing.unitCost == null ? null : number(existing.unitCost);
-  return { ...row, consumedQuantity, remainingQuantity, unitCost, currency: existing.currency || '',
+  const remainingBasePieces = row.piecesPerSet ? Math.max(0, Math.round(number(row.receivedBasePieces) - consumedQuantity * row.piecesPerSet)) : null;
+  return { ...row, consumedQuantity, remainingQuantity, remainingBasePieces, remainingSets: row.piecesPerSet ? Math.floor(remainingBasePieces / row.piecesPerSet) : null, remainingLoosePieces: row.piecesPerSet ? remainingBasePieces % row.piecesPerSet : null, unitCost, currency: existing.currency || '',
     remainingValue: unitCost == null ? null : round(remainingQuantity * unitCost),
     receivedValue: unitCost == null ? null : round(row.usableQuantity * unitCost),
     valuationStatus: unitCost == null ? 'Unpriced' : 'Priced' };
 }
-function issue(row, quantity) {
+function issue(row, quantity, unit = row.unit) {
   const amount = Number(quantity);
   if (!Number.isFinite(amount) || amount <= 0) fail('Enter a positive usage quantity.');
-  if (amount > row.remainingQuantity) fail('Usage exceeds available stock.');
-  return balance(row, { ...row, consumedQuantity: round(number(row.consumedQuantity) + amount) });
+  const isPieceIssue = String(unit).toLowerCase() === 'pieces' && row.piecesPerSet;
+  const availableBase = isPieceIssue ? number(row.remainingBasePieces ?? row.remainingQuantity * row.piecesPerSet) : number(row.remainingQuantity);
+  if (amount > availableBase) fail('Usage exceeds available stock.');
+  const next = balance(row, { ...row, consumedQuantity: isPieceIssue ? number(row.consumedQuantity) + amount / row.piecesPerSet : number(row.consumedQuantity) + amount });
+  if (isPieceIssue) {
+    const remainingBasePieces = Math.max(0, Math.round(availableBase - amount));
+    next.remainingBasePieces = remainingBasePieces;
+    next.remainingSets = Math.floor(remainingBasePieces / row.piecesPerSet);
+    next.remainingLoosePieces = remainingBasePieces % row.piecesPerSet;
+  }
+  return next;
 }
 module.exports = { stockRows, balance, issue, validateInspection };

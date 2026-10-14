@@ -54,7 +54,7 @@ async function change(id, data, actor) {
     if (event.exists) return doc.data();
     const previous = doc.data();
     let next;
-    if (data.type === 'usage') next = issue(previous, data.quantity);
+    if (data.type === 'usage') next = issue(previous, data.quantity, data.unit || previous.unit);
     else if (data.type === 'receipt') {
       if (previous.deliveryOrderId) {
         const delivery = await tx.get(db.collection('deliveryOrders').doc(previous.deliveryOrderId));
@@ -75,7 +75,7 @@ async function change(id, data, actor) {
     tx.set(ref, { ...next, updatedAt: now });
     tx.set(eventRef, { stockId: id, jobId: previous.jobId, siteName: previous.siteName, materialName: previous.materialName, unit: previous.unit, type: data.type, quantity: data.type === 'usage' ? Number(data.quantity) : 0,
       previousUnitCost: previous.unitCost, unitCost: next.unitCost, currency: next.currency,
-      remainingQuantity: next.remainingQuantity, reason: String(data.reason).trim(), actorUid: actor.uid || '',
+      remainingQuantity: next.remainingQuantity, quantityUnit: data.unit || previous.unit, remainingBasePieces: next.remainingBasePieces ?? null, remainingSets: next.remainingSets ?? null, remainingLoosePieces: next.remainingLoosePieces ?? null, reason: String(data.reason).trim(), actorUid: actor.uid || '',
       actorName: actor.displayName || actor.email || '', createdAt: now });
     return next;
   });

@@ -14,12 +14,17 @@ const snapshotStore = require('../../utils/snapshotStore');
  * Parse filter options from query params.
  */
 function parseOptions(query) {
-  const { filter, start_date, end_date } = query;
+  const { filter, startDate, endDate, start_date, end_date } = query;
+  const from = startDate || start_date;
+  const to = endDate || end_date;
+  if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) throw Object.assign(new Error('startDate must be YYYY-MM-DD.'), { statusCode: 400, code: 'REPORT_START_DATE_INVALID' });
+  if (to && !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw Object.assign(new Error('endDate must be YYYY-MM-DD.'), { statusCode: 400, code: 'REPORT_END_DATE_INVALID' });
+  if (from && to && from > to) throw Object.assign(new Error('startDate must be on or before endDate.'), { statusCode: 400, code: 'REPORT_DATE_RANGE_INVALID' });
   const options = {};
   if (filter && filter !== 'all') options.filter = filter;
-  if (start_date) options.startDate = start_date;
-  if (end_date) options.endDate = end_date;
-  if ((start_date || end_date) && !options.filter) options.filter = 'custom';
+  if (from) options.startDate = from;
+  if (to) options.endDate = to;
+  if ((from || to) && !options.filter) options.filter = 'custom';
   if (typeof query.material === 'string' && query.material.trim()) options.material = query.material.trim();
   return options;
 }

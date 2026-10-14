@@ -159,11 +159,19 @@ function normalizeItems(rawItems) {
     if (!Number.isFinite(quantity) || quantity <= 0) {
       throw createValidationError(`Product ${index + 1} needs a positive quantity.`);
     }
+    const piecesPerSet = item?.piecesPerSet == null ? null : Number(item.piecesPerSet);
+    const loosePieces = item?.loosePieces == null ? 0 : Number(item.loosePieces);
+    if (unit.toLowerCase() === 'sets' && (!Number.isInteger(piecesPerSet) || piecesPerSet <= 0 || !Number.isInteger(loosePieces) || loosePieces < 0)) {
+      throw createValidationError(`Product ${index + 1} needs a positive integer pieces-per-set value and non-negative loose pieces.`);
+    }
     return {
       materialId: '',
       materialName: productName,
       quantity,
       unit: unit || 'units',
+      piecesPerSet: unit.toLowerCase() === 'sets' ? piecesPerSet : null,
+      loosePieces: unit.toLowerCase() === 'sets' ? loosePieces : 0,
+      totalBasePieces: unit.toLowerCase() === 'sets' ? quantity * piecesPerSet + loosePieces : null,
       source: String(item?.source || '').trim(),
       description: String(item?.description || '').trim(),
       mrfNo: String(item?.mrfNo || item?.mrfNumber || '').trim(),
@@ -261,6 +269,13 @@ const warehouseJobsService = {
   },
 
   async create(data = {}) {
+    if (!String(data.driverName || '').trim()) {
+      throw createValidationError('Enter the shipment driver name.', 'WAREHOUSE_DRIVER_REQUIRED');
+    }
+    if (!String(data.plateNumber || '').trim()) {
+      throw createValidationError('Enter the shipment truck registration.', 'WAREHOUSE_TRUCK_REQUIRED');
+    }
+
     const purchaseOrder = data.purchaseOrderId
       ? findEntity('purchaseOrders', data.purchaseOrderId, ['poNumber'])
       : null;
