@@ -32,6 +32,11 @@ function parseCapture(event, config) {
 // Existing names are matched before creating anything; IDs break ties consistently.
 function resolveEntities(data, row, config) {
   const planned = [];
+  const nextMaterialId = () => {
+    const numbers = data.materials.map(item => String(item.id || '').match(/^M(?:AT)?(\d+)$/i)).filter(Boolean).map(match => Number(match[1]));
+    const plannedNumbers = planned.filter(item => item.collection === 'materials').map(item => Number(String(item.record.id).replace(/^M/i, '')));
+    return `M${String(Math.max(0, ...numbers, ...plannedNumbers) + 1).padStart(3, '0')}`;
+  };
   const select = (collection, value, fields, defaults, scope = '') => {
     const normalized = normalize(value);
     const matches = data[collection].filter(item => fields.some(field =>
@@ -61,6 +66,13 @@ function resolveEntities(data, row, config) {
     .sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
   const material = materialMatch || select('materials', materialName, ['name', 'materialName'],
     { name: materialName, materialName, code: text(row.MALZEME_KODU), unit: 'kg' });
+  if (!materialMatch) {
+    const plannedMaterial = planned.find(item => item.collection === 'materials' && item.record.id === material.id);
+    if (plannedMaterial) {
+      plannedMaterial.record.id = nextMaterialId();
+      material.id = plannedMaterial.record.id;
+    }
+  }
   const siteName = text(row.DIGER2_ISIM) || `Unspecified site (${config.sourceId})`;
   const site = select('sites', siteName, ['id', 'name', 'siteName'], { name: siteName, siteName, weighbridgeWeightUnit: 'kg' });
   const reference = normalize(row[config.poField || 'DIGER5_ISIM']);

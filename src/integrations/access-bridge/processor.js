@@ -185,7 +185,7 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
   let material = materials.find(m => (materialCode && [m.id, m.code, m.materialCode].some(n => normalize(n) === normalize(materialCode)))
     || [m.name, m.materialName].some(n => normalize(n) === normalize(materialName)));
   if (!material) {
-    material = { id: stableId('materials', materialName), name: materialName, materialName, code: materialCode, unit: 'tonnes', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
+    material = { id: await repository.nextId('material'), name: materialName, materialName, code: materialCode, unit: 'tonnes', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
     toCreate.push(['materials', material.id, material]);
   }
 
