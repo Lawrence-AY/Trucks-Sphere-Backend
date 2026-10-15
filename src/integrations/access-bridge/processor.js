@@ -1,4 +1,5 @@
 const { toTonnes } = require('../../utils/deliveryWeightUnits');
+const { matchVendor } = require('../../utils/vendorMatching');
 const { createHash } = require('node:crypto');
 const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
@@ -135,10 +136,13 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
 
   const vendors = (await repository.all('vendors')) || [];
   const vendorName = String(row.FIRMA_ADI || '').trim() || `Unspecified vendor (${config.sourceId})`;
-  let vendor = vendors.find(v => [v.name, v.companyName, v.vendorName].some(n => normalize(n) === normalize(vendorName)));
+  const aliases = (await repository.all('vendorAliases')) || [];
+  const vendorMatch = matchVendor(vendorName, vendors, { ...(config.vendorMatching || {}), aliases });
+  let vendor = vendorMatch.match || null;
   if (!vendor) {
-    vendor = { id: await repository.nextId('vendor'), name: vendorName, companyName: vendorName, status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
-    toCreate.push(['vendors', vendor.id, vendor]);
+    // No reliable vendor match: park the capture for authorised review.
+    // The original FIRMA_ADI is preserved in the payload; never auto-create.
+    throw blocked('VENDOR_REVIEW_REQUIRED');
   }
 
   if (!capturedDriver) {

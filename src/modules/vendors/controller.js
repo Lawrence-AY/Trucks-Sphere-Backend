@@ -75,3 +75,15 @@ exports.delete = async (req, res, next) => {
     res.json({ message: 'Deleted successfully' });
   } catch (err) { next(err); }
 };
+
+exports.listAliases = async (req, res, next) => {
+  try { res.json(await vendorsService.listAliases(req.params.id)); } catch (err) { next(err); }
+};
+
+exports.addAlias = async (req, res, next) => {
+  try { res.status(201).json(await vendorsService.addAlias(req.params.id, req.body.alias)); } catch (err) { next(err); }
+};
+
+exports.removeAlias = async (req, res, next) => {
+  try { await vendorsService.removeAlias(req.params.aliasId); res.json({ message: 'Alias removed' }); } catch (err) { next(err); }
+};

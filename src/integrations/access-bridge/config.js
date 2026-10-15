@@ -10,6 +10,11 @@ function readConfig(env = process.env) {
     poField: env.TARTIM_PO_FIELD || 'DIGER5_ISIM',
     sourceWeightUnit: env.TARTIM_SOURCE_WEIGHT_UNIT || '',
     weighingMode: env.TARTIM_WEIGHING_MODE || 'loading',
+    vendorMatching: {
+      autoMatchThreshold: Number(env.TARTIM_VENDOR_AUTO_THRESHOLD || 0.90),
+      reviewThreshold: Number(env.TARTIM_VENDOR_REVIEW_THRESHOLD || 0.72),
+      ambiguityMargin: Number(env.TARTIM_VENDOR_AMBIGUITY_MARGIN || 0.05),
+    },
   };
   if (!/^[\w-]{1,80}$/.test(config.sourceId) || !Number.isInteger(config.pollMs) || config.pollMs < 1000 || config.pollMs > 60000) throw new Error('Invalid Access bridge source ID or poll interval.');
   if (!/^[+-](0\d|1[0-4]):[0-5]\d$/.test(config.utcOffset)) throw new Error('Invalid TARTIM_UTC_OFFSET.');

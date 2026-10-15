@@ -6,6 +6,9 @@ const { assertStrongPassword } = require('../../utils/passwordPolicy');
 const kraService = require('../../integrations/kraService');
 const collectionRef = db.collection('vendors');
 const uniqueKeysRef = db.collection('vendorUniqueKeys');
+const aliasCollectionRef = db.collection('vendorAliases');
+const { createHash } = require('node:crypto');
+const { normalizeName } = require('../../utils/vendorMatching');
 
 const COLLECTION_NAME = 'vendors';
 
@@ -325,6 +328,34 @@ const vendorsService = {
       console.error('vendorsService.delete error:', error);
       throw error;
     }
+  },
+
+  async addAlias(vendorId, alias) {
+    const raw = String(alias || '').trim();
+    const normalized = normalizeName(raw);
+    if (!normalized) throw Object.assign(new Error('Alias is required'), { statusCode: 400, code: 'ALIAS_REQUIRED' });
+    const vendorDoc = await collectionRef.doc(vendorId).get();
+    if (!vendorDoc.exists) throw Object.assign(new Error('Vendor not found'), { statusCode: 404, code: 'VENDOR_NOT_FOUND' });
+    const aliasId = createHash('sha256').update(normalized).digest('hex');
+    const aliasRef = aliasCollectionRef.doc(aliasId);
+    await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(aliasRef);
+      if (existing.exists && existing.data().vendorId !== vendorId) {
+        throw Object.assign(new Error('This alias is already assigned to another vendor.'), { statusCode: 409, code: 'ALIAS_ALREADY_EXISTS' });
+      }
+      transaction.set(aliasRef, { id: aliasId, vendorId, alias: raw, aliasNormalized: normalized, createdAt: new Date().toISOString() });
+    });
+    return { id: aliasId, vendorId, alias: raw, aliasNormalized: normalized };
+  },
+
+  async listAliases(vendorId) {
+    const snapshot = await aliasCollectionRef.where('vendorId', '==', vendorId).get();
+    return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+  },
+
+  async removeAlias(aliasId) {
+    await aliasCollectionRef.doc(aliasId).delete();
+    return { removed: true };
   },
 };
 
