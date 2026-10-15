@@ -3,7 +3,7 @@
 ## Files included
 - NEW  src/utils/vendorMatching.js       (normalisation + fuzzy matching)
 - NEW  test/vendorMatching.test.js       (10 passing tests)
-- MOD  src/integrations/access-bridge/processor.js  (match-before-create; VENDOR_REVIEW_REQUIRED)
+- MOD  src/integrations/access-bridge/processor.js  (auto-creates unknown vendors; reviews fuzzy/ambiguous matches)
 - MOD  src/integrations/access-bridge/config.js     (vendorMatching thresholds)
 - MOD  src/modules/vendors/service.js    (addAlias / listAliases / removeAlias)
 - MOD  src/modules/vendors/controller.js (alias endpoints)

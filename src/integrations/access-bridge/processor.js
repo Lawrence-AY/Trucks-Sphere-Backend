@@ -140,9 +140,28 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
   const vendorMatch = matchVendor(vendorName, vendors, { ...(config.vendorMatching || {}), aliases });
   let vendor = vendorMatch.match || null;
   if (!vendor) {
-    // No reliable vendor match: park the capture for authorised review.
-    // The original FIRMA_ADI is preserved in the payload; never auto-create.
-    throw blocked('VENDOR_REVIEW_REQUIRED');
+    // Create only when there is no plausible existing vendor. A fuzzy review
+    // or ambiguity still requires human confirmation to avoid mis-assignment.
+    if (vendorMatch.status !== 'no_match') throw blocked('VENDOR_REVIEW_REQUIRED');
+    const vendorId = await repository.nextId('vendor');
+    vendor = {
+      id: vendorId,
+      vendorId,
+      companyName: vendorName,
+      name: vendorName,
+      contactPerson: '',
+      phone: '',
+      email: '',
+      status: 'active',
+      fleetSize: 0,
+      bridgeCreated: true,
+      registrationIncomplete: true,
+      createdBy: 'access_bridge',
+      sourceId: config.sourceId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    toCreate.push(['vendors', vendor.id, vendor]);
   }
 
   if (!capturedDriver) {
