@@ -101,18 +101,26 @@ function isSiteSchedule(job) {
 
 function customOrder(orders, row, config) {
   const reference = normalize(row[config.poField || 'DIGER5_ISIM']);
-  const matches = orders.filter(order => {
-    if (reference && ![order.id, order.poNumber].some(value => normalize(value) === reference)) return false;
-    const checks = [
-      [row.DIGER2_ISIM, [order.siteId, order.siteName]],
-      [row.MALZEME_KODU, [order.materialId]],
-      [row.MALZEME_ADI, [order.materialName]],
-      [row.FIRMA_ADI, [order.vendorId, order.vendorName, order.companyName]],
-    ];
-    if (!reference && (!normalize(row.DIGER2_ISIM) || !(normalize(row.MALZEME_KODU) || normalize(row.MALZEME_ADI)))) return false;
-    return checks.every(([value, expected]) => !normalize(value) || expected.some(v => normalize(v) === normalize(value)));
-  });
   const closed = new Set(['COMPLETED', 'COMPLETE', 'DELIVERED', 'FULFILLED', 'CLOSED', 'CANCELLED', 'CANCELED', 'ARCHIVED', 'EXCESS', 'OVERDELIVERED', 'OVER_DELIVERED']);
+  const matchesContext = order => {
+    const vendor = normalize(row.FIRMA_ADI);
+    const material = normalize(row.MALZEME_ADI || row.MALZEME_KODU);
+    const vendorMatch = !vendor || [order.vendorId, order.vendorName, order.companyName].some(value => normalize(value) === vendor);
+    const materialMatch = !material || [order.materialId, order.materialName, order.materialNumber].some(value => normalize(value) === material);
+    const site = normalize(row.DIGER2_ISIM);
+    const siteMatch = !site || [order.siteId, order.siteName].some(value => normalize(value) === site);
+    return vendorMatch && materialMatch && siteMatch;
+  };
+  const referenced = reference && orders.filter(order => [order.id, order.poNumber].some(value => normalize(value) === reference));
+  // The weighbridge reference is advisory. Vendor + material identifies the
+  // commercial PO when Access sends a stale, blank, or differently formatted
+  // reference. Only fall back to creating a PO when no existing PO matches.
+  const matches = referenced?.length ? referenced.filter(matchesContext) : orders.filter(matchesContext);
+  if (!matches.length && reference) {
+    // A bad/stale reference must not force a duplicate PO.
+    const fallback = orders.filter(matchesContext);
+    if (fallback.length) return unique(fallback.filter(order => !closed.has(normalize(order.status))), 'AMBIGUOUS_PURCHASE_ORDER');
+  }
   const order = unique(matches.filter(order => !closed.has(normalize(order.status))), 'AMBIGUOUS_PURCHASE_ORDER');
   if (!order) throw blocked(matches.length ? 'PURCHASE_ORDER_CLOSED' : 'PURCHASE_ORDER_REQUIRED');
   if (!order.poNumber || !order.vendorId) throw blocked('PURCHASE_ORDER_REFERENCES_REQUIRED');
