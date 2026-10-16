@@ -23,7 +23,6 @@ async function handleCaptures(req, res, next) {
     next(error);
   }
 }
-router.post('/captures', handleCaptures);
 router.post('/captures-v2', handleCaptures);
 router.use(verifyToken, requireRoles('superadmin', 'admin', 'adminlite'));
 router.get('/tickets/:id', async (req, res, next) => {
