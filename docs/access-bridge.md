@@ -17,7 +17,7 @@ The backend uses its existing Firebase service-account environment. The requeste
 - `DIGER3_ISIM`: driver name (configurable with `TARTIM_DRIVER_FIELD`). Match case-insensitively, including existing IDs/licences/national IDs. Duplicate names prefer the captured vendor, then the lexically smallest ID. Unknown names create stable driver records marked `registrationIncomplete`; no licence or national ID is fabricated. A missing name remains `DRIVER_NAME_REQUIRED`.
 - `DIGER1_ISIM`: loading point, e.g. HINDI. `DIGER2_ISIM`: destination/site, e.g. MANDA BAY.
 - `DIGER4_ISIM`: delivery note/description. `MALZEME_ADI` / `MALZEME_KODU`: material name/code. `OPERATOR_ADI`: operator.
-- `DIGER5_ISIM` (or `TARTIM_PO_FIELD`): optional existing PO reference. Without a reference, match an existing open PO by vendor, site and material. Associate only one unambiguous match. Missing, closed or ambiguous POs leave `purchaseOrderId: null` and `poResolution: unmatched|ambiguous`. **The bridge never creates a PO or custom site order.** The capture is still saved and processed.
+- `DIGER5_ISIM` (or `TARTIM_PO_FIELD`): optional existing PO reference. Match existing open POs by resolved vendor and material, falling back from stale references. Narrow duplicates by site and origin, then prefer a manually created PO and the oldest creation timestamp (PO number/ID breaks ties). Orders with conflicting unresolved sites or quarries remain ambiguous. Missing, closed or ambiguous POs leave `purchaseOrderId: null` and `poResolution: unmatched|ambiguous`. **The bridge never creates a PO or custom site order.** The capture is still saved and processed.
 
 Unknown material/site names also create bridge-marked registry records so the ticket can retain stable relationships. Blank vendor/material/site values use explicit Unspecified labels rather than guessing a real entity.
 
@@ -54,3 +54,11 @@ Deploy the `accessBridgeTickets` composite index in `firestore.indexes.json` to 
 Existing blocked events retry automatically within 30 seconds after deployment. Already ignored/processed historical events do not automatically requeue; unchanged listener replays remain deduped. If historical reprocessing is needed, deliberately reset only the selected event status/nextAttemptAt after reviewing its source and date. Old yard snapshot keys may produce one extra event on replay after normalization; ticket identity still prevents duplicate tickets.
 
 Tests run against isolated fake Firestore stores; they do not write to Firebase or deploy to Render. Use `npm test` for the backend suite.
+
+## Unloading compatibility and blocked records
+
+The delivery processor resolves vendor abbreviations and external material codes against the registries before comparing schedules. Completed captures check context even when only one same-plate schedule exists; a conflicting old schedule is left untouched and the actual trip uses the existing vendor/material PO. Duplicate commercial POs follow the selection policy above; none are deleted or merged.
+
+In unloading mode, a completed increasing-weight row is accepted when its supplied `NET` agrees with the absolute weight difference. Original first/second weighs are retained, the positive net is used, and `accessWeighDirection` records `loading` or `unloading`. Increasing weights without a verified NET remain invalid. This compatibility does not change the separate loading-ticket contract.
+
+Completed captures validate chronology and supplied NET before provisioning or binding records. `INVALID_CAPTURE_CHRONOLOGY` includes both source dates and interpreted timestamps in the event details and worker warning. Source dates are never swapped or fabricated. HINDI WATER tickets 81 (2026-12-06 to 2026-06-13) and 309 (2026-11-07 to 2026-07-15) need source correction before processing. Changed source rows create UPDATE events; blocked events retry every 30 seconds after deployment.

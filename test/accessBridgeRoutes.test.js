@@ -6,7 +6,7 @@ const path = require('node:path');
 
 function fixture() {
   let handler, observations = 0, storeCalls = 0;
-  const logs = [], router = { post(route, fn) { if (route === '/captures') handler = fn; }, get() {}, use() {} };
+  const logs = [], router = { post(route, fn) { if (route === '/captures-v2') handler = fn; }, get() {}, use() {} };
   const apiKey = 'x'.repeat(32);
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/integrations/access-bridge/routes.js'), 'utf8'), {
     module: { exports: {} }, console: { log: (...args) => logs.push(args) }, require(name) {

@@ -1,5 +1,7 @@
+const { selectBridgePurchaseOrder } = require('../../utils/bridgePurchaseOrder');
 const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { matchVendor } = require('../../utils/vendorMatching');
+const { matchMaterial, materialNamesMatch } = require('../../utils/materialMatching');
 const { createHash } = require('node:crypto');
 const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
@@ -54,9 +56,15 @@ function capture(row, config, weightUnit) {
   const divisor = String(weightUnit).toLowerCase() === 'kg' ? 1000 : 1;
   const first = Number(row.TARTIM1) / divisor;
   const second = row.TARTIM2 == null || row.TARTIM2 === '' || Number(row.TARTIM2) === 0 ? null : Number(row.TARTIM2) / divisor;
-  if (!plate(row.PLAKA) || !Number.isFinite(first) || first <= 0 || (second !== null && (!Number.isFinite(second) || second <= 0 || second >= first))) throw blocked('INVALID_SITE_WEIGHT');
+  if (!plate(row.PLAKA) || !Number.isFinite(first) || first <= 0 || (second !== null && (!Number.isFinite(second) || second <= 0 || second === first))) throw blocked('INVALID_SITE_WEIGHT');
   const secondAt = second === null ? null : captureTime(row, 2, config.utcOffset);
-  if (secondAt && Date.parse(secondAt) < Date.parse(firstAt)) throw blocked('INVALID_CAPTURE_CHRONOLOGY');
+  if (secondAt && Date.parse(secondAt) < Date.parse(firstAt)) throw Object.assign(blocked('INVALID_CAPTURE_CHRONOLOGY'), { details: { firstAt, secondAt, firstDate: row.TARIH1, secondDate: row.TARIH2 } });
+  if (second !== null) {
+    const supplied = row.NET == null || row.NET === '' ? null : Number(row.NET) / divisor;
+    if (supplied !== null && (!Number.isFinite(supplied) || supplied < 0 || Math.abs(supplied - Math.abs(first - second)) > 0.000001)) throw blocked('NET_WEIGHT_MISMATCH');
+    // Increasing weights are accepted only with a verified source NET.
+    if (second > first && supplied === null) throw blocked('INVALID_SITE_WEIGHT');
+  }
   return { key, first, second, firstAt, secondAt };
 }
 
@@ -80,15 +88,21 @@ function pickDriver(drivers, driverValue) {
 
 function matchesContext(job, row, config) {
   const reference = normalize(row[config.poField || 'DIGER5_ISIM']);
-  if (reference && ![job.id, job.jobId, job.purchaseOrderId, job.poNumber].some(v => normalize(v) === reference)) return false;
+  if (reference && !job.isUnscheduled && ![job.id, job.jobId, job.purchaseOrderId, job.poNumber].some(v => normalize(v) === reference)) return false;
   const checks = [
     [row[config.driverField || 'DIGER3_ISIM'], [job.driverId, job.driverName, job.licenseNumber]],
-    [row.FIRMA_ADI, [job.vendorId, job.vendorName, job.companyName]],
+
     [row.DIGER1_ISIM, [job.materialSource, job.quarryLocation, job.quarryName]],
     [row.DIGER2_ISIM, [job.siteId, job.siteName]],
-    [row.MALZEME_KODU, [job.materialId]],
-    [row.MALZEME_ADI, [job.materialName]],
+    // External codes such as SAND are not application material IDs.
+    [row.MALZEME_ADI && job.materialName && materialNamesMatch(row.MALZEME_ADI, job.materialName) ? '' : row.MALZEME_KODU,
+      [job.materialId, job.materialCode, job.materialNumber]],
+
   ];
+  const vendorValues = [job.vendorId, job.vendorName, job.companyName].filter(Boolean);
+  if (normalize(row.FIRMA_ADI) && vendorValues.length && !vendorValues.some(v => normalize(v) === normalize(row.FIRMA_ADI))
+    && !(job.isUnscheduled && matchVendor(row.FIRMA_ADI, [{ id: job.vendorId, name: job.vendorName, companyName: job.companyName }]).match)) return false;
+  if (normalize(row.MALZEME_ADI) && job.materialName && !materialNamesMatch(row.MALZEME_ADI, job.materialName)) return false;
   return checks.every(([value, expected]) => !normalize(value)
     || !expected.some(v => normalize(v))
     || expected.some(v => normalize(v) === normalize(value)));
@@ -99,29 +113,30 @@ function isSiteSchedule(job) {
     || ['DISPATCHED', 'IN_TRANSIT', 'ARRIVED_AT_SITE', 'SITE_WEIGHED_IN'].includes(normalizeJobStatus(job.status)));
 }
 
-function customOrder(orders, row, config) {
+function customOrder(orders, row, config, resolved = {}) {
   const reference = normalize(row[config.poField || 'DIGER5_ISIM']);
   const closed = new Set(['COMPLETED', 'COMPLETE', 'DELIVERED', 'FULFILLED', 'CLOSED', 'CANCELLED', 'CANCELED', 'ARCHIVED', 'EXCESS', 'OVERDELIVERED', 'OVER_DELIVERED']);
   const matchesContext = order => {
     const vendor = normalize(row.FIRMA_ADI);
     const material = normalize(row.MALZEME_ADI || row.MALZEME_KODU);
-    const vendorMatch = !vendor || [order.vendorId, order.vendorName, order.companyName].some(value => normalize(value) === vendor);
-    const materialMatch = !material || [order.materialId, order.materialName, order.materialNumber].some(value => normalize(value) === material);
-    const site = normalize(row.DIGER2_ISIM);
-    const siteMatch = !site || [order.siteId, order.siteName].some(value => normalize(value) === site);
-    return vendorMatch && materialMatch && siteMatch;
+    const vendorMatch = !vendor || (resolved.vendor && vendorShort(order.vendorId) === vendorShort(resolved.vendor.id)) || [order.vendorId, order.vendorName, order.companyName].some(value => normalize(value) === vendor);
+    const materialMatch = !material || (resolved.material && order.materialId === resolved.material.id)
+      || [order.materialId, order.materialNumber].some(value => normalize(value) === material)
+      || materialNamesMatch(order.materialName, row.MALZEME_ADI || row.MALZEME_KODU);
+    return vendorMatch && materialMatch;
   };
   const referenced = reference && orders.filter(order => [order.id, order.poNumber].some(value => normalize(value) === reference));
   // The weighbridge reference is advisory. Vendor + material identifies the
   // commercial PO when Access sends a stale, blank, or differently formatted
   // reference. Only fall back to creating a PO when no existing PO matches.
-  const matches = referenced?.length ? referenced.filter(matchesContext) : orders.filter(matchesContext);
-  if (!matches.length && reference) {
-    // A bad/stale reference must not force a duplicate PO.
-    const fallback = orders.filter(matchesContext);
-    if (fallback.length) return unique(fallback.filter(order => !closed.has(normalize(order.status))), 'AMBIGUOUS_PURCHASE_ORDER');
-  }
-  const order = unique(matches.filter(order => !closed.has(normalize(order.status))), 'AMBIGUOUS_PURCHASE_ORDER');
+  let matches = referenced?.length ? referenced.filter(matchesContext) : [];
+  if (!matches.length) matches = orders.filter(matchesContext);
+  const choose = options => {
+    const order = selectBridgePurchaseOrder(options, { vendor: row.FIRMA_ADI, material: row.MALZEME_ADI || row.MALZEME_KODU, siteId: resolved.site?.id, siteName: row.DIGER2_ISIM, origin: row.DIGER1_ISIM });
+    if (!order && options.length > 1) throw blocked('AMBIGUOUS_PURCHASE_ORDER');
+    return order;
+  };
+  const order = choose(matches.filter(order => !closed.has(normalize(order.status))));
   if (!order) throw blocked(matches.length ? 'PURCHASE_ORDER_CLOSED' : 'PURCHASE_ORDER_REQUIRED');
   if (!order.poNumber || !order.vendorId) throw blocked('PURCHASE_ORDER_REFERENCES_REQUIRED');
   return order;
@@ -190,8 +205,7 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
   const materials = (await repository.all('materials')) || [];
   const materialName = String(row.MALZEME_ADI || row.MALZEME_KODU || '').trim() || 'Unspecified material';
   const materialCode = String(row.MALZEME_KODU || '').trim();
-  let material = materials.find(m => (materialCode && [m.id, m.code, m.materialCode].some(n => normalize(n) === normalize(materialCode)))
-    || [m.name, m.materialName].some(n => normalize(n) === normalize(materialName)));
+  let material = matchMaterial(materialName, materialCode, materials);
   if (!material) {
     material = { id: await repository.nextId('material'), name: materialName, materialName, code: materialCode, unit: 'tonnes', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
     toCreate.push(['materials', material.id, material]);
@@ -199,8 +213,8 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
 
   const orders = (await repository.all('purchaseOrders')) || [];
   let order;
-  try { order = customOrder(orders, row, config); }
-  catch (error) { if (error.code !== 'PURCHASE_ORDER_REQUIRED' && error.code !== 'PURCHASE_ORDER_CLOSED') throw error; }
+  try { order = customOrder(orders, row, config, { vendor, material, site }); }
+  catch (error) { if (error.code !== 'PURCHASE_ORDER_REQUIRED') throw error; }
   if (!order) {
     const poSeq = await repository.nextId('purchase_order_v2');
     const poNumber = `${poSeq}/${vendorShort(vendor.id)}`;
@@ -211,6 +225,7 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
       unit: 'tonnes', status: 'open', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: now };
     toCreate.push(['purchaseOrders', order.id, order]);
   }
+  order = { ...order, siteName: order.siteName || (order.siteId === site.id ? site.name || site.siteName : '') };
   return { vehicle, driver: capturedDriver, order, toCreate };
 }
 
@@ -219,6 +234,8 @@ function createProcessor({ repository, deliveries, config }) {
   return async event => {
     if (['LEFT_WAITING', 'NO_LONGER_PRESENT'].includes(event.event_type) || (event.event_type === 'BASELINE' && event.table_name !== 'ICERIDEKI_ARACLAR')) return { status: 'ignored', reason: event.event_type };
     const row = JSON.parse(event.payload);
+    // Reject invalid dates/weights before provisioning or binding anything.
+    capture(row, config, config.sourceWeightUnit || 'kg');
     const identity = captureIdentity(row, config);
     const vehicles = await repository.all('vehicles');
     let vehicle = unique(vehicles.filter(v => plate(v.registrationNumber || v.plateNumber) === plate(row.PLAKA)), 'AMBIGUOUS_TRUCK');
@@ -229,9 +246,20 @@ function createProcessor({ repository, deliveries, config }) {
     const orders = await repository.all('purchaseOrders');
     const orderFor = job => orders.find(order => (job.purchaseOrderId && order.id === job.purchaseOrderId)
       || (job.poNumber && normalize(order.poNumber) === normalize(job.poNumber)));
-    const contextMatches = job => matchesContext({ ...job, poNumber: job.poNumber || orderFor(job)?.poNumber },
-      capturedDriver && capturedDriver.id === job.driverId
-        ? { ...row, [config.driverField || 'DIGER3_ISIM']: job.driverId } : row, config);
+    const materials = await repository.all('materials');
+    const vendorResult = row.FIRMA_ADI ? matchVendor(row.FIRMA_ADI, await repository.all('vendors'), { ...(config.vendorMatching || {}), aliases: await repository.all('vendorAliases') }) : null;
+    const contextMatches = job => {
+      const enriched = { ...orderFor(job), ...job };
+      const material = materials.find(item => item.id === enriched.materialId);
+      const codeMatches = normalize(row.MALZEME_KODU) && material &&
+        [material.id, material.code, material.materialCode, material.materialNumber].some(value => normalize(value) === normalize(row.MALZEME_KODU));
+      const contextRow = { ...row,
+        ...(vendorResult?.match && vendorShort(vendorResult.match.id) === vendorShort(enriched.vendorId) ? { FIRMA_ADI: enriched.vendorId } : {}),
+        ...(codeMatches ? { MALZEME_KODU: job.materialId } : {}),
+        ...(capturedDriver && capturedDriver.id === job.driverId ? { [config.driverField || 'DIGER3_ISIM']: job.driverId } : {}),
+      };
+      return matchesContext({ ...enriched, poNumber: job.poNumber || orderFor(job)?.poNumber }, contextRow, config);
+    };
     // A completed weigh-out must never be gated by schedule/PO/driver matching:
     // the truck physically left, so attach the exit weigh to whichever job
     // already recorded its weigh-in for this plate around the same first-weigh
@@ -252,9 +280,10 @@ function createProcessor({ repository, deliveries, config }) {
         const weights = capture(row, config, config.sourceWeightUnit || targetSite?.weighbridgeWeightUnit);
         if (Math.abs(Number(target.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('FIRST_WEIGHT_CHANGED');
         const actor = String(row.OPERATOR_ADI || 'Access weighbridge');
-        const net = weights.first - weights.second;
+        const net = Math.abs(weights.first - weights.second);
         const updated = await deliveries.updateFresh(target.id, {
           siteWeighOutWeight: weights.second, siteWeighOutAt: weights.secondAt, siteNetWeight: net,
+          accessWeighDirection: weights.second > weights.first ? 'loading' : 'unloading',
           ...(isWarehouseReceipt(target) ? {} : { quantityDelivered: net }),
           receivedAt: weights.secondAt, receivedBy: actor, receivedLocation: target.siteName || '',
           siteWeighOutByName: actor, status: 'SITE_WEIGHED_OUT',
@@ -267,7 +296,7 @@ function createProcessor({ repository, deliveries, config }) {
       const candidates = jobs.filter(j => (isSiteSchedule(j) || (j.siteWeighInAt && Math.abs(Date.parse(j.siteWeighInAt) - Date.parse(identity.firstAt)) <= CAPTURE_CLOCK_SKEW_MS))
         && (plate(j.plateNumber) ? plate(j.plateNumber) === plate(row.PLAKA) : vehicle && j.vehicleId === vehicle.id)
         && scheduleExistedAtCapture(j, identity.firstAt, event.observed_utc));
-      const contextual = candidates.length > 1 ? candidates.filter(contextMatches) : candidates;
+      const contextual = hasSecondWeigh || candidates.length > 1 ? candidates.filter(contextMatches) : candidates;
       // A completed two-weigh record is a physically completed trip. If it
       // does not match the context of a same-plate scheduled candidate, do
       // not attach it to that schedule; let it proceed as a custom job.
@@ -309,7 +338,7 @@ function createProcessor({ repository, deliveries, config }) {
       || (job.accessCapture?.plateNumber && plate(job.accessCapture.plateNumber) !== plate(row.PLAKA))) throw blocked('CAPTURE_PLATE_MISMATCH');
     if (capturedDriver && job.driverId && capturedDriver.id !== job.driverId) throw blocked('SCHEDULE_DRIVER_MISMATCH');
     // Registered identifiers (including national ID) confirm the same driver.
-    if (!contextMatches(job)) throw blocked('SCHEDULE_CONTEXT_MISMATCH');
+    if (!newOrder && !contextMatches(job)) throw blocked('SCHEDULE_CONTEXT_MISMATCH');
     const po = orderFor(job);
     const siteId = job.siteId || po?.siteId || '';
     if (newOrder && !siteId) throw blocked('SITE_REQUIRED');
@@ -347,9 +376,10 @@ function createProcessor({ repository, deliveries, config }) {
         explanation: String(row.DIGER4_ISIM || ''), capturedAt: weights.firstAt, observedAt: event.observed_utc || null },
     });
     if (weights.second !== null) {
-      const net = weights.first - weights.second;
+      const net = Math.abs(weights.first - weights.second);
       job = await deliveries.updateFresh(job.id, {
         siteWeighOutWeight: weights.second, siteWeighOutAt: weights.secondAt, siteNetWeight: net,
+        accessWeighDirection: weights.second > weights.first ? 'loading' : 'unloading',
         ...(isWarehouseReceipt(job) ? {} : { quantityDelivered: net }),
         receivedAt: weights.secondAt, receivedBy: actor, receivedLocation: job.siteName || '',
         siteWeighOutByName: actor, status: 'SITE_WEIGHED_OUT',

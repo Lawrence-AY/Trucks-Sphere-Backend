@@ -146,14 +146,14 @@ test('invalid dates, empty drivers, inverted loading weights and inconsistent NE
   assert.equal(parseCapture(event({ ...completed, NET: undefined }), config).netKg, 1000);
 });
 
-test('ambiguous existing POs are left unlinked and neither PO nor site orders are written', async () => {
+test('duplicate existing POs reuse a stable PO without changing purchase orders', async () => {
   const f = fixture();
   for (const id of ['P1', 'P2']) f.data.set(`purchaseOrders/${id}`, {
     id, status: 'open', vendorName: yard.FIRMA_ADI, siteName: yard.DIGER2_ISIM, materialName: yard.MALZEME_ADI });
   const before = JSON.stringify([...f.data]);
   const outcome = await f.process(event(yard));
-  assert.equal(outcome.purchaseOrderId, null);
-  assert.equal(outcome.poResolution, 'ambiguous');
+  assert.equal(outcome.purchaseOrderId, 'P1');
+  assert.equal(outcome.poResolution, 'matched');
   assert.equal(JSON.stringify([...f.data].filter(([key]) => key.startsWith('purchaseOrders/'))), before);
   assert.equal([...f.data.keys()].some(key => key.startsWith('deliveryOrders/')), false);
 });
@@ -187,4 +187,17 @@ test('yard idempotency normalizes Access time formats, plate spacing and date-on
     ...yard, PLAKA: 'kcb 292-d', TARIH1: '2026-10-09', SAAT1: '14:32:07' }));
   assert.equal(recordKey('KAYITLAR', { KAYIT_NO: '0042' }), '42');
   assert.equal(readConfig({}).weighingMode, 'loading');
+});
+
+test('loading matches material typos and a stale PO reference by vendor and material', () => {
+  for (const spelling of ['MUURRRAAM', 'MUURRAM', 'MURRRAM']) {
+    const data = { vehicles: [], drivers: [], sites: [],
+      vendors: [{ id: 'V001', name: 'HINDI GEN AGENCY LIMITED' }],
+      materials: [{ id: 'M001', name: 'MURRAM' }],
+      purchaseOrders: [{ id: 'PO1', poNumber: 'PO001/V001', vendorId: 'V001', materialId: 'M001', status: 'open' }] };
+    const result = resolveEntities(data, { ...yard, FIRMA_ADI: 'HINDI GEN AGENCY LTD', MALZEME_ADI: spelling, DIGER5_ISIM: 'stale' }, config);
+    assert.equal(result.purchaseOrderId, 'PO1');
+    assert.equal(result.materialId, 'M001');
+    assert.equal(result.planned.some(item => ['materials', 'vendors'].includes(item.collection)), false);
+  }
 });

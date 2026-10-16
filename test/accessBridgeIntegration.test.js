@@ -235,3 +235,23 @@ test('PO0017 first weight 2300 persists on the same trip through failure, retry,
   assert.equal(finished.siteNetWeight, 1300000);
   assert.equal((await f.repository.all('deliveryOrders')).length, 1);
 });
+
+test('verified increasing water weights persist through the real receipt and stock services once', async () => {
+  const f = fixture();
+  f.records.set('vendors/V001', { name: 'SPADES ATLAS COMPANY LIMITED' });
+  f.records.set('materials/M001', { name: 'CLEAN WATER' });
+  Object.assign(f.records.get('purchaseOrders/PO1'), { vendorName: 'SPADES ATLAS COMPANY LIMITED', materialId: 'M001', materialName: 'CLEAN WATER' });
+  const water = event({ ...row, FIRMA_ADI: 'SPADES ATLAS COMPANY LIMITED', MALZEME_ADI: 'CLEAN WATER',
+    DIGER5_ISIM: '', TARTIM1: 6100, TARTIM2: 16000, NET: 9900, TARIH2: '2026-10-02', SAAT2: '11:00:00' });
+  const result = await f.process(water);
+  await f.process(water);
+  const job = f.records.get(`deliveryOrders/${result.jobId}`);
+  assert.equal(job.siteWeighInWeight, 6100);
+  assert.equal(job.siteWeighOutWeight, 16000);
+  assert.equal(job.siteNetWeight, 9900);
+  assert.equal(job.quantityDelivered, 9.9);
+  assert.equal(job.accessWeighDirection, 'loading');
+  assert.ok(job.receiptNoteId);
+  assert.equal(f.records.get('purchaseOrders/PO1').pendingQualityControl, 9.9);
+  assert.equal((await f.repository.all('deliveryOrders')).length, 1);
+});

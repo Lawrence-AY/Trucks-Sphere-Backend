@@ -1,3 +1,6 @@
+const { selectBridgePurchaseOrder } = require('../../utils/bridgePurchaseOrder');
+const { matchMaterial, materialNamesMatch } = require('../../utils/materialMatching');
+const { matchVendor } = require('../../utils/vendorMatching');
 const { createHash } = require('node:crypto');
 const { captureTime } = require('./processor');
 const text = value => String(value ?? '').trim();
@@ -52,7 +55,9 @@ function resolveEntities(data, row, config) {
     return record;
   };
   const vendorName = text(row.FIRMA_ADI) || `Unspecified vendor (${config.sourceId})`;
-  const vendor = select('vendors', vendorName, ['name', 'companyName', 'vendorName'], { name: vendorName, companyName: vendorName, status: 'active' });
+  const vendorResult = matchVendor(vendorName, data.vendors, config.vendorMatching || {});
+  if (!vendorResult.match && vendorResult.status !== 'no_match') fail('VENDOR_REVIEW_REQUIRED');
+  const vendor = vendorResult.match || select('vendors', vendorName, ['name', 'companyName', 'vendorName'], { name: vendorName, companyName: vendorName, status: 'active' });
   const vehicle = select('vehicles', plate(row.PLAKA), ['registrationNumber', 'plateNumber'],
     { plateNumber: plate(row.PLAKA), registrationNumber: plate(row.PLAKA), vendorId: vendor.id, status: 'active' });
   const driverName = text(row[config.driverField || 'DIGER3_ISIM']);
@@ -60,10 +65,7 @@ function resolveEntities(data, row, config) {
   const driver = select('drivers', driverName, ['id', 'nationalId', 'licenseNumber', 'name', 'fullName'],
     { name: driverName, fullName: driverName, vendorId: vendor.id, status: 'active', registrationIncomplete: true }, vendor.id);
   const materialName = text(row.MALZEME_ADI || row.MALZEME_KODU) || 'Unspecified material';
-  const materialMatch = data.materials.filter(item =>
-    (text(row.MALZEME_KODU) && [item.id, item.code, item.materialCode].some(v => normalize(v) === normalize(row.MALZEME_KODU)))
-    || [item.name, item.materialName].some(v => normalize(v) === normalize(materialName)))
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
+  const materialMatch = matchMaterial(materialName, text(row.MALZEME_KODU), data.materials);
   const material = materialMatch || select('materials', materialName, ['name', 'materialName'],
     { name: materialName, materialName, code: text(row.MALZEME_KODU), unit: 'kg' });
   if (!materialMatch) {
@@ -76,14 +78,17 @@ function resolveEntities(data, row, config) {
   const siteName = text(row.DIGER2_ISIM) || `Unspecified site (${config.sourceId})`;
   const site = select('sites', siteName, ['id', 'name', 'siteName'], { name: siteName, siteName, weighbridgeWeightUnit: 'kg' });
   const reference = normalize(row[config.poField || 'DIGER5_ISIM']);
-  const orders = data.purchaseOrders.filter(order => !closed.has(normalize(order.status)) && !order.isWarehouseDelivery
-    && (reference ? [order.id, order.poNumber].some(v => normalize(v) === reference)
-      : (order.vendorId === vendor.id || [order.vendorName, order.companyName].some(v => normalize(v) === normalize(vendorName)))
-        && (order.siteId === site.id || normalize(order.siteName) === normalize(siteName))
-        && (order.materialId === material.id || normalize(order.materialName) === normalize(materialName))));
+  const candidates = data.purchaseOrders.filter(order => !closed.has(normalize(order.status)) && !order.isWarehouseDelivery
+    && (order.vendorId === vendor.id || [order.vendorName, order.companyName].some(v => normalize(v) === normalize(vendorName)))
+    && (order.materialId === material.id || materialNamesMatch(order.materialName, materialName)));
+  const referenced = reference ? data.purchaseOrders.filter(order => !closed.has(normalize(order.status)) && !order.isWarehouseDelivery
+    && [order.id, order.poNumber].some(v => normalize(v) === reference)
+    && (!order.vendorId || order.vendorId === vendor.id)
+    && (!order.materialId || order.materialId === material.id)) : [];
+  const orders = referenced.length ? referenced : candidates;
   orders.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  // Only associate an existing, unambiguous open PO. Never create orders.
-  const order = orders.length === 1 ? orders[0] : null;
+  // Reuse a stable existing PO for duplicate commercial orders. Never create orders.
+  const order = selectBridgePurchaseOrder(orders, { vendor: row.FIRMA_ADI, material: row.MALZEME_ADI || row.MALZEME_KODU, siteId: site.id, siteName: row.DIGER2_ISIM, origin: row.DIGER1_ISIM });
   return { planned, truckId: vehicle.id, driverId: driver.id, vendorId: vendor.id,
     materialId: material.id, siteId: site.id, purchaseOrderId: order?.id || null,
     poResolution: order ? 'matched' : orders.length > 1 ? 'ambiguous' : 'unmatched' };

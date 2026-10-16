@@ -369,3 +369,112 @@ test('weigh-out does not fire for a waiting record with no second weigh', async 
   assert.equal(f.data.deliveryOrders[0].siteWeighInWeight, 30);
   assert.equal(f.data.deliveryOrders[0].siteWeighOutWeight, undefined);
 });
+
+for (const spelling of ['MURRAM', 'MUURRRAAM', 'MUURRAM', 'MURRRAM']) {
+  test(`custom trips reuse the Hindi MURRAM PO for ${spelling}`, async () => {
+    const f = fixture([]);
+    f.data.vendors = [{ id: 'V001', name: 'HINDI GEN AGENCY LIMITED' }];
+    f.data.materials = [{ id: 'M001', name: 'MURRAM' }];
+    Object.assign(f.data.purchaseOrders[0], { materialId: 'M001', materialName: 'MURRAM', vendorName: 'HINDI GEN AGENCY LIMITED' });
+    const row = { ...first, FIRMA_ADI: 'HINDI GEN AGENCY LTD', MALZEME_ADI: spelling,
+      DIGER3_ISIM: 'Driver', DIGER2_ISIM: 'Site', DIGER5_ISIM: 'stale-reference' };
+    await f.process(f.event(row));
+    await f.process(f.event(row));
+    await f.process(f.event({ ...row, PLAKA: 'KBB456B', SAAT1: '12:00:00' }));
+    assert.equal(f.data.purchaseOrders.length, 1);
+    assert.equal(f.data.materials.length, 1);
+    assert.equal(f.data.vendors.length, 1);
+    assert.equal(f.data.deliveryOrders.length, 2);
+    assert.ok(f.data.deliveryOrders.every(job => job.purchaseOrderId === 'PO1'));
+  });
+}
+test('closed matching PO does not generate a replacement PO', async () => {
+  const f = fixture([]);
+  f.data.purchaseOrders[0].status = 'closed';
+  await assert.rejects(f.process(f.event({ ...first, DIGER3_ISIM: 'Driver' })), { code: 'PURCHASE_ORDER_CLOSED' });
+  assert.equal(f.data.purchaseOrders.length, 1);
+  assert.equal(f.data.deliveryOrders.length, 0);
+});
+
+function suppliedCaptureFixture({ vendor = 'WELLSELECT ENTERPRISES LIMITED', material = 'RIVER SAND', driver = 'STEPHEN KAHINDI', registration = 'KDW838F', code = 'SAND', firstWeight = 49000, lastWeight = 18600 } = {}) {
+  const f = fixture([]);
+  f.data.vehicles = [{ id: 'T001', plateNumber: registration }];
+  f.data.drivers = [{ id: 'D001', name: driver }];
+  f.data.sites = [{ id: 'S001', name: 'MANDA BAY', weighbridgeWeightUnit: 'kg' }];
+  f.data.vendors = [{ id: 'V001', name: vendor }];
+  f.data.materials = [{ id: 'M001', name: material, code }];
+  f.data.purchaseOrders = [{ id: 'PO1', poNumber: 'PO0001/V001', vendorId: 'V001', vendorName: vendor,
+    materialId: 'M001', materialName: material, siteId: 'S001', siteName: 'MANDA BAY', status: 'open', createdAt: '2026-01-01T00:00:00Z' }];
+  const row = { PLAKA: registration, FIRMA_ADI: vendor, MALZEME_ADI: material, MALZEME_KODU: code,
+    DIGER1_ISIM: 'MALINDI', DIGER2_ISIM: 'MANDA BAY', DIGER3_ISIM: driver, DIGER5_ISIM: '',
+    TARTIM1: firstWeight, TARTIM2: lastWeight, NET: Math.abs(firstWeight - lastWeight),
+    TARIH1: '2026-10-16T00:00:00', SAAT1: '1899-12-30T08:22:27',
+    TARIH2: '2026-10-16T00:00:00', SAAT2: '1899-12-30T08:30:08', KAYIT_NO: 2261 };
+  return { f, row };
+}
+test('WELLSELECT river sand captures reuse the oldest duplicate PO across retries and registry order', async () => {
+  for (const reverse of [false, true]) {
+    const { f, row } = suppliedCaptureFixture();
+    f.data.purchaseOrders.push({ ...f.data.purchaseOrders[0], id: 'PO2', poNumber: 'PO0002/V001', createdAt: '2026-10-01T00:00:00Z' });
+    if (reverse) f.data.purchaseOrders.reverse();
+    const result = await f.process(f.event(row));
+    await f.process(f.event(row));
+    assert.equal(result.status, 'processed');
+    assert.equal(f.data.deliveryOrders[0].purchaseOrderId, 'PO1');
+    assert.equal(f.data.deliveryOrders[0].siteNetWeight, 30.4);
+    assert.equal(f.data.purchaseOrders.length, 2);
+    assert.equal(f.data.deliveryOrders.length, 1);
+  }
+});
+test('external SAND code resolves the scheduled material rather than comparing code to its ID', async () => {
+  const { f, row } = suppliedCaptureFixture();
+  f.data.deliveryOrders = [{ ...scheduled, plateNumber: row.PLAKA, purchaseOrderId: 'PO1', vendorId: 'V001',
+    vendorName: row.FIRMA_ADI, materialId: 'M001', materialName: row.MALZEME_ADI, driverName: row.DIGER3_ISIM }];
+  assert.equal((await f.process(f.event(row))).jobId, 'scheduled');
+  assert.equal(f.data.deliveryOrders.length, 1);
+});
+test('a completed capture conflicting with a single old same-plate schedule becomes a separate trip', async () => {
+  const { f, row } = suppliedCaptureFixture();
+  f.data.deliveryOrders = [{ ...scheduled, plateNumber: row.PLAKA, vendorName: 'OTHER COMPANY', materialName: 'BALLAST' }];
+  await f.process(f.event(row));
+  assert.equal(f.data.deliveryOrders.length, 2);
+  assert.equal(f.data.deliveryOrders[0].siteWeighInWeight, undefined);
+  assert.equal(f.data.deliveryOrders[1].siteNetWeight, 30.4);
+});
+test('SPADES ATLAS increasing weights preserve raw weighs and record a verified positive 9.9 tonne net', async () => {
+  const { f, row } = suppliedCaptureFixture({ vendor: 'SPADES ATLAS COMPANY LIMITED', material: 'CLEAN WATER', driver: 'JULIUS KIARIE', registration: 'KDZ577T', code: '', firstWeight: 6100, lastWeight: 16000 });
+  await f.process(f.event(row));
+  await f.process(f.event(row));
+  const job = f.data.deliveryOrders[0];
+  assert.equal(job.siteWeighInWeight, 6.1);
+  assert.equal(job.siteWeighOutWeight, 16);
+  assert.equal(job.siteNetWeight, 9.9);
+  assert.equal(job.accessWeighDirection, 'loading');
+  assert.equal(f.data.deliveryOrders.length, 1);
+});
+test('HINDI vendor abbreviation uses an existing matching schedule', async () => {
+  const { f, row } = suppliedCaptureFixture({ vendor: 'HINDI GEN AGENCY LIMITED', material: 'MURRAM', registration: 'KDV539L', code: '', firstWeight: 31350, lastWeight: 12300 });
+  f.data.deliveryOrders = [{ ...scheduled, plateNumber: row.PLAKA, vendorId: 'V001', vendorName: row.FIRMA_ADI,
+    materialId: 'M001', materialName: 'MURRAM', purchaseOrderId: 'PO1' }];
+  row.FIRMA_ADI = 'HINDI GEN AGENCY LTD';
+  assert.equal((await f.process(f.event(row))).jobId, 'scheduled');
+});
+test('reversed source dates fail before any entity or delivery writes and report both timestamps', async () => {
+  for (const [firstDate, secondDate] of [['2026-12-06', '2026-06-13'], ['2026-11-07', '2026-07-15']]) {
+    const { f, row } = suppliedCaptureFixture({ vendor: 'HINDI WATER' });
+    const before = structuredClone(f.data);
+    await assert.rejects(f.process(f.event({ ...row, TARIH1: firstDate, TARIH2: secondDate })), error => {
+      assert.equal(error.code, 'INVALID_CAPTURE_CHRONOLOGY');
+      assert.equal(error.details.firstDate, firstDate);
+      assert.equal(error.details.secondDate, secondDate);
+      return true;
+    });
+    assert.deepEqual(f.data, before);
+  }
+});
+test('incorrect source NET rejects before creating entities', async () => {
+  const { f, row } = suppliedCaptureFixture();
+  const before = structuredClone(f.data);
+  await assert.rejects(f.process(f.event({ ...row, NET: 123 })), { code: 'NET_WEIGHT_MISMATCH' });
+  assert.deepEqual(f.data, before);
+});

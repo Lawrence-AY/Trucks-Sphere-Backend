@@ -62,8 +62,8 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
           await store.save(event.id, MASTER_TABLES.has(event.table_name) ? await masterProcessor(event) : await processor(event));
         }
         catch (error) {
-          await store.save(event.id, { status: 'blocked', reason: error.code || error.message });
-          logger.warn('[Access bridge] Capture awaiting resolution:', event.id, error.code || error.message);
+          await store.save(event.id, { status: 'blocked', reason: error.code || error.message, ...(error.details ? { details: error.details } : {}) });
+          logger.warn('[Access bridge] Capture awaiting resolution:', event.id, error.code || error.message, ...(error.details ? [JSON.stringify(error.details)] : []));
         }
       }
       current.lastPollAt = new Date().toISOString();
