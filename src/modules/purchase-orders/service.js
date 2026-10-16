@@ -229,13 +229,45 @@ const purchase_ordersService = {
       const docRef = collectionRef.doc(id);
       const doc = await docRef.get();
       if (!doc.exists) return null;
-      // PO numbers are immutable and retired fields must never be written
-      // again by an older mobile build.
-      const { expectedCompletion, notes, poNumber, ...updates } = data;
-      if (updates.quantity !== undefined && (!Number.isFinite(Number(updates.quantity)) || Number(updates.quantity) <= 0)) {
-        const error = new Error('Quantity must be a positive number.');
-        error.statusCode = 400;
-        throw error;
+      const existing = doc.data();
+      // Identity and audit timestamps remain owned by the server.
+      const { expectedCompletion, notes, poNumber, id: ignoredId, createdAt, updatedAt, ...updates } = data;
+      const invalid = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
+      const changesLines = ['materials', 'materialId', 'quantity', 'unit'].some(key => Object.hasOwn(updates, key));
+      if ((changesLines || updates.vendorId !== undefined) && ['cancelled', 'archived', 'completed'].includes(String(existing.status).toLowerCase())) {
+        invalid('Closed purchase orders cannot be edited.');
+      }
+      if (updates.vendorId !== undefined) {
+        const vendor = findReference('vendors', updates.vendorId);
+        if (!vendor) invalid('A valid vendor is required.');
+        updates.vendorId = vendor.id;
+        updates.vendorName = vendor.companyName || vendor.name || '';
+        updates.vendorNumber = displayNumber(vendor.vendorId || vendor.id, 'V');
+      }
+      if (changesLines) {
+        let requested = updates.materials;
+        if (requested === undefined) {
+          requested = Array.isArray(existing.materials) && existing.materials.length
+            ? existing.materials.map((line, index) => index ? line : { ...line, ...Object.fromEntries(['materialId', 'quantity', 'unit'].filter(key => updates[key] !== undefined).map(key => [key, updates[key]])) })
+            : [{ ...existing, ...updates }];
+        }
+        if (!Array.isArray(requested) || !requested.length) invalid('At least one material is required.');
+        const lines = requested.map((line, index) => {
+          const material = findReference('materials', line?.materialId);
+          if (!material) invalid('A valid material is required.');
+          const quantity = Number(line.quantity);
+          if (!material.isWarehouseMaterial && (!Number.isFinite(quantity) || quantity <= 0)) invalid('Quantity must be a positive number.');
+          const occurrence = requested.slice(0, index).filter(saved => saved.materialId === line.materialId).length;
+          const previous = (existing.materials?.length ? existing.materials : [existing]).filter(saved => saved.materialId === material.id)[occurrence] || {};
+          return { ...previous, materialId: material.id, materialNumber: displayNumber(material.materialId || material.id, 'MAT'),
+            materialName: material.name || '', isWarehouseMaterial: Boolean(material.isWarehouseMaterial),
+            quantity: material.isWarehouseMaterial ? null : quantity,
+            ...(previous.remainingQuantity != null && !material.isWarehouseMaterial ? { remainingQuantity: Math.max(0, quantity - Number(previous.allocatedQuantity ?? previous.quantityDelivered ?? previous.deliveredQuantity ?? 0)) } : {}),
+            unit: material.isWarehouseMaterial ? null : material.measurementType || material.defaultUnit || material.unit || line.unit || 'units' };
+        });
+        if (lines.length > 1 && lines.some(line => line.isWarehouseMaterial)) invalid('A warehouse-reference purchase order can contain only one material.');
+        updates.materials = lines;
+        Object.assign(updates, lines[0]);
       }
       if (String(updates.status || '').trim().toLowerCase() === 'open') updates.status = 'active';
       updates.updatedAt = new Date().toISOString();

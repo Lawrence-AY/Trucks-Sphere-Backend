@@ -99,3 +99,10 @@ exports.findFleet = async (req, res, next) => {
     res.json(await vendorsService.findFleet(vendor.id));
   } catch (error) { next(error); }
 };
+
+exports.createAccount = async (req, res, next) => {
+  try {
+    const result = await vendorsService.createAccount(req.params.id, req.body);
+    res.status(201).json(result);
+  } catch (error) { next(error); }
+};

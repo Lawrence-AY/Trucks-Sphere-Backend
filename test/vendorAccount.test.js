@@ -24,6 +24,10 @@ function harness() {
     deleteUser: async (uid) => accounts.delete(uid),
   };
   const dependencies = {
+    'node:crypto': require('node:crypto'),
+    '../../utils/vendorFleet': require('../src/utils/vendorFleet'),
+    '../../utils/vendorMatching': require('../src/utils/vendorMatching'),
+    '../../integrations/kraService': { validatePin: async () => ({}) },
     '../../../config/firebase': { db: { collection, runTransaction: async (fn) => {
       const writes = [];
       const result = await fn({ get: (ref) => ref.get(), set: (ref, data, options) => writes.push(() => records.set(`${ref.name}/${ref.id}`, { ...(options?.merge ? records.get(`${ref.name}/${ref.id}`) : {}), ...data })) });
@@ -62,4 +66,27 @@ test('repair links an existing vendor without duplicating it or replacing its hi
   assert.equal([...records.keys()].filter((key) => key.startsWith('vendors/')).length, 1);
   await assert.rejects(service.createAccount('V016', { password: 'Test7$' }), { code: 'VENDOR_ACCOUNT_ALREADY_EXISTS' });
   assert.equal(accounts.size, 1);
+});
+
+test('imported vendors receive role vendor accounts without inventing contact details', async () => {
+  const { service, records, accounts } = harness();
+  records.set('vendors/V002', { id: 'V002', companyName: 'Galana Energies Limited', createdAt: 'original', bridgeCreated: true });
+  const result = await service.createAccount('V002', { password: 'Test7$' });
+  assert.equal(result.user.vendorId, 'V002');
+  assert.equal(result.user.role, 'vendor');
+  assert.equal(result.user.displayName, 'Galana Energies Limited');
+  assert.equal(result.user.phone, '');
+  assert.equal(accounts.get(result.user.uid).claims.role, 'vendor');
+  assert.equal(records.get('vendors/V002').createdAt, 'original');
+  assert.equal(records.get('vendors/V002').contactPerson, undefined);
+  assert.equal(records.get('vendors/V002').phone, undefined);
+  assert.equal(Object.hasOwn(result.user, 'password'), false);
+});
+
+test('already linked vendor and missing vendor never create an Auth account', async () => {
+  const { service, records, accounts } = harness();
+  records.set('vendors/V001', { ...vendor, userId: 'existing-user' });
+  await assert.rejects(service.createAccount('V001', { password: 'Test7$' }), { code: 'VENDOR_ACCOUNT_ALREADY_EXISTS' });
+  await assert.rejects(service.createAccount('missing', { password: 'Test7$' }), err => err.statusCode === 404);
+  assert.equal(accounts.size, 0);
 });

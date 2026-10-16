@@ -191,14 +191,15 @@ const vendorsService = {
     const email = String(account.email || vendor.email || '').trim().toLowerCase();
     const password = account.password;
     assertStrongPassword(password);
-    if (!vendor.companyName || !vendor.contactPerson || !vendor.phone) {
+    if (!(vendor.companyName || (existingVendorId && vendor.name)) || (!existingVendorId && (!vendor.contactPerson || !vendor.phone))) {
       throw Object.assign(new Error('Company name, contact person, and phone number are required'), { statusCode: 400 });
     }
     const kra = vendor.kraPin ? await kraService.validatePin(vendor.kraPin) : null;
     if (kra?.companyName && !vendor.companyName) vendor = { ...vendor, companyName: kra.companyName };
 
     const uniqueKeys = vendorUniqueKeys(vendor);
-    const username = await generateUniqueUsername(vendor.contactPerson);
+    const accountName = String(vendor.contactPerson || vendor.companyName || vendor.name || '').trim();
+    const username = await generateUniqueUsername(accountName);
     const authEmail = email || `${username}@users.trucksphere.local`;
     const vendorId = existingVendorId || await getNextId('vendor');
     const now = new Date().toISOString();
@@ -208,7 +209,7 @@ const vendorsService = {
       authUser = await getAuth().createUser({
         email: authEmail,
         password,
-        displayName: vendor.contactPerson.trim(),
+        displayName: accountName,
         disabled: account.isActive === false,
       });
       await getAuth().setCustomUserClaims(authUser.uid, { role: 'vendor' });
@@ -230,19 +231,19 @@ const vendorsService = {
         createdAt: vendor.createdAt || now,
         updatedAt: now,
       };
-      const { firstName, lastName } = splitName(vendor.contactPerson);
+      const { firstName, lastName } = splitName(accountName);
       const userItem = {
         id: authUser.uid,
         uid: authUser.uid,
         authUid: authUser.uid,
         email,
         authEmail,
-        displayName: vendor.contactPerson.trim(),
+        displayName: accountName,
         generatedUsername: username,
         username,
         firstName,
         lastName,
-        phone: vendor.phone.trim(),
+        phone: String(vendor.phone || '').trim(),
         role: 'vendor',
         vendorId,
         isActive: account.isActive !== false,
@@ -290,6 +291,10 @@ const vendorsService = {
   async createAccount(id, account) {
     const current = await collectionRef.doc(id).get();
     if (!current.exists) throw Object.assign(new Error('Vendor not found'), { statusCode: 404 });
+    const linkedUsers = await db.collection('users').where('vendorId', '==', id).limit(1).get();
+    if (current.data().userId || !linkedUsers.empty) {
+      throw Object.assign(new Error('This vendor already has a login account.'), { statusCode: 409, code: 'VENDOR_ACCOUNT_ALREADY_EXISTS' });
+    }
     return vendorsService.createWithAccount({ vendor: current.data(), account }, id);
   },
 

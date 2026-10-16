@@ -8,6 +8,10 @@ function harness() {
   let sequence = 0;
   const collection = (name) => ({ name, doc: (id) => ({ name, id }) });
   const dependencies = {
+    'node:crypto': require('node:crypto'),
+    '../../utils/vendorFleet': require('../src/utils/vendorFleet'),
+    '../../utils/vendorMatching': require('../src/utils/vendorMatching'),
+    '../../integrations/kraService': { validatePin: async () => ({}) },
     '../../../config/firebase': { db: {
       collection,
       runTransaction: async (fn) => fn({
