@@ -268,7 +268,11 @@ function createProcessor({ repository, deliveries, config }) {
         && (plate(j.plateNumber) ? plate(j.plateNumber) === plate(row.PLAKA) : vehicle && j.vehicleId === vehicle.id)
         && scheduleExistedAtCapture(j, identity.firstAt, event.observed_utc));
       const contextual = candidates.length > 1 ? candidates.filter(contextMatches) : candidates;
-      if (candidates.length && !contextual.length) throw blocked('SCHEDULE_CONTEXT_MISMATCH');
+      // A completed two-weigh record is a physically completed trip. If it
+      // does not match the context of a same-plate scheduled candidate, do
+      // not attach it to that schedule; let it proceed as a custom job.
+      // First-weigh records still block on a conflicting scheduled context.
+      if (candidates.length && !contextual.length && !hasSecondWeigh) throw blocked('SCHEDULE_CONTEXT_MISMATCH');
       job = unique(contextual, 'AMBIGUOUS_SCHEDULE');
     }
     let newOrder;
