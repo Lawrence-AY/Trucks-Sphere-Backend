@@ -6,6 +6,19 @@ function recordKey(table, row) {
     if (!Number.isSafeInteger(Number(row.KAYIT_NO)) || Number(row.KAYIT_NO) < 1) throw new Error('INVALID_RECORD_NUMBER');
     return String(Number(row.KAYIT_NO));
   }
+  if (table === 'FIRMALAR') {
+    if (!String(row.FIRMA_ADI || '').trim()) throw new Error('INVALID_VENDOR_RECORD');
+    return String(row.FIRMA_ADI).trim().toUpperCase();
+  }
+  if (table === 'DIGER3') {
+    if (!String(row.DIGER3_ISIM || '').trim()) throw new Error('INVALID_DRIVER_RECORD');
+    return String(row.DIGER3_ISIM).trim().toUpperCase();
+  }
+  if (table === 'TANIMLI_ARACLAR') {
+    const registration = String(row.PLAKA || '').trim().toUpperCase().replace(/[\s-]/g, '');
+    if (!registration) throw new Error('INVALID_TRUCK_RECORD');
+    return registration;
+  }
   if (table !== 'ICERIDEKI_ARACLAR' || !String(row.PLAKA || '').trim() || !row.TARIH1 || !row.SAAT1) throw new Error('INVALID_WAITING_RECORD');
   const time = String(row.SAAT1).match(/^(?:\d{4}-\d{2}-\d{2}[T ])?(\d{2}:\d{2}:\d{2})/);
   if (!time) throw new Error('INVALID_WAITING_RECORD');

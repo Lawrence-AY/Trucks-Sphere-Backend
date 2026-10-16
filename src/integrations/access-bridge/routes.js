@@ -6,7 +6,7 @@ const { db } = require('../../../config/firebase');
 const { createStore } = require('./store');
 const { readConfig } = require('./config');
 const { status } = require('./worker');
-router.post('/captures', async (req, res, next) => {
+async function handleCaptures(req, res, next) {
   try {
     const config = readConfig();
     const supplied = String(req.headers.authorization || '').replace(/^Bearer /, '');
@@ -22,7 +22,9 @@ router.post('/captures', async (req, res, next) => {
     if (/^(INVALID_|CAPTURE_TOO_LARGE|CONFLICTING_DUPLICATE_CAPTURE)/.test(error.message)) return res.status(400).json({ code: error.message });
     next(error);
   }
-});
+}
+router.post('/captures', handleCaptures);
+router.post('/captures-v2', handleCaptures);
 router.use(verifyToken, requireRoles('superadmin', 'admin', 'adminlite'));
 router.get('/tickets/:id', async (req, res, next) => {
   try {

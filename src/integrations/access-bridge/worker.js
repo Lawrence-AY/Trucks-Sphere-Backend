@@ -3,6 +3,7 @@ const { readConfig } = require('./config');
 const { createProcessor } = require('./processor');
 const { createStore } = require('./store');
 const { createLoadingProcessor } = require('./loading');
+const { createMasterTableProcessor, MASTER_TABLES } = require('./masterTables');
 const { getNextId } = require('../../utils/counterService');
 let current = { enabled: false };
 const status = () => current;
@@ -41,6 +42,7 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
   const processor = config.weighingMode === 'unloading'
     ? createProcessor({ repository, deliveries, config })
     : createLoadingProcessor({ db, config, logger });
+  const masterProcessor = createMasterTableProcessor({ db, config, logger });
   async function tick() {
     if (running || stopped) return;
     running = true;
@@ -57,7 +59,7 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
         }
         try {
           logger.log('[Access bridge] processing record:', event.id, event.table_name, event.payload);
-          await store.save(event.id, await processor(event));
+          await store.save(event.id, MASTER_TABLES.has(event.table_name) ? await masterProcessor(event) : await processor(event));
         }
         catch (error) {
           await store.save(event.id, { status: 'blocked', reason: error.code || error.message });
