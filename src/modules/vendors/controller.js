@@ -1,8 +1,9 @@
+const { normalizeVendorId } = require('../../utils/vendorFleet');
 const vendorsService = require('./service');
 const kraService = require('../../integrations/kraService');
 
 function vendorScope(req) {
-  return req.user?.role === 'vendor' ? req.user?.entityId || '' : '';
+  return req.user?.role === 'vendor' ? req.user?.vendorId || req.user?.entityId || '' : '';
 }
 
 exports.findAll = async (req, res, next) => {
@@ -86,4 +87,15 @@ exports.addAlias = async (req, res, next) => {
 
 exports.removeAlias = async (req, res, next) => {
   try { await vendorsService.removeAlias(req.params.aliasId); res.json({ message: 'Alias removed' }); } catch (err) { next(err); }
+};
+
+exports.findFleet = async (req, res, next) => {
+  try {
+    const vendor = await vendorsService.findById(req.params.id);
+    const scope = vendorScope(req);
+    if (!vendor || (req.user?.role === 'vendor' && (!scope || normalizeVendorId(scope) !== normalizeVendorId(vendor.id)))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    res.json(await vendorsService.findFleet(vendor.id));
+  } catch (error) { next(error); }
 };

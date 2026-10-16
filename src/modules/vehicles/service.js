@@ -1,3 +1,4 @@
+const { buildFleetIndex, withVehicleVendors, vehicleBelongsToVendor } = require('../../utils/vendorFleet');
 const { db } = require('../../../config/firebase');
 const { getNextId } = require('../../utils/counterService');
 const snapshotStore = require('../../utils/snapshotStore');
@@ -26,7 +27,9 @@ const vehiclesService = {
   findAll(query = {}) {
     const { search, status, vendorId, page = 1, limit = 50 } = query;
 
-    let results = snapshotStore.getAll(COLLECTION_NAME);
+    const vehicles = snapshotStore.getAll(COLLECTION_NAME);
+    const index = buildFleetIndex(vehicles, snapshotStore.getAll('deliveryOrders'), snapshotStore.getAll('purchaseOrders'));
+    let results = vehicles.map(vehicle => withVehicleVendors(vehicle, index));
 
     results = [...results].sort((a, b) => {
       const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -36,7 +39,7 @@ const vehiclesService = {
 
     if (status) results = results.filter(item => item.status === status);
     if (vendorId) {
-      results = results.filter(item => item.vendorId === vendorId);
+      results = results.filter(item => vehicleBelongsToVendor(item, vendorId));
     }
     if (search) {
       const s = search.toLowerCase();
@@ -58,7 +61,9 @@ const vehiclesService = {
 
   findById(id) {
     const doc = snapshotStore.getById(COLLECTION_NAME, id);
-    return doc || null;
+    if (!doc) return null;
+    const index = buildFleetIndex(snapshotStore.getAll(COLLECTION_NAME), snapshotStore.getAll('deliveryOrders'), snapshotStore.getAll('purchaseOrders'));
+    return withVehicleVendors(doc, index);
   },
 
   async create(data) {

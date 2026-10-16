@@ -59,7 +59,7 @@ function resolveEntities(data, row, config) {
   if (!vendorResult.match && vendorResult.status !== 'no_match') fail('VENDOR_REVIEW_REQUIRED');
   const vendor = vendorResult.match || select('vendors', vendorName, ['name', 'companyName', 'vendorName'], { name: vendorName, companyName: vendorName, status: 'active' });
   const vehicle = select('vehicles', plate(row.PLAKA), ['registrationNumber', 'plateNumber'],
-    { plateNumber: plate(row.PLAKA), registrationNumber: plate(row.PLAKA), vendorId: vendor.id, status: 'active' });
+    { plateNumber: plate(row.PLAKA), registrationNumber: plate(row.PLAKA), vendorId: vendor.id, vendorIds: [vendor.id], status: 'active' });
   const driverName = text(row[config.driverField || 'DIGER3_ISIM']);
   if (!driverName) fail('DRIVER_NAME_REQUIRED');
   const driver = select('drivers', driverName, ['id', 'nationalId', 'licenseNumber', 'name', 'fullName'],

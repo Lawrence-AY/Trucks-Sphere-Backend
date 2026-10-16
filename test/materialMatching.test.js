@@ -12,3 +12,10 @@ test('material grades and ambiguous names stay distinct', () => {
   assert.equal(materialNamesMatch('SAND', 'STONE'), false);
   assert.throws(() => matchMaterial('MUURRAM', '', [{ id: 'M1', name: 'MURRAM' }, { id: 'M2', name: 'MURRRAM' }]), { code: 'MATERIAL_REVIEW_REQUIRED' });
 });
+
+test('merged spellings and retired material IDs resolve to the canonical material', () => {
+  const canonical = { id: 'MAT001', name: 'MURRAM', aliases: ['MUURRAM', 'MURRRAM'], mergedMaterialIds: ['MAT004', 'MAT005'] };
+  assert.equal(matchMaterial('MUURRAM', '', [canonical]).id, 'MAT001');
+  assert.equal(matchMaterial('MURRRAM', 'MAT005', [canonical]).id, 'MAT001');
+  assert.equal(matchMaterial('MUURRRAAM', '', [canonical]).id, 'MAT001');
+});

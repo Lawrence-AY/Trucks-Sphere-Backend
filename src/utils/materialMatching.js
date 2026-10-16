@@ -13,13 +13,14 @@ function materialNamesMatch(a, b) {
     (!/\d/.test(token + bb[i]) && Math.min(token.length, bb[i].length) >= 5
       && jaroWinkler(token, bb[i]) >= 0.94));
 }
+const names = material => [material.name, material.materialName, ...(material.aliases || [])];
 function matchMaterial(name, code, materials = []) {
-  const byCode = code && materials.filter(m => [m.id, m.code, m.materialCode, m.materialNumber]
+  const byCode = code && materials.filter(m => [m.id, m.code, m.materialCode, m.materialNumber, ...(m.codes || []), ...(m.mergedMaterialIds || [])]
     .some(value => normalizeMaterial(value) && normalizeMaterial(value) === normalizeMaterial(code)));
-  const exact = materials.filter(m => [m.name, m.materialName].some(value =>
+  const exact = materials.filter(m => names(m).some(value =>
     normalizeMaterial(value) && normalizeMaterial(value) === normalizeMaterial(name)));
   const matches = byCode?.length ? byCode : exact.length ? exact : materials.filter(m =>
-    [m.name, m.materialName].some(value => materialNamesMatch(value, name)));
+    names(m).some(value => materialNamesMatch(value, name)));
   if (matches.length > 1) throw Object.assign(new Error('MATERIAL_REVIEW_REQUIRED'), { code: 'MATERIAL_REVIEW_REQUIRED' });
   return matches[0] || null;
 }

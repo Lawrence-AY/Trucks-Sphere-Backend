@@ -1,11 +1,12 @@
+const { vehicleBelongsToVendor } = require('../../utils/vendorFleet');
 const vehiclesService = require('./service');
 
 function scopedQuery(req) {
-  return req.user?.role === 'vendor' ? { ...req.query, vendorId: req.user?.entityId || '__none__' } : req.query;
+  return req.user?.role === 'vendor' ? { ...req.query, vendorId: req.user?.vendorId || req.user?.entityId || '__none__' } : req.query;
 }
 
 function isOutsideVendorScope(req, item) {
-  return req.user?.role === 'vendor' && (!req.user?.entityId || item?.vendorId !== req.user.entityId);
+  return req.user?.role === 'vendor' && !vehicleBelongsToVendor(item, req.user?.vendorId || req.user?.entityId);
 }
 
 exports.findAll = async (req, res, next) => {

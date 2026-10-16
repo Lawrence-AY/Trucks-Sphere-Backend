@@ -1,6 +1,7 @@
 const { db } = require('../../../config/firebase');
 const snapshotStore = require('../../utils/snapshotStore');
 const { getNextId } = require('../../utils/counterService');
+const { matchMaterial } = require('../../utils/materialMatching');
 const collectionRef = db.collection('materials');
 
 const COLLECTION_NAME = 'materials';
@@ -43,6 +44,16 @@ const materialsService = {
 
   async create(data) {
     try {
+      const normalizeUnit = value => String(value || '').toLowerCase().replace(/^(t|tons?|tonnes?)$/, 'tonnes');
+      const requestedUnit = data.measurementType || data.defaultUnit || data.unit;
+      const findExisting = snapshot => matchMaterial(data.name || data.materialName, data.code || data.materialCode,
+        snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(material => {
+          const existingUnit = material.measurementType || material.defaultUnit || material.unit;
+          return !!material.isWarehouseMaterial === !!data.isWarehouseMaterial
+            && (!requestedUnit || !existingUnit || normalizeUnit(requestedUnit) === normalizeUnit(existingUnit));
+        }));
+      const existing = findExisting(await collectionRef.get());
+      if (existing) return existing;
       const materialId = await getNextId('material');
       const docRef = collectionRef.doc(materialId);
       const item = {
@@ -53,8 +64,14 @@ const materialsService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await docRef.set(item);
-      return { id: materialId, ...item };
+      return db.runTransaction(async tx => {
+        // Recheck after reserving the ID so another creation cannot insert a
+        // spelling duplicate between lookup and commit.
+        const concurrent = findExisting(await tx.get(collectionRef));
+        if (concurrent) return concurrent;
+        tx.set(docRef, item);
+        return { id: materialId, ...item };
+      });
     } catch (error) {
       console.error('materialsService.create error:', error);
       throw error;

@@ -1,3 +1,4 @@
+const vendorFleet = require('../../utils/vendorFleet');
 const { db } = require('../../../config/firebase');
 const { getAuth } = require('firebase-admin/auth');
 const { getNextId } = require('../../utils/counterService');
@@ -11,6 +12,17 @@ const { createHash } = require('node:crypto');
 const { normalizeName } = require('../../utils/vendorMatching');
 
 const COLLECTION_NAME = 'vendors';
+function fleetContext() {
+  const vehicles = snapshotStore.getAll('vehicles');
+  const trips = snapshotStore.getAll('deliveryOrders');
+  const orders = snapshotStore.getAll('purchaseOrders');
+  const index = vendorFleet.buildFleetIndex(vehicles, trips, orders);
+  return { vehicles, index, stats: vendorFleet.fleetStats(vehicles, trips, orders, index) };
+}
+function vendorWithFleet(vendor, context) {
+  return { ...vendor, ...(context.stats.get(vendorFleet.normalizeVendorId(vendor.id || vendor.vendorId)) || { fleetSize: 0, truckCount: 0, tripCount: 0 }) };
+}
+
 
 function normalizedMatchKey(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -95,7 +107,8 @@ const vendorsService = {
   findAll(query = {}) {
     const { search, status, page = 1, limit = 50 } = query;
 
-    let results = snapshotStore.getAll(COLLECTION_NAME);
+    const context = fleetContext();
+    let results = snapshotStore.getAll(COLLECTION_NAME).map(vendor => vendorWithFleet(vendor, context));
 
     // Stable vendor-number ordering also keeps paginated filter options fixed.
     results = [...results].sort((a, b) => {
@@ -124,7 +137,14 @@ const vendorsService = {
 
   findById(id) {
     const doc = snapshotStore.getById(COLLECTION_NAME, id);
-    return doc || null;
+    return doc ? vendorWithFleet(doc, fleetContext()) : null;
+  },
+
+  findFleet(id) {
+    const context = fleetContext();
+    const data = context.vehicles.map(vehicle => vendorFleet.withVehicleVendors(vehicle, context.index))
+      .filter(vehicle => vendorFleet.vehicleBelongsToVendor(vehicle, id));
+    return { data, total: data.length };
   },
 
   async create(data) {

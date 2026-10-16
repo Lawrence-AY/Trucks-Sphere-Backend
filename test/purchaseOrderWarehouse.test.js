@@ -86,3 +86,10 @@ test('order selectors receive all orders by default and explicit pagination stil
   assert.equal(page.total, 75);
   assert.equal(page.totalPages, 2);
 });
+
+test('new purchase orders are active even when an older client submits open', async () => {
+ for (const materialId of ['MAT001', 'MAT002']) {
+  const order = await loadService().create({vendorId:'V001',materialId,quantity:10,status:'open'});
+  assert.equal(order.status,'active');
+ }
+});

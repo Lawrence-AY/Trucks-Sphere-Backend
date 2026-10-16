@@ -11,6 +11,7 @@ router.get('/username', vendorsController.previewUsername);
 router.post('/validate-kra-pin', vendorsController.validateKraPin);
 router.post('/with-account', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true }), vendorsController.createWithAccount);
 router.get('/', vendorsController.findAll);
+router.get('/:id/fleet', vendorsController.findFleet);
 router.get('/:id/documents', vendorsController.findDocuments);
 router.get('/:id/aliases', vendorsController.listAliases);
 router.post('/:id/aliases', requireManagementAccess({ allowLite: true, write: true, allowAdminWrite: true, allowLiteWrite: true }), vendorsController.addAlias);

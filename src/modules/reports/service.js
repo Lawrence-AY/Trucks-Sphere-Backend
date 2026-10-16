@@ -2,7 +2,7 @@ const { buildDeliverySummary, formatExcess } = require('../purchase-orders/deliv
 const { dispatchMaterials } = require('../../utils/dispatchMaterials');
 const { warehouseReportFields } = require('./warehouseReport');
 /**
- * Reports Service — Data Aggregator
+ * Reports Service â€” Data Aggregator
  *
  * Reads all data from the in-memory snapshot store (zero Firestore reads).
  * Aggregates across deliveryOrders, vendors, drivers, vehicles, fuelRecords,
@@ -91,7 +91,7 @@ function getReportMaterialSource(delivery, quarryLocation = '') {
   if (city && location) {
     return location.toLocaleLowerCase().includes(String(city).toLocaleLowerCase())
       ? location
-      : `${city} — ${location}`;
+      : `${city} â€” ${location}`;
   }
 
   return city || location || 'Not captured';
@@ -283,7 +283,7 @@ function cycleHours(startStr, endStr) {
 }
 
 /**
- * ─── Master Audit: flattened delivery + all joins ───
+ * â”€â”€â”€ Master Audit: flattened delivery + all joins â”€â”€â”€
  */
 function buildMasterAudit(options = {}) {
   const deliveries = getDeliveries(options);
@@ -351,11 +351,11 @@ function buildMasterAudit(options = {}) {
       warehouseItems: formatWarehouseItems(d),
       // Quantities
       quantityOrdered: Number(d.quantityOrdered || po.quantity || 0),
-      // Delivered Qty uses site net data only — no fallback to quarry netWeight.
+      // Delivered Qty uses site net data only â€” no fallback to quarry netWeight.
       quantityDelivered: siteNet > 0 ? siteNet : 0,
       // Lifecycle Timestamps (raw ISO)
      
-      // Lifecycle Timestamps (EAT formatted — East African Time, UTC+3)
+      // Lifecycle Timestamps (EAT formatted â€” East African Time, UTC+3)
       quarryInTimeEAT: formatEAT(d.weighInAt),
       quarryOutTimeEAT: formatEAT(d.weighOutAt),
       siteInTimeEAT: formatEAT(d.siteWeighInAt),
@@ -392,7 +392,7 @@ function buildMasterAudit(options = {}) {
           line.initialVisualInspection || 'Pending',
           line.failureReason ? `Reason: ${line.failureReason}` : '',
           line.deficiency ? `Deficiency: ${line.deficiency}` : '',
-        ].filter(Boolean).join(' · '))
+        ].filter(Boolean).join(' Â· '))
         .join(' | '),
       // System accountability
       quarryOperator: d.weighOutByName || d.weighOutBy || '',
@@ -404,7 +404,7 @@ function buildMasterAudit(options = {}) {
 }
 
 /**
- * ─── Driver Report ───
+ * â”€â”€â”€ Driver Report â”€â”€â”€
  */
 /** One row per inspected material for the workbook's dedicated MIF sheet. */
 function buildMaterialInspectionReport(options = {}) {
@@ -498,7 +498,7 @@ function buildDriverReport() {
 }
 
 /**
- * ─── Materials Report ───
+ * â”€â”€â”€ Materials Report â”€â”€â”€
  */
 function buildMaterialReport(options = {}) {
   const material = String(options.material || '').trim().toLowerCase();
@@ -522,7 +522,7 @@ function buildMaterialReport(options = {}) {
 }
 
 /**
- * ─── Fuel Report ───
+ * â”€â”€â”€ Fuel Report â”€â”€â”€
  */
 function buildFuelReport(options = {}) {
   const records = getFuelRecords(options);
@@ -541,7 +541,7 @@ function buildFuelReport(options = {}) {
 }
 
 /**
- * ─── Truck Report ───
+ * â”€â”€â”€ Truck Report â”€â”€â”€
  */
 function buildTruckReport() {
   const vehicleDocs = snapshotStore.getAll('vehicles');
@@ -568,7 +568,7 @@ function buildTruckReport() {
 }
 
 /**
- * ─── Vendor Report ───
+ * â”€â”€â”€ Vendor Report â”€â”€â”€
  */
 function buildVendorReport(options = {}) {
   const vendorDocs = snapshotStore.getAll('vendors');
@@ -582,7 +582,7 @@ function buildVendorReport(options = {}) {
 
     return {
       vendorName: v.companyName || '',
-      activePOs: vendorPOs.filter((p) => ['approved', 'in_progress', 'pending'].includes(p.status)).length,
+      activePOs: vendorPOs.filter((p) => ['active', 'approved', 'in_progress', 'pending'].includes(p.status)).length,
       fulfilledPOs: vendorPOs.filter((p) => ['completed', 'delivered', 'fulfilled'].includes(String(p.status).toLowerCase())).length,
       excessQuantity: formatExcess(vendorPOs.flatMap(po => buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials)),
       excessFlag: vendorPOs.some(po => buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered),
@@ -601,7 +601,7 @@ function buildVendorReport(options = {}) {
 }
 
 /**
- * ─── Purchase Order Report ───
+ * â”€â”€â”€ Purchase Order Report â”€â”€â”€
  */
 function buildPOReport(options = {}) {
   const deliveries = snapshotStore.getAll('deliveryOrders');
@@ -624,7 +624,7 @@ function buildPOReport(options = {}) {
 }
 
 /**
- * ─── Summary Metrics ───
+ * â”€â”€â”€ Summary Metrics â”€â”€â”€
  */
 function buildSummary(options = {}) {
   const deliveries = getDeliveries(options);
@@ -639,7 +639,7 @@ function buildSummary(options = {}) {
   const totalFuelLitres = fuelRecords.reduce((sum, r) => sum + (Number(r.litres || r.fuelAmount) || 0), 0);
   const completedDeliveries = deliveries.filter((d) => ['COMPLETED', 'SITE_WEIGHED_OUT'].includes(normalizeJobStatus(d.status)) || (isWarehouseReceipt(d) && d.materialInspection?.mrfNumber && !d.warehouseDeniedAt));
   const inTransit = deliveries.filter((d) => isTrackableJob(d.status) && !d.warehouseAcceptedAt && !d.warehouseDeniedAt);
-  const openPOs = pos.filter((p) => ['approved', 'pending', 'in_progress'].includes(p.status));
+  const openPOs = pos.filter((p) => ['active', 'approved', 'pending', 'in_progress'].includes(p.status));
 
   return {
     deliveries: {

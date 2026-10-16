@@ -97,7 +97,7 @@ function parseOptions(query) {
 }
 
 /**
- * GET /api/vendor/reports — list available vendor report types
+ * GET /api/vendor/reports â€” list available vendor report types
  */
 router.get('/', async (req, res, next) => {
   try {
@@ -259,7 +259,7 @@ router.get('/export/csv/:category', async (req, res, next) => {
 });
 
 /**
- * GET /api/vendor/reports/summary — JSON summary for vendor dashboard
+ * GET /api/vendor/reports/summary â€” JSON summary for vendor dashboard
  */
 router.get('/summary', async (req, res, next) => {
   try {
@@ -318,7 +318,7 @@ router.get('/summary', async (req, res, next) => {
       purchaseOrders: {
         total: pos.length,
         open: pos.filter((p) =>
-          ['approved', 'pending', 'in_progress'].includes(p.status)
+          ['active', 'approved', 'pending', 'in_progress'].includes(p.status)
         ).length,
         fulfilled: pos.filter((p) =>
           ['completed', 'delivered'].includes(p.status)
@@ -396,7 +396,7 @@ router.get('/summary/:category', async (req, res, next) => {
         data = {
           total: pos.length,
           open: pos.filter((p) =>
-            ['approved', 'pending', 'in_progress'].includes(p.status)
+            ['active', 'approved', 'pending', 'in_progress'].includes(p.status)
           ).length,
           fulfilled: pos.filter((p) =>
             ['completed', 'delivered'].includes(p.status)

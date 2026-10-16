@@ -108,7 +108,7 @@ function similarity(a, b) {
 }
 
 function vendorNames(vendor) {
-  return [vendor.name, vendor.companyName, vendor.vendorName]
+  return [vendor.name, vendor.companyName, vendor.vendorName, ...(Array.isArray(vendor.aliases) ? vendor.aliases : [])]
     .filter(v => typeof v === 'string' && v.trim());
 }
 

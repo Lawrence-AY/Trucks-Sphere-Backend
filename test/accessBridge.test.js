@@ -298,6 +298,7 @@ test('custom captures auto-provision entities and only block on ambiguity or a m
   const outcome = await auto.process(auto.event({ ...first, DIGER3_ISIM: 'New Driver', DIGER2_ISIM: 'MANDA BAY', MALZEME_ADI: 'MURRAM', FIRMA_ADI: 'HINDI GEN AGENCY LTD' }));
   assert.equal(outcome.status, 'processed');
   assert.equal(auto.data.deliveryOrders.length, 1);
+  assert.equal(auto.data.purchaseOrders[0].status, 'active');
   assert.equal(auto.data.deliveryOrders[0].isUnscheduled, true);
   assert.ok(auto.data.vehicles.length >= 1);
   assert.ok(auto.data.drivers.length >= 1);

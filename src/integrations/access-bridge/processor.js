@@ -7,7 +7,7 @@ const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
 const normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
 const plate = value => normalize(value).replace(/[\s-]/g, '');
-// "v11", "11" or "V011" → "V011" (matches purchase-orders normalizeVendorId).
+// "v11", "11" or "V011" â†’ "V011" (matches purchase-orders normalizeVendorId).
 const vendorShort = id => {
   const match = String(id ?? '').trim().match(/^[Vv]?(\d+)$/);
   return match ? `V${String(parseInt(match[1], 10)).padStart(3, '0')}` : String(id ?? '');
@@ -187,6 +187,13 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
     toCreate.push(['vendors', vendor.id, vendor]);
   }
 
+  // The vendor is resolved after the truck; finish its association before
+  // persisting an automatically provisioned vehicle.
+  if (toCreate.some(([collection, id]) => collection === 'vehicles' && id === vehicle.id)) {
+    vehicle.vendorId = vendor.id;
+    vehicle.vendorIds = [vendor.id];
+  }
+
   if (!capturedDriver) {
     const name = String(row[config.driverField || 'DIGER3_ISIM'] || '').trim();
     if (!name) throw blocked('DRIVER_NAME_REQUIRED');
@@ -222,7 +229,7 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
     order = { id: poId, poNumber, vendorId: vendor.id, vendorName: vendor.name || vendor.companyName,
       siteId: site.id, siteName: site.name || site.siteName,
       materialId: material.id, materialName: material.name || material.materialName,
-      unit: 'tonnes', status: 'open', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: now };
+      unit: 'tonnes', status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: now };
     toCreate.push(['purchaseOrders', order.id, order]);
   }
   order = { ...order, siteName: order.siteName || (order.siteId === site.id ? site.name || site.siteName : '') };

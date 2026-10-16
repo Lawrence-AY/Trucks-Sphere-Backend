@@ -5,7 +5,7 @@ const { getNextId, peekNextId } = require('../../utils/counterService');
 const collectionRef = db.collection('purchaseOrders');
 
 /**
- * Normalize vendor ID to consistent format e.g. "v1" → "V001", "1" → "V001"
+ * Normalize vendor ID to consistent format e.g. "v1" â†’ "V001", "1" â†’ "V001"
  */
 function normalizeVendorId(raw) {
   if (!raw) return '';
@@ -19,7 +19,7 @@ function normalizeVendorId(raw) {
 }
 
 /**
- * Normalize material ID to consistent format e.g. "m1", "mat1" → "MAT001", "1" → "MAT001"
+ * Normalize material ID to consistent format e.g. "m1", "mat1" â†’ "MAT001", "1" â†’ "MAT001"
  */
 function normalizeMaterialId(raw) {
   if (!raw) return '';
@@ -162,11 +162,11 @@ const purchase_ordersService = {
         throw error;
       }
 
-      // Normalize material ID → MAT### number
+      // Normalize material ID â†’ MAT### number
       const materialId = normalizeMaterialId(material.id || payload.materialId);
       const matNum = materialId ? materialId : 'MAT000';
 
-      // Normalize vendor ID → V### number
+      // Normalize vendor ID â†’ V### number
       let vendorIdShort = '';
       vendorIdShort = normalizeVendorId(vendor.vendorId || vendor.id || payload.vendorId);
 
@@ -180,7 +180,7 @@ const purchase_ordersService = {
       const docId = poNumber.replace(/\//g, '-');
       const docRef = collectionRef.doc(docId);
 
-      // Check for duplicate — do NOT overwrite an existing PO
+      // Check for duplicate â€” do NOT overwrite an existing PO
       const existingSnap = await docRef.get();
       if (existingSnap.exists) {
         const existing = existingSnap.data();
@@ -212,7 +212,7 @@ const purchase_ordersService = {
         quantity: lines[0].quantity,
         unit: lines[0].unit,
         materials: lines.map(({ material: _material, ...line }) => line),
-        status: 'approved',
+        status: 'active',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -237,6 +237,7 @@ const purchase_ordersService = {
         error.statusCode = 400;
         throw error;
       }
+      if (String(updates.status || '').trim().toLowerCase() === 'open') updates.status = 'active';
       updates.updatedAt = new Date().toISOString();
       await docRef.update(updates);
       return { id, ...doc.data(), ...updates };

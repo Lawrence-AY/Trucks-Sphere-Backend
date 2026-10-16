@@ -41,7 +41,8 @@ exports.exportExcel = async (req, res, next) => {
     const { start_date, end_date, filter } = req.query;
 
     // Build all report data
-    const data = {      masterAudit: reportsService.buildMasterAudit(options),
+    const data = {
+      masterAudit: reportsService.buildMasterAudit(options),
       materialInspections: reportsService.buildMaterialInspectionReport(options),
       storeActivity: reportsService.buildStoreActivityReport(options),
       warehouse: reportsService.buildMasterAudit(options).filter((r) => r.origin === 'Warehouse'),
@@ -166,7 +167,7 @@ exports.getCategorySummary = async (req, res, next) => {
         const pos = [...new Map(poRows.map(row => [row.purchaseOrderId || row.poNumber, row])).values()];
         data = {
           total: pos.length,
-          open: pos.filter(p => ['approved', 'pending', 'in_progress'].includes(p.status)).length,
+          open: pos.filter(p => ['active', 'approved', 'pending', 'in_progress'].includes(p.status)).length,
           fulfilled: pos.filter(p => ['completed', 'delivered'].includes(p.status)).length,
           preview: pos.slice(0, 5),
         };
