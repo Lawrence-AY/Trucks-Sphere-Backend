@@ -26,6 +26,11 @@ function getFirebaseApiKey() {
   return firebaseApiKey;
 }
 
+function isJwt(value) {
+  return typeof value === 'string' && value.trim().split('.').length === 3
+    && value.trim().split('.').every(part => part.length > 0);
+}
+
 /**
  * Generate a unique username from firstName + first 3 letters of lastName.
  * Strips special chars, handles short last names, resolves collisions.
@@ -445,6 +450,9 @@ exports.login = async (req, res, next) => {
       logAudit({ action: 'user.account_deletion_cancelled', entityType: 'user', entityId: userRecord.uid, severity: 'info', metadata: { reason: 'login' }, req }).catch(() => {});
     }
 
+    if (!isJwt(data.idToken)) {
+      throw Object.assign(new Error('Firebase login returned an invalid ID token.'), { code: 'AUTH_PROVIDER_INVALID_ID_TOKEN', statusCode: 502 });
+    }
     res.json({
       user: {
         uid: userRecord.uid,
@@ -503,6 +511,7 @@ exports.refresh = async (req, res, next) => {
       return invalidResponse();
     }
 
+    if (!isJwt(data.id_token)) return invalidResponse();
     return res.json({
       token: data.id_token,
       refreshToken: rotated.refreshToken,
