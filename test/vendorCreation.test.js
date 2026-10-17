@@ -55,3 +55,12 @@ test('real duplicate company, phone, and KRA PIN remain rejected', async () => {
     { companyName: 'Third company', kraPin: 'a123' },
   ]) await assert.rejects(service.create(data), { code: 'VENDOR_ALREADY_EXISTS' });
 });
+
+test('approved vendor aliases cannot create duplicate vendors', async () => {
+  const { service, records } = harness();
+  records.set('vendors/V006', { companyName: 'SPADES ATLAS COMPANY LIMITED', aliases: ['SPADE ATLAS COMPANY', 'SPADES ATLAS', 'SPADES ATLAS COMPANY', 'SPADES ATLAS COMPANY LTD'] });
+  for (const companyName of ['SPADE ATLAS COMPANY', 'SPADES ATLAS', 'SPADES ATLAS COMPANY', 'SPADES ATLAS COMPANY LTD']) {
+    await assert.rejects(service.create({ ...vendor, companyName }), err => err.code === 'VENDOR_ALREADY_EXISTS');
+  }
+  assert.equal([...records.keys()].filter(key => key.startsWith('vendors/')).length, 1);
+});

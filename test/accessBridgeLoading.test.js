@@ -201,3 +201,16 @@ test('loading matches material typos and a stale PO reference by vendor and mate
     assert.equal(result.planned.some(item => ['materials', 'vendors'].includes(item.collection)), false);
   }
 });
+
+test('loading captures use the canonical vendor name while retaining the source alias', async () => {
+  const f = fixture();
+  f.data.set('vendors/V006', { id: 'V006', companyName: 'SPADES ATLAS COMPANY LIMITED', aliases: ['SPADE ATLAS COMPANY', 'SPADES ATLAS', 'SPADES ATLAS COMPANY', 'SPADES ATLAS COMPANY LTD'] });
+  for (const [index, alias] of ['SPADE ATLAS COMPANY', 'SPADES ATLAS', 'SPADES ATLAS COMPANY', 'SPADES ATLAS COMPANY LTD'].entries()) {
+    const result = await f.process(event({ ...yard, PLAKA: 'TEST' + index, FIRMA_ADI: alias }));
+    const ticket = f.data.get(`accessBridgeTickets/${result.ticketId}`);
+    assert.equal(ticket.vendorId, 'V006');
+    assert.equal(ticket.vendorName, 'SPADES ATLAS COMPANY LIMITED');
+    assert.equal(ticket.sourceVendorName, alias);
+  }
+  assert.equal([...f.data.keys()].filter(key => key.startsWith('vendors/')).length, 1);
+});

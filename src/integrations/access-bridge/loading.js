@@ -1,3 +1,4 @@
+const { normalizeCaptureDates } = require('./captureDates');
 const { selectBridgePurchaseOrder } = require('../../utils/bridgePurchaseOrder');
 const { matchMaterial, materialNamesMatch } = require('../../utils/materialMatching');
 const { matchVendor } = require('../../utils/vendorMatching');
@@ -12,7 +13,7 @@ const closed = new Set(['COMPLETED', 'COMPLETE', 'DELIVERED', 'FULFILLED', 'CLOS
 const collections = ['vehicles', 'drivers', 'vendors', 'materials', 'sites', 'purchaseOrders'];
 
 function parseCapture(event, config) {
-  const row = JSON.parse(event.payload);
+  const row = normalizeCaptureDates(JSON.parse(event.payload), event.observed_utc, config.utcOffset);
   if (!['KAYITLAR', 'ICERIDEKI_ARACLAR'].includes(event.table_name)) fail('INVALID_CAPTURE_TABLE');
   const registration = plate(row.PLAKA);
   if (!registration || !/^[\p{L}\p{N}]+$/u.test(registration)) fail('PLATE_REQUIRED');
@@ -89,7 +90,7 @@ function resolveEntities(data, row, config) {
   orders.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   // Reuse a stable existing PO for duplicate commercial orders. Never create orders.
   const order = selectBridgePurchaseOrder(orders, { vendor: row.FIRMA_ADI, material: row.MALZEME_ADI || row.MALZEME_KODU, siteId: site.id, siteName: row.DIGER2_ISIM, origin: row.DIGER1_ISIM });
-  return { planned, truckId: vehicle.id, driverId: driver.id, vendorId: vendor.id,
+  return { planned, truckId: vehicle.id, driverId: driver.id, vendorId: vendor.id, vendorName: vendor.companyName || vendor.name || vendorName,
     materialId: material.id, siteId: site.id, purchaseOrderId: order?.id || null,
     poResolution: order ? 'matched' : orders.length > 1 ? 'ambiguous' : 'unmatched' };
 }
@@ -148,7 +149,7 @@ function createLoadingProcessor({ db, config, logger = console }) {
       const record = { ...links, truckId, sourceId: config.sourceId, plateNumber: registration, plateDate: `${registration}|${date}`,
         firstAt: previous?.firstAt || firstAt, secondAt, tareKg, grossKg, netKg, weightUnit: 'kg',
         ticketNumber, status: complete ? 'completed' : 'in_yard', contentHash,
-        vendorName: text(row.FIRMA_ADI), driverName: text(row[config.driverField || 'DIGER3_ISIM']),
+        vendorName: entities.vendorName, sourceVendorName: text(row.FIRMA_ADI), driverName: text(row[config.driverField || 'DIGER3_ISIM']),
         loadingPoint: text(row.DIGER1_ISIM), siteName: text(row.DIGER2_ISIM),
         deliveryNote: text(row.DIGER4_ISIM), materialName: text(row.MALZEME_ADI), materialCode: text(row.MALZEME_KODU),
         operatorName: text(row.OPERATOR_ADI), createdAt: previous?.createdAt || now, updatedAt: now };

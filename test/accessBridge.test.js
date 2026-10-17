@@ -460,19 +460,29 @@ test('HINDI vendor abbreviation uses an existing matching schedule', async () =>
   row.FIRMA_ADI = 'HINDI GEN AGENCY LTD';
   assert.equal((await f.process(f.event(row))).jobId, 'scheduled');
 });
-test('reversed source dates fail before any entity or delivery writes and report both timestamps', async () => {
-  for (const [firstDate, secondDate] of [['2026-12-06', '2026-06-13'], ['2026-11-07', '2026-07-15']]) {
+test('mixed Access dates are corrected before matching and persist consistently across retries', async () => {
+  for (const [firstDate, secondDate, expected] of [
+    ['2026-12-06', '2026-06-13', '2026-06-12'],
+    ['2026-11-07', '2026-07-15', '2026-07-11'],
+  ]) {
     const { f, row } = suppliedCaptureFixture({ vendor: 'HINDI WATER' });
-    const before = structuredClone(f.data);
-    await assert.rejects(f.process(f.event({ ...row, TARIH1: firstDate, TARIH2: secondDate })), error => {
-      assert.equal(error.code, 'INVALID_CAPTURE_CHRONOLOGY');
-      assert.equal(error.details.firstDate, firstDate);
-      assert.equal(error.details.secondDate, secondDate);
-      return true;
-    });
-    assert.deepEqual(f.data, before);
+    const event = { ...f.event({ ...row, TARIH1: firstDate, TARIH2: secondDate }), observed_utc: '2026-10-17T12:00:00Z' };
+    await f.process(event);
+    await f.process(event);
+    assert.equal(f.data.deliveryOrders.length, 1);
+    assert.equal(f.data.deliveryOrders[0].siteWeighInAt.slice(0, 10), expected);
+    assert.equal(f.data.deliveryOrders[0].siteWeighOutAt.slice(0, 10), secondDate);
   }
 });
+
+test('genuinely reversed capture dates still fail before writes', async () => {
+  const { f, row } = suppliedCaptureFixture();
+  const before = structuredClone(f.data);
+  await assert.rejects(f.process({ ...f.event({ ...row, TARIH1: '2026-06-14', TARIH2: '2026-06-13' }),
+    observed_utc: '2026-10-17T12:00:00Z' }), { code: 'INVALID_CAPTURE_CHRONOLOGY' });
+  assert.deepEqual(f.data, before);
+});
+
 test('incorrect source NET rejects before creating entities', async () => {
   const { f, row } = suppliedCaptureFixture();
   const before = structuredClone(f.data);

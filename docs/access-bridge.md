@@ -62,3 +62,19 @@ The delivery processor resolves vendor abbreviations and external material codes
 In unloading mode, a completed increasing-weight row is accepted when its supplied `NET` agrees with the absolute weight difference. Original first/second weighs are retained, the positive net is used, and `accessWeighDirection` records `loading` or `unloading`. Increasing weights without a verified NET remain invalid. This compatibility does not change the separate loading-ticket contract.
 
 Completed captures validate chronology and supplied NET before provisioning or binding records. `INVALID_CAPTURE_CHRONOLOGY` includes both source dates and interpreted timestamps in the event details and worker warning. Source dates are never swapped or fabricated. HINDI WATER tickets 81 (2026-12-06 to 2026-06-13) and 309 (2026-11-07 to 2026-07-15) need source correction before processing. Changed source rows create UPDATE events; blocked events retry every 30 seconds after deployment.
+
+### Mixed Access day/month exports
+
+Before matching captures, both processors correct a valid TARIH date only when it is later than the upload's source-local calendar day and swapping day/month gives a valid date on or before that day. For example, an October 17 upload converts 2026-12-06 to June 12 and 2026-11-07 to July 11; June 13 stays June 13. Clock times and the configured UTC offset are preserved. The stored observed_utc anchors retries. Dates already in the past remain ISO dates because their intended order cannot be inferred safely.
+
+Blocked events retry automatically after the backend restarts with this change. Already processed deliveries and receipts are not rewritten by this correction: their timestamps and accessBridgeKey need a coordinated repair from the original source event before replay, to avoid duplicate trips. Do not bulk-swap every November/December date.
+
+### Driver and truck numbering repair
+
+Master-table imports use the shared driver/truck counters (D### and T###). Vendor ownership is a separate association; master rows without ownership evidence remain unassigned until it can be established.
+
+Run node scripts/repair-fleet-numbering.js for a read-only plan. The repair reads all top-level collections and Access snapshots/events, allocates numbers above both counters and existing IDs, and infers missing vendor links from trips and matched source captures. Ambiguous driver ownership is reported. Shared trucks retain all vendor links. With --apply, it saves a before-image under .po-repair-backups and atomically updates entity IDs, linked trip/receipt/stock/event references and counters. It refuses collisions, moved documents with subcollections, changes after backup, and repairs over 450 writes. Existing job sequence numbers are preserved.
+
+### Compact driver and truck sequences
+
+Run node scripts/compact-fleet-numbering.js to preview a gap-free sequence ordered by the existing numeric IDs. With --apply it backs up the data and updates driver/truck documents, current delivery links and job keys, other entity references, and the three fleet counters in one transaction. Destination records are calculated from the original data before any writes, so overlapping old/new IDs cannot overwrite another driver's or truck's identity. The next IDs follow the new maxima. Issued trip/receipt identifiers and their document links remain permanent historical references. Vendor ownership, weights, dates, quantities and unrelated counters are preserved. Deleted records or failed allocations can create new gaps later; this command repairs the current sequence.

@@ -43,7 +43,8 @@ function vendorUniqueKeys(data = {}, { allowMissingCompany = false } = {}) {
     throw Object.assign(new Error('Company name is required'), { statusCode: 400, code: 'VENDOR_NAME_REQUIRED' });
   }
 
-  const keys = [`company:${companyName}`];
+  const aliasKeys = (Array.isArray(data.aliases) ? data.aliases : []).map(normalizedMatchKey).filter(Boolean);
+  const keys = [...new Set([companyName, ...aliasKeys])].map(name => `company:${name}`);
   const kraPin = normalizedMatchKey(data.kraPin);
   const phone = normalizedPhoneKey(data.phone);
   if (kraPin) keys.push(`kra:${kraPin}`);

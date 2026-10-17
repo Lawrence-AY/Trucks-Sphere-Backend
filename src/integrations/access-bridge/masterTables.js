@@ -1,4 +1,4 @@
-const { createHash } = require('node:crypto');
+const { getNextId } = require('../../utils/counterService');
 const { matchVendor } = require('../../utils/vendorMatching');
 const vendorsService = require('../../modules/vendors/service');
 
@@ -6,9 +6,8 @@ const MASTER_TABLES = new Set(['FIRMALAR', 'DIGER3', 'TANIMLI_ARACLAR']);
 const text = value => String(value ?? '').trim();
 const normalize = value => text(value).normalize('NFKC').replace(/\s+/g, ' ').toUpperCase();
 const plate = value => normalize(value).replace(/[\s-]/g, '');
-const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-function createMasterTableProcessor({ db, config }) {
+function createMasterTableProcessor({ db, config, nextId = getNextId }) {
   const all = async collection => {
     const snapshot = await db.collection(collection).get();
     return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
@@ -35,7 +34,7 @@ function createMasterTableProcessor({ db, config }) {
     if (!name) return { status: 'ignored', reason: 'EMPTY_DRIVER_NAME' };
     const existing = (await all('drivers')).find(item => [item.name, item.fullName].some(value => normalize(value) === name));
     if (existing) { await merge('drivers', existing.id, stamp); return { status: 'processed', driverId: existing.id }; }
-    const id = `AB-${hash([config.sourceId, 'driver', name]).slice(0, 24)}`;
+    const id = await nextId('driver');
     await db.collection('drivers').doc(id).set({ id, name: text(row.DIGER3_ISIM), fullName: text(row.DIGER3_ISIM), status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: new Date().toISOString() });
     return { status: 'processed', driverId: id };
   }
@@ -45,7 +44,7 @@ function createMasterTableProcessor({ db, config }) {
     if (!registration) return { status: 'ignored', reason: 'EMPTY_PLATE' };
     const existing = (await all('vehicles')).find(item => plate(item.registrationNumber || item.plateNumber) === registration);
     if (existing) { await merge('vehicles', existing.id, stamp); return { status: 'processed', vehicleId: existing.id, plate: registration }; }
-    const id = `AB-${registration}`;
+    const id = await nextId('truck');
     await db.collection('vehicles').doc(id).set({ id, plateNumber: registration, registrationNumber: registration, status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: new Date().toISOString() });
     return { status: 'processed', vehicleId: id, plate: registration };
   }

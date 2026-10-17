@@ -1,3 +1,4 @@
+const { normalizeCaptureDates } = require('./captureDates');
 const { selectBridgePurchaseOrder } = require('../../utils/bridgePurchaseOrder');
 const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { matchVendor } = require('../../utils/vendorMatching');
@@ -240,7 +241,7 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
 function createProcessor({ repository, deliveries, config }) {
   return async event => {
     if (['LEFT_WAITING', 'NO_LONGER_PRESENT'].includes(event.event_type) || (event.event_type === 'BASELINE' && event.table_name !== 'ICERIDEKI_ARACLAR')) return { status: 'ignored', reason: event.event_type };
-    const row = JSON.parse(event.payload);
+    const row = normalizeCaptureDates(JSON.parse(event.payload), event.observed_utc, config.utcOffset);
     // Reject invalid dates/weights before provisioning or binding anything.
     capture(row, config, config.sourceWeightUnit || 'kg');
     const identity = captureIdentity(row, config);
