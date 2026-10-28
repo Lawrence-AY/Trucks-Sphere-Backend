@@ -10,6 +10,7 @@
     "seed-superadmin": "node scripts/seed-superadmin.js",
     "seed-tracking-security": "node scripts/seed-tracking-security-codes.js",
     "sync-vendor-registry": "node scripts/sync-vendor-registry.js",
+    "audit-vendor-activity": "node scripts/audit-vendor-activity.js",
     "add-national-ids": "node scripts/add-national-id-to-drivers.js",
     "add-national-ids:dry": "node scripts/add-national-id-to-drivers.js --dry-run",
     "test": "node --test"
