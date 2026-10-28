@@ -11,6 +11,7 @@
     "seed-tracking-security": "node scripts/seed-tracking-security-codes.js",
     "sync-vendor-registry": "node scripts/sync-vendor-registry.js",
     "audit-vendor-activity": "node scripts/audit-vendor-activity.js",
+    "cleanup-vendor-registry": "node scripts/cleanup-vendor-registry.js",
     "add-national-ids": "node scripts/add-national-id-to-drivers.js",
     "add-national-ids:dry": "node scripts/add-national-id-to-drivers.js --dry-run",
     "test": "node --test"
