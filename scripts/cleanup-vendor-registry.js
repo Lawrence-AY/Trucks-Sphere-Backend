@@ -31,14 +31,13 @@ async function main() {
 
   const registryOnly = [...vendors.values()].filter(v => v.registrySource === 'VENDORE.xlsx' && !KEEP_IDS.has(v.id) && v.id !== SALSHI_OLD);
   const archive = registryOnly.filter(v => (refs.get(v.id) || []).length === 0);
-  const blocked = registryOnly.filter(v => (refs.get(v.id) || []).length > 0);
+  const blocked = registryOnly.filter(v => (refs.get(v.id) || []).length > 0).map(v => ({ id: v.id, name: v.companyName || v.name, references: refs.get(v.id) || [] }));
   const v008Refs = refs.get(SALSHI_NEW) || [];
   const salshiRefs = refs.get(SALSHI_OLD) || [];
   const canMigrateSalshi = vendors.has(SALSHI_OLD) && !v008Refs.length;
   const plan = { archive: archive.map(v => ({ id: v.id, name: v.companyName || v.name })), blocked, salshi: { from: SALSHI_OLD, to: SALSHI_NEW, oldReferences: salshiRefs.length, newReferences: v008Refs.length, canMigrate: canMigrateSalshi } };
 
   if (apply) {
-    if (blocked.length) throw new Error(`Cannot archive referenced registry vendors: ${blocked.map(v => v.id).join(', ')}`);
     if (confirm && !canMigrateSalshi) throw new Error('SALSHI migration is unsafe: V008 is occupied/referenced or V110 is missing.');
     const backupDir = path.resolve('.vendor-cleanup-backups');
     fs.mkdirSync(backupDir, { recursive: true });
