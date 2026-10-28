@@ -5,6 +5,7 @@ const { createStore } = require('./store');
 const { createLoadingProcessor } = require('./loading');
 const { createMasterTableProcessor, MASTER_TABLES } = require('./masterTables');
 const { getNextId } = require('../../utils/counterService');
+const vendorsService = require('../../modules/vendors/service');
 let current = { enabled: false };
 const status = () => current;
 function startAccessBridge({ db, deliveries, config = readConfig(), logger = console }) {
@@ -41,7 +42,7 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
   };
   const processor = config.weighingMode === 'unloading'
     ? createProcessor({ repository, deliveries, config })
-    : createLoadingProcessor({ db, config, logger });
+    : createLoadingProcessor({ db, config, logger, vendorCreator: vendorsService.create });
   const masterProcessor = createMasterTableProcessor({ db, config, logger });
   async function tick() {
     if (running || stopped) return;

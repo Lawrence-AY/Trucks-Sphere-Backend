@@ -95,7 +95,7 @@ function resolveEntities(data, row, config) {
     poResolution: order ? 'matched' : orders.length > 1 ? 'ambiguous' : 'unmatched' };
 }
 
-function createLoadingProcessor({ db, config, logger = console }) {
+function createLoadingProcessor({ db, config, logger = console, vendorCreator }) {
   let registry;
   const tickets = db.collection('accessBridgeTickets');
   async function loadRegistry() {
@@ -110,6 +110,17 @@ function createLoadingProcessor({ db, config, logger = console }) {
     const capture = parseCapture(event, config);
     const { row, key, registration, date, firstAt, secondAt, tareKg, grossKg, netKg, complete } = capture;
     const data = await loadRegistry();
+    // A direct capture can arrive before Access has emitted its FIRMALAR row.
+    // Provision the vendor through the normal service so it receives the same
+    // V### ID as a manually-created vendor; the Excel list remains a reference.
+    const incomingVendorName = text(row.FIRMA_ADI);
+    if (incomingVendorName && vendorCreator) {
+      const vendorMatch = matchVendor(incomingVendorName, data.vendors, { ...(config.vendorMatching || {}), aliases: config.vendorAliases || [] });
+      if (!vendorMatch.match && vendorMatch.status === 'no_match') {
+        const created = await vendorCreator({ name: incomingVendorName, companyName: incomingVendorName, status: 'active', bridgeCreated: true, sourceId: config.sourceId });
+        data.vendors.push(created);
+      }
+    }
     const entities = resolveEntities(data, row, config);
     const ticketNumber = complete ? String(Number(row.KAYIT_NO)) : null;
     if (complete && (!Number.isSafeInteger(Number(ticketNumber)) || Number(ticketNumber) < 1)) fail('INVALID_RECORD_NUMBER');

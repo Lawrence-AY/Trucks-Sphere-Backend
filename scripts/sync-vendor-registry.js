@@ -1,7 +1,8 @@
-/* Read-only audit of the supplied default-vendor reference workbook. */
+/* Seed the core vendors collection from the supplied default-vendor workbook. */
 const path = require('node:path');
 const ExcelJS = require('exceljs');
 const { matchVendor, normalizeName } = require('../src/utils/vendorMatching');
+const vendorsService = require('../src/modules/vendors/service');
 
 function namesFromWorkbook(workbook) {
   const sheet = workbook.getWorksheet('ALL VENDORS') || workbook.worksheets[0];
@@ -15,8 +16,8 @@ function namesFromWorkbook(workbook) {
 }
 
 async function main() {
-  const workbookPath = process.argv.find(arg => arg.toLowerCase().endsWith('.xlsx'));
-  if (!workbookPath) throw new Error('Usage: node scripts/sync-vendor-registry.js <VENDORE.xlsx>');
+  const workbookPath = process.argv.find(arg => arg.toLowerCase().endsWith('.xlsx'))
+    || path.resolve(__dirname, '../config/VENDORE.xlsx');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(path.resolve(workbookPath));
   const names = namesFromWorkbook(workbook);
@@ -28,11 +29,22 @@ async function main() {
     for (const companyName of names) {
       const result = matchVendor(companyName, vendors);
       if (result.match) { changes.push({ action: 'retain', vendorId: result.match.id, companyName }); continue; }
-      changes.push({ action: 'not_registered', vendorId: null, companyName });
+      changes.push({ action: 'create', vendorId: null, companyName });
     }
-    console.log(JSON.stringify({ mode: 'read-only', vendors: names.length,
+    if (process.argv.includes('--apply')) {
+      for (const change of changes.filter(item => item.action === 'create')) {
+        const created = await vendorsService.create({
+          name: change.companyName,
+          companyName: change.companyName,
+          status: 'active',
+          defaultVendor: true,
+          registrySource: 'VENDORE.xlsx',
+        });
+        change.vendorId = created.id;
+      }
+    }
+    console.log(JSON.stringify({ mode: process.argv.includes('--apply') ? 'apply' : 'dry-run', vendors: names.length,
       retained: changes.filter(item => item.action === 'retain').length, created: changes.filter(item => item.action === 'create').length,
-      notRegistered: changes.filter(item => item.action === 'not_registered').length,
       changes: changes.map(({ action, vendorId, companyName }) => ({ action, vendorId, companyName })) }, null, 2));
   } finally { await Promise.all(admin.apps.map(app => app.delete())); }
 }
