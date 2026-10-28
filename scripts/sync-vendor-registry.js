@@ -1,4 +1,4 @@
-/* Import the supplied default-vendor workbook into the canonical vendors collection. */
+/* Read-only audit of the supplied default-vendor reference workbook. */
 const path = require('node:path');
 const ExcelJS = require('exceljs');
 const { matchVendor, normalizeName } = require('../src/utils/vendorMatching');
@@ -16,7 +16,7 @@ function namesFromWorkbook(workbook) {
 
 async function main() {
   const workbookPath = process.argv.find(arg => arg.toLowerCase().endsWith('.xlsx'));
-  if (!workbookPath) throw new Error('Usage: node scripts/sync-vendor-registry.js <VENDORE.xlsx> [--apply]');
+  if (!workbookPath) throw new Error('Usage: node scripts/sync-vendor-registry.js <VENDORE.xlsx>');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(path.resolve(workbookPath));
   const names = namesFromWorkbook(workbook);
@@ -24,24 +24,15 @@ async function main() {
   try {
     const snapshot = await db.collection('vendors').get();
     const vendors = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-    const usedIds = new Set(vendors.map(vendor => vendor.id));
     const changes = [];
     for (const companyName of names) {
       const result = matchVendor(companyName, vendors);
       if (result.match) { changes.push({ action: 'retain', vendorId: result.match.id, companyName }); continue; }
-      let number = vendors.length + 1;
-      let vendorId = `V${String(number).padStart(3, '0')}`;
-      while (usedIds.has(vendorId)) vendorId = `V${String(++number).padStart(3, '0')}`;
-      const record = { id: vendorId, name: companyName, companyName, status: 'active', defaultVendor: true, registrySource: 'VENDORE.xlsx' };
-      changes.push({ action: 'create', vendorId, companyName, record });
-      vendors.push(record);
-      usedIds.add(vendorId);
+      changes.push({ action: 'not_registered', vendorId: null, companyName });
     }
-    if (process.argv.includes('--apply')) {
-      for (const change of changes.filter(item => item.action === 'create')) await db.collection('vendors').doc(change.vendorId).create(change.record);
-    }
-    console.log(JSON.stringify({ mode: process.argv.includes('--apply') ? 'apply' : 'dry-run', vendors: names.length,
+    console.log(JSON.stringify({ mode: 'read-only', vendors: names.length,
       retained: changes.filter(item => item.action === 'retain').length, created: changes.filter(item => item.action === 'create').length,
+      notRegistered: changes.filter(item => item.action === 'not_registered').length,
       changes: changes.map(({ action, vendorId, companyName }) => ({ action, vendorId, companyName })) }, null, 2));
   } finally { await Promise.all(admin.apps.map(app => app.delete())); }
 }
