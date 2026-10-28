@@ -161,7 +161,8 @@ function createLoadingProcessor({ db, config, logger = console }) {
     for (const item of entities.planned) if ((item.collection !== 'vehicles' || item.record.id === result.truckId)
       && !data[item.collection].some(v => v.id === item.record.id)) data[item.collection].push(item.record);
     const outcome = { status: 'processed', ticketId: result.ticketId, ticketStatus: result.status,
-      truckId: result.truckId, driverId: result.driverId, purchaseOrderId: result.purchaseOrderId, poResolution: result.poResolution, duplicate: result.duplicate };
+      vendorId: result.vendorId, vendorName: result.vendorName, truckId: result.truckId, driverId: result.driverId,
+      purchaseOrderId: result.purchaseOrderId, poResolution: result.poResolution, duplicate: result.duplicate };
     logger.log('[Access bridge] resolution:', JSON.stringify({ sourceId: config.sourceId, eventId: event.id || null, plate: registration, ...outcome }));
     return outcome;
   };

@@ -1,0 +1,344 @@
+{
+  "startedAt": "2026-10-22T09:33:08.239Z",
+  "truckSphere": {
+    "drivers": 19,
+    "vehicles": 47
+  },
+  "results": {
+    "drivers": [
+      {
+        "id": "D001",
+        "status": "synced",
+        "girId": "622d1d18-b079-40fd-a978-cb20bc886b46"
+      },
+      {
+        "id": "D002",
+        "status": "synced",
+        "girId": "ad95118d-9889-4a8a-acdc-e56dee92b90c"
+      },
+      {
+        "id": "D003",
+        "status": "synced",
+        "girId": "74733fd8-e41e-44ed-9d50-9d0de0f73bee"
+      },
+      {
+        "id": "D004",
+        "status": "synced",
+        "girId": "53405eed-523e-40aa-830d-dad9dea0343e"
+      },
+      {
+        "id": "D005",
+        "status": "synced",
+        "girId": "14ec6282-18ea-402c-a340-391c404b7be7"
+      },
+      {
+        "id": "D006",
+        "status": "synced",
+        "girId": "a09798c6-dfbd-4f66-b37a-1b4b310cb20b"
+      },
+      {
+        "id": "D007",
+        "status": "synced",
+        "girId": "0f99b3b5-d9f6-4f71-9546-e0acf77f6677"
+      },
+      {
+        "id": "D008",
+        "status": "synced",
+        "girId": "77c4c653-8d0c-41e8-b594-4d8e528edc97"
+      },
+      {
+        "id": "D009",
+        "status": "synced",
+        "girId": "c3ce1743-dee9-4ab7-8882-8ee83e7da4e2"
+      },
+      {
+        "id": "D010",
+        "status": "synced",
+        "girId": "fab4a77e-0feb-4b06-89d7-bd9b58085b37"
+      },
+      {
+        "id": "D011",
+        "status": "synced",
+        "girId": "a68f0643-7d20-4e82-be5e-cc5b18d4e878"
+      },
+      {
+        "id": "D012",
+        "status": "synced",
+        "girId": "82ddf43c-f831-4faf-bae9-636bf03cd00b"
+      },
+      {
+        "id": "D013",
+        "status": "synced",
+        "girId": "71a31d25-8190-4282-a049-09618cc6d547"
+      },
+      {
+        "id": "D014",
+        "status": "synced",
+        "girId": "1d8ab067-a333-47f2-82f0-434d6d483cf3"
+      },
+      {
+        "id": "D015",
+        "status": "synced",
+        "girId": "146f5d3e-74c1-45df-8b53-5f351b517dfa"
+      },
+      {
+        "id": "D016",
+        "status": "synced",
+        "girId": "3b3b62bf-9d44-426d-99d3-333ba081fc38"
+      },
+      {
+        "id": "D017",
+        "status": "synced",
+        "girId": "339b608a-6661-4123-a9c7-135b4e12ce9e"
+      },
+      {
+        "id": "D018",
+        "status": "synced",
+        "girId": "c3aa9a45-0758-4b9a-b5ea-cba5816a8ce1"
+      },
+      {
+        "id": "D019",
+        "status": "synced",
+        "girId": "b29dcc57-4a57-40f6-8b34-6409849672ee"
+      }
+    ],
+    "vehicles": [
+      {
+        "id": "T001",
+        "status": "synced",
+        "girId": "b8457ea5-d97e-481c-bb8a-83410c97d282"
+      },
+      {
+        "id": "T002",
+        "status": "synced",
+        "girId": "c19a3f70-fd71-43fe-bf33-5b3d5db56de3"
+      },
+      {
+        "id": "T003",
+        "status": "synced",
+        "girId": "36afa323-8387-4e7d-b53c-0844628d677e"
+      },
+      {
+        "id": "T004",
+        "status": "synced",
+        "girId": "1b0ed9e4-6728-4c70-8685-60b2c176fead"
+      },
+      {
+        "id": "T005",
+        "status": "synced",
+        "girId": "5349f290-3d6c-4daa-83b6-e943748ed4e3"
+      },
+      {
+        "id": "T006",
+        "status": "synced",
+        "girId": "4d8b983c-c7c2-49d8-907d-765e392395ed"
+      },
+      {
+        "id": "T007",
+        "status": "synced",
+        "girId": "e9271cd0-4a5b-42e6-9f35-0145df95c376"
+      },
+      {
+        "id": "T008",
+        "status": "synced",
+        "girId": "d4bc4fe6-7f5b-4cbd-a6f8-9463f7d2bb93"
+      },
+      {
+        "id": "T009",
+        "status": "synced",
+        "girId": "212b3695-dbbf-4cec-8c6b-84a7c5b7756d"
+      },
+      {
+        "id": "T010",
+        "status": "synced",
+        "girId": "9042c1fe-aee5-4c94-96b6-9562e40554ad"
+      },
+      {
+        "id": "T011",
+        "status": "synced",
+        "girId": "69f2045a-6e66-40a6-8420-ed111b9c881a"
+      },
+      {
+        "id": "T012",
+        "status": "synced",
+        "girId": "04a826bd-04f2-434e-bda7-e3442d4da1b7"
+      },
+      {
+        "id": "T013",
+        "status": "synced",
+        "girId": "192ab73e-7f40-491e-a3a8-a2c7dd0fe305"
+      },
+      {
+        "id": "T014",
+        "status": "synced",
+        "girId": "7d881bee-db51-47ce-a9a8-34af12a1356d"
+      },
+      {
+        "id": "T015",
+        "status": "synced",
+        "girId": "856f7579-874f-4483-b3b5-245022c11621"
+      },
+      {
+        "id": "T016",
+        "status": "synced",
+        "girId": "23f5e758-e783-4eb7-a5e9-e686638382a1"
+      },
+      {
+        "id": "T017",
+        "status": "synced",
+        "girId": "996f4af1-d0db-4bf9-8287-f80e13e6c836"
+      },
+      {
+        "id": "T018",
+        "status": "synced",
+        "girId": "e85e5238-f6d7-4ab4-a804-faf9cf26c0dc"
+      },
+      {
+        "id": "T019",
+        "status": "synced",
+        "girId": "ecc657cd-5c72-4af8-98ba-188d77288a73"
+      },
+      {
+        "id": "T020",
+        "status": "synced",
+        "girId": "140e45d0-3dcf-4673-8ade-ed09b9104236"
+      },
+      {
+        "id": "T021",
+        "status": "synced",
+        "girId": "7d466035-cbf0-4db2-a5b1-79bd1c355c8a"
+      },
+      {
+        "id": "T022",
+        "status": "synced",
+        "girId": "c86c8630-cf9b-4113-9e00-697b0acbec2d"
+      },
+      {
+        "id": "T023",
+        "status": "synced",
+        "girId": "f2f6a2e9-8e57-46c5-ab09-931e2e7752db"
+      },
+      {
+        "id": "T024",
+        "status": "synced",
+        "girId": "fae7bab6-187c-4a4b-a2e8-261447200621"
+      },
+      {
+        "id": "T025",
+        "status": "synced",
+        "girId": "5c7e585b-c477-46d9-92ec-e92e2cd886fc"
+      },
+      {
+        "id": "T026",
+        "status": "synced",
+        "girId": "df758fde-35bc-4d46-a02f-1b4d1111612c"
+      },
+      {
+        "id": "T027",
+        "status": "synced",
+        "girId": "3faf3e4a-6e1e-4de4-b5f7-37ee01b21685"
+      },
+      {
+        "id": "T028",
+        "status": "synced",
+        "girId": "ed6bbf64-8785-4be6-bb4a-3ac16a1249e7"
+      },
+      {
+        "id": "T029",
+        "status": "synced",
+        "girId": "8678ac21-4828-42e1-9bd3-4cce65263954"
+      },
+      {
+        "id": "T030",
+        "status": "synced",
+        "girId": "b064585a-f781-49e8-bfb5-6dd773be50b0"
+      },
+      {
+        "id": "T031",
+        "status": "synced",
+        "girId": "01d2e9f9-e954-4cf5-88a8-35e4e5252cdc"
+      },
+      {
+        "id": "T032",
+        "status": "synced",
+        "girId": "6f37c141-153a-42e7-905b-e23591de58ea"
+      },
+      {
+        "id": "T033",
+        "status": "synced",
+        "girId": "582ada0d-493d-4cb4-aa6f-37074d10a126"
+      },
+      {
+        "id": "T034",
+        "status": "synced",
+        "girId": "44e73fe8-cb97-4f40-9626-5ac77cdda2f2"
+      },
+      {
+        "id": "T035",
+        "status": "synced",
+        "girId": "7fcadbda-3f99-4540-a051-d2461527b969"
+      },
+      {
+        "id": "T036",
+        "status": "synced",
+        "girId": "a9455c12-ab84-44b2-9775-fb3c8c90f174"
+      },
+      {
+        "id": "T037",
+        "status": "synced",
+        "girId": "b06ee842-39bb-4b28-9c65-b1c62c54c303"
+      },
+      {
+        "id": "T038",
+        "status": "synced",
+        "girId": "d9dbdbde-be1d-4b17-b571-68c0189a2b1f"
+      },
+      {
+        "id": "T039",
+        "status": "synced",
+        "girId": "b5988152-b92a-4d6c-a02e-735b70fb506c"
+      },
+      {
+        "id": "T040",
+        "status": "synced",
+        "girId": "0c0749c4-f663-419b-a19a-e9f12e42df71"
+      },
+      {
+        "id": "T041",
+        "status": "synced",
+        "girId": "29e0cb1b-3933-4e3a-a119-69a750f9abf0"
+      },
+      {
+        "id": "T042",
+        "status": "synced",
+        "girId": "58432903-969f-4f5a-ac8b-2b11e5cf6316"
+      },
+      {
+        "id": "T043",
+        "status": "synced",
+        "girId": "33bd026b-dd28-4d4f-93e5-9b17870825af"
+      },
+      {
+        "id": "T044",
+        "status": "synced",
+        "girId": "af0bb08b-df87-4fb7-9396-8c3db54d1a48"
+      },
+      {
+        "id": "T045",
+        "status": "synced",
+        "girId": "c5f8cf40-e7a5-4f45-b534-301361e05c0e"
+      },
+      {
+        "id": "T046",
+        "status": "synced",
+        "girId": "c67fbd0e-95aa-4d71-b3f1-42b424410103"
+      },
+      {
+        "id": "T047",
+        "status": "synced",
+        "girId": "aba67fdd-03c7-4319-a7b1-f382a087747a"
+      }
+    ]
+  },
+  "finishedAt": "2026-10-22T09:33:48.278Z"
+}

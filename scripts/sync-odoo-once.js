@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { db } = require('../config/firebase');
 const { startOdooSync } = require('../src/integrations/odooSync');
-const worker = startOdooSync({ db, watch:false, env:{...process.env, ODOO_ENABLED:'true', ODOO_MAPPING_PROFILE:'spadestest'} });
+const worker = startOdooSync({ db, watch:false, env:{...process.env, ODOO_ENABLED:'true', ODOO_MAPPING_PROFILE: process.env.ODOO_MAPPING_PROFILE || 'spadestest'} });
 (async () => {
   const counts = await worker.ready;
   worker.stop();

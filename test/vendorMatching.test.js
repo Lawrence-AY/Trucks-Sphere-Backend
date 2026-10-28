@@ -87,3 +87,9 @@ test('approved alias resolves to the vendor', () => {
   assert.strictEqual(r.status, 'exact');
   assert.strictEqual(r.match.id, 'V100');
 });
+
+test('vendor registry aliases resolve to the exact vendor identity', () => {
+  const r = matchVendor('NBI CEM SUP', [{ id: 'V100', companyName: 'Nairobi Cement Suppliers', aliases: ['NBI CEM SUP'] }]);
+  assert.strictEqual(r.status, 'exact');
+  assert.strictEqual(r.match.id, 'V100');
+});
