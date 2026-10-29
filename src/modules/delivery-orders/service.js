@@ -41,6 +41,54 @@ function normalizeResourceId(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function canonicalVendorNumber(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/^V?(\d+)$/i);
+  return match ? `V${String(Number(match[1])).padStart(3, '0')}` : text.toUpperCase();
+}
+
+// Job references are business identifiers, not values supplied by a stale
+// mobile snapshot. Resolve the selected master records before building the
+// reference so a newly created job always uses the current PO/vendor/fleet
+// numbering and display values.
+async function canonicalizeJobReferences(data, purchaseOrder) {
+  const result = { ...data };
+  const vendorId = purchaseOrder?.vendorId || data.vendorId;
+  if (vendorId) {
+    const vendorDoc = await db.collection('vendors').doc(String(vendorId)).get();
+    if (vendorDoc.exists) {
+      const vendor = vendorDoc.data();
+      result.vendorId = vendorDoc.id;
+      result.vendorNumber = canonicalVendorNumber(vendor.vendorId || vendorDoc.id);
+      result.vendorName = vendor.companyName || vendor.name || result.vendorName || '';
+    }
+  }
+  if (data.driverId) {
+    const driverDoc = await db.collection('drivers').doc(String(data.driverId)).get();
+    if (driverDoc.exists) {
+      const driver = driverDoc.data();
+      result.driverId = driverDoc.id;
+      result.driverName = driver.name || driver.fullName || result.driverName || '';
+    }
+  }
+  if (data.vehicleId) {
+    const vehicleDoc = await db.collection('vehicles').doc(String(data.vehicleId)).get();
+    if (vehicleDoc.exists) {
+      const vehicle = vehicleDoc.data();
+      result.vehicleId = vehicleDoc.id;
+      result.plateNumber = vehicle.registrationNumber || vehicle.plateNumber || result.plateNumber || '';
+    }
+  }
+  const vendorNumber = result.vendorNumber || result.vendorId || '';
+  if (result.purchaseOrderId && result.driverId && result.vehicleId) {
+    // PO numbers already contain the vendor suffix (PO####/V###). The job
+    // reference carries that suffix once, followed by driver and truck.
+    const poBase = String(purchaseOrder?.poNumber || result.poNumber || result.purchaseOrderId).split('/')[0];
+    result.jobKey = `${poBase}/${vendorNumber}/${result.driverId}/${result.vehicleId}`;
+  }
+  return result;
+}
+
 /**
  * A driver and a truck can each have only one open delivery job. This check
  * runs on the server so a stale mobile cache cannot create a duplicate job.
@@ -324,17 +372,21 @@ const delivery_ordersService = {
     data = toTonnes(data);
     try {
       require('./storeReceiving').assertGenericUpdate({ ...data, materialInspection: null }, data);
+      let purchaseOrderSnapshot = null;
+      let purchaseOrderContext = null;
       if (data.purchaseOrderId) {
-        const poSnapshot = await purchaseOrdersCollection.doc(data.purchaseOrderId).get();
-        const po = poSnapshot.exists ? poSnapshot.data() : null;
+        purchaseOrderSnapshot = await purchaseOrdersCollection.doc(data.purchaseOrderId).get();
+        const po = purchaseOrderSnapshot.exists ? purchaseOrderSnapshot.data() : null;
+        purchaseOrderContext = po;
         const closed = ['completed', 'complete', 'delivered', 'fulfilled', 'closed', 'cancelled', 'canceled', 'archived', 'excess', 'overdelivered', 'over_delivered'];
         if (po && closed.includes(String(po.status || '').trim().toLowerCase())) {
           throw Object.assign(new Error('This purchase order is closed. Select an open purchase order.'), { statusCode: 409, code: 'PURCHASE_ORDER_CLOSED' });
         }
       }
-      const conflict = await findActiveAssignmentConflict(data);
+      const canonicalData = await canonicalizeJobReferences(data, purchaseOrderContext || snapshotStore.getById('purchaseOrders', data.purchaseOrderId));
+      const conflict = await findActiveAssignmentConflict(canonicalData);
       if (conflict) {
-        const driverConflict = data.driverId && normalizeResourceId(conflict.driverId) === normalizeResourceId(data.driverId);
+        const driverConflict = canonicalData.driverId && normalizeResourceId(conflict.driverId) === normalizeResourceId(canonicalData.driverId);
         const resource = driverConflict ? 'driver' : 'truck';
         const error = new Error(
           `Cannot create this job: the selected ${resource} is already assigned to active job ${conflict.jobId || conflict.id}.`
@@ -346,12 +398,12 @@ const delivery_ordersService = {
 
       // The client sends a "jobKey" (everything before the /J####), e.g. "POMAT003/V001/D004/T010"
       // If they sent a full jobId, strip the J number — the backend owns the counter.
-      const jobKey = (data.jobKey || data.jobId || '')
+      const jobKey = (canonicalData.jobKey || canonicalData.jobId || '')
         .replace(/\/J\d+(-\w+)?$/, '')
         .replace(/-\w+$/, '');
 
       // Use the purchase order ID from payload or fall back to auto-detect
-      const purchaseOrderId = data.purchaseOrderId || '';
+      const purchaseOrderId = canonicalData.purchaseOrderId || '';
 
       // Generate the jobId server-side (atomic Firestore counter per PO)
       let jobId;
@@ -360,30 +412,29 @@ const delivery_ordersService = {
         jobId = result.jobId;
       } else {
         // Fallback for cases where purchaseOrderId is not available
-        jobId = data.jobId || await getNextId('job');
+        jobId = canonicalData.jobId || await getNextId('job');
       }
 
       // Firestore doc IDs cannot contain /, so sanitize for the doc ID only
       const docId = jobId.replace(/\//g, '-');
-      // Use snapshot cache for PO context
-      const purchaseOrderContext = data.purchaseOrderId
-        ? snapshotStore.getById('purchaseOrders', data.purchaseOrderId)
-        : null;
+      // Use the live PO for identity and numbering. The cache is only a
+      // fallback for legacy/offline records.
+      // purchaseOrderContext was read above from the live PO.
 
       const docRef = collectionRef.doc(docId);
       const item = {
-        ...data,
+        ...canonicalData,
         id: docId,
         jobId,
-        poNumber: purchaseOrderContext?.poNumber || data.poNumber || '',
-        materialSource: normalizeMaterialSource(data.materialSource),
-        banker: isWarehouseDelivery(data) ? 'Warehouse-banker' : normalizeBanker(data.banker),
-        quarryId: data.quarryId || purchaseOrderContext?.quarryId || '',
-        quarryName: data.quarryName || purchaseOrderContext?.quarryName || '',
-        siteId: data.siteId || purchaseOrderContext?.siteId || '',
-        siteName: data.siteName || purchaseOrderContext?.siteName || '',
-        materials: dispatchMaterials(data, purchaseOrderContext),
-        status: normalizeJobStatus(data.status, JOB_STATUS.CREATED),
+        poNumber: purchaseOrderContext?.poNumber || canonicalData.poNumber || '',
+        materialSource: normalizeMaterialSource(canonicalData.materialSource),
+        banker: isWarehouseDelivery(canonicalData) ? 'Warehouse-banker' : normalizeBanker(canonicalData.banker),
+        quarryId: canonicalData.quarryId || purchaseOrderContext?.quarryId || '',
+        quarryName: canonicalData.quarryName || purchaseOrderContext?.quarryName || '',
+        siteId: canonicalData.siteId || purchaseOrderContext?.siteId || '',
+        siteName: canonicalData.siteName || purchaseOrderContext?.siteName || '',
+        materials: dispatchMaterials(canonicalData, purchaseOrderContext),
+        status: normalizeJobStatus(canonicalData.status, JOB_STATUS.CREATED),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

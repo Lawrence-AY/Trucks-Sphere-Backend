@@ -13,7 +13,7 @@ function planNumbering(state) {
       ...state[collection].map(row => Number(String(row.id).match(new RegExp('^' + prefix + '(\\d+)$', 'i'))?.[1]) || 0));
     for (const row of [...state[collection]].sort((a,b) => a.id.localeCompare(b.id))) {
       if (row.id.startsWith('AB-')) maps.set(row.id, prefix + String(++max).padStart(3, '0'));
-      else if (!new RegExp('^' + prefix + '\\d{3,}$').test(row.id)) issues.push({ collection, id: row.id, reason: 'NON_CANONICAL_ID' });
+      else if (!new RegExp('^' + prefix + '\\d{3}$').test(row.id)) issues.push({ collection, id: row.id, reason: 'NON_CANONICAL_ID' });
     }
     for (const field of fields) counters[field] = max;
   }
@@ -46,11 +46,41 @@ function planNumbering(state) {
     patches.set(collection + '/' + row.id, patch);
   }
   for (const trip of state.deliveryOrders || []) {
-    if (!String(trip.jobId || '').includes('AB')) continue;
-    const parts = String(trip.jobId).split('/');
-    if (parts.length !== 5 || !trip.driverId || !trip.vehicleId) throw Error('Cannot safely rebuild job ' + trip.id);
-    const driver = maps.get(trip.driverId) || trip.driverId;
-    const truck = maps.get(trip.vehicleId) || trip.vehicleId;
+    const jobParts = String(trip.jobKey || '').split('/');
+    const idParts = String(trip.jobId || '').split('/');
+    const hasConsistentReference = jobParts.length === 4 && idParts.length === 5
+      && idParts.slice(0, 4).join('/') === trip.jobKey
+      && idParts[2] === trip.driverId && idParts[3] === trip.vehicleId;
+    // Reconcile every job, not only the old AB imports. jobKey is the
+    // pre-J reference selected by dispatch and is the authoritative source
+    // when jobId, vehicleId, or receipt references disagree.
+    if (hasConsistentReference && !String(trip.jobId).includes('AB')) continue;
+    if (jobParts.length !== 4 || idParts.length !== 5 || !trip.driverId || !trip.vehicleId) {
+      issues.push({ collection: 'deliveryOrders', id: trip.id, reason: 'INCONSISTENT_JOB_REFERENCE' });
+      continue;
+    }
+    const driverFromKey = jobParts[2];
+    const truckFromKey = jobParts[3];
+    // Legacy AB jobs have no canonical jobKey; retain the original migration
+    // path and rebuild them from their mapped master-record IDs.
+    if (String(trip.jobId).includes('AB') && (!/^D\d{3}$/.test(driverFromKey) || !/^T\d{3}$/.test(truckFromKey))) {
+      const driver = maps.get(trip.driverId) || trip.driverId;
+      const truck = maps.get(trip.vehicleId) || trip.vehicleId;
+      const job = [idParts[0], idParts[1], driver, truck, idParts[4]].join('/');
+      maps.set(trip.jobId, job);
+      maps.set(trip.id, job.replace(/\//g, '-'));
+      if (trip.jobKey) maps.set(trip.jobKey, job.split('/').slice(0,4).join('/'));
+      continue;
+    }
+    if (!/^D\d{3}$/.test(driverFromKey) || !/^T\d{3}$/.test(truckFromKey)) {
+      issues.push({ collection: 'deliveryOrders', id: trip.id, reason: 'NON_CANONICAL_JOB_REFERENCE' });
+      continue;
+    }
+    if (trip.driverId !== driverFromKey) maps.set(trip.driverId, driverFromKey);
+    if (trip.vehicleId !== truckFromKey) maps.set(trip.vehicleId, truckFromKey);
+    const parts = idParts;
+    const driver = maps.get(trip.driverId) || driverFromKey;
+    const truck = maps.get(trip.vehicleId) || truckFromKey;
     if (!/^D\d+$/.test(driver) || !/^T\d+$/.test(truck)) throw Error('Unresolved fleet reference on ' + trip.id);
     const job = [parts[0], parts[1], driver, truck, parts[4]].join('/');
     maps.set(trip.jobId, job);
