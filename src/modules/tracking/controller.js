@@ -168,6 +168,46 @@ exports.recordSecurityDecision = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+function normalizePlate(value) { return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+async function securitySession(sessionId, token) {
+  const session = await db.collection('trackingSecuritySessions').doc(sessionId).get();
+  const data = session.data() || {};
+  if (!session.exists || data.token !== String(token || '') || !isSessionUsable(data)) return null;
+  return { ref: session.ref, data };
+}
+
+exports.createPendingGatePass = async (req, res, next) => {
+  try {
+    const session = await securitySession(req.params.sessionId, req.body?.token);
+    if (!session) return res.status(403).json({ error: 'Invalid or expired security session.' });
+    const truckNumber = String(req.body?.truckNumber || '').trim().toUpperCase();
+    const driverName = String(req.body?.driverName || '').trim();
+    const normalizedTruckNumber = normalizePlate(truckNumber);
+    if (normalizedTruckNumber.length < 3 || !driverName) return res.status(400).json({ error: 'Truck number and driver name are required.' });
+    const existing = await db.collection('pendingGatePasses').where('normalizedTruckNumber', '==', normalizedTruckNumber).where('status', '==', 'pending').limit(1).get();
+    if (!existing.empty) return res.status(409).json({ error: 'A pending gate pass already exists for this truck.', id: existing.docs[0].id });
+    const record = { truckNumber, normalizedTruckNumber, driverName, status: 'pending', securitySessionId: req.params.sessionId, securityOfficerId: session.data.personnelId || '', securityOfficerName: session.data.personnelName || '', securityLocation: session.data.securityLocation || '', createdAt: now(), updatedAt: now() };
+    const doc = await db.collection('pendingGatePasses').add(record);
+    return res.status(201).json({ id: doc.id, ...record });
+  } catch (err) { next(err); }
+};
+
+exports.uploadPendingGatePassPhoto = async (req, res, next) => {
+  try {
+    const session = await securitySession(req.params.sessionId, req.body?.token);
+    if (!session) return res.status(403).json({ error: 'Invalid or expired security session.' });
+    if (!['truck', 'driver'].includes(req.params.photoType) || !req.file) return res.status(400).json({ error: 'A truck or driver photo is required.' });
+    const ref = db.collection('pendingGatePasses').doc(req.params.documentId);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data().securitySessionId !== req.params.sessionId || doc.data().status !== 'pending') return res.status(404).json({ error: 'Pending gate pass not found.' });
+    const { uploadFile } = require('../../utils/cloudStorage');
+    const result = await uploadFile(req.file.buffer, req.file.originalname, 'PendingGatePasses', `${req.params.documentId}-${req.params.photoType}`, req.file.mimetype);
+    const field = req.params.photoType === 'truck' ? 'truckPhotoURL' : 'driverPhotoURL';
+    await ref.update({ [field]: result.url, updatedAt: now() });
+    return res.json({ id: ref.id, [field]: result.url });
+  } catch (err) { next(err); }
+};
+
 exports.listFlags = async (_req, res, next) => {
   try {
     // `isFlagged` is the current indexed field. Include the nested flag

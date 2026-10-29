@@ -41,6 +41,29 @@ function normalizeResourceId(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizePlate(value) { return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+async function attachPendingGatePass(item, docRef) {
+  const key = normalizePlate(item.plateNumber);
+  if (!key || isWarehouseDelivery(item)) return item;
+  const matches = await db.collection('pendingGatePasses').where('normalizedTruckNumber', '==', key).where('status', '==', 'pending').limit(1).get();
+  if (matches.empty) return item;
+  const pendingId = matches.docs[0]?.id;
+  if (!pendingId) return item;
+  const pendingRef = db.collection('pendingGatePasses').doc(pendingId);
+  const attached = await db.runTransaction(async transaction => {
+    const pending = await transaction.get(pendingRef);
+    if (!pending.exists || pending.data().status !== 'pending') return null;
+    const data = pending.data();
+    const updates = { pendingGatePassId: pending.id, gatePassDriverName: data.driverName || '', gatePassTruckPhotoURL: data.truckPhotoURL || '', gatePassDriverPhotoURL: data.driverPhotoURL || '', driverName: item.driverName || data.driverName || '', gatePassCapturedAt: data.createdAt || nowIso() };
+    transaction.update(docRef, updates);
+    transaction.update(pendingRef, { status: 'claimed', claimedAt: nowIso(), claimedByDeliveryOrderId: item.id, claimedJobId: item.jobId, updatedAt: nowIso() });
+    return updates;
+  });
+  return attached ? { ...item, ...attached } : item;
+}
+
+function nowIso() { return new Date().toISOString(); }
+
 function canonicalVendorNumber(value) {
   const text = String(value || '').trim();
   const match = text.match(/^V?(\d+)$/i);
@@ -439,11 +462,12 @@ const delivery_ordersService = {
         updatedAt: new Date().toISOString(),
       };
       await docRef.set(toKilograms(item));
+      const gatePassItem = await attachPendingGatePass(item, docRef);
       if (item.driverId || item.vehicleId) {
         girService.clearFuelSession({ driverId: item.driverId, vehicleId: item.vehicleId }).catch((error) => console.error('[GIR/FMS] Failed to clear previous fuel session:', error.message));
       }
       // Cache is updated via onSnapshot
-      return { id: docId, ...item };
+      return { id: docId, ...gatePassItem };
     } catch (error) {
       console.error('delivery_ordersService.create error:', error);
       throw error;

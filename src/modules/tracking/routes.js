@@ -14,6 +14,8 @@ const { requireManagementAccess, requireRoles, MANAGEMENT_ROLES } = require('../
 router.post('/sessions', trackingController.startSecuritySession);
 router.post('/sessions/:sessionId/vehicle', upload.single('file'), upload.validateUploadedFile, trackingController.attachSecuritySessionVehicle);
 router.post('/sessions/:sessionId/decision', trackingController.recordSecurityDecision);
+router.post('/sessions/:sessionId/document', trackingController.createPendingGatePass);
+router.post('/sessions/:sessionId/document/:documentId/:photoType', upload.single('file'), upload.validateUploadedFile, trackingController.uploadPendingGatePassPhoto);
 router.get('/flags', verifyToken, requireRoles(MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'operator_site'), trackingController.listFlags);
 router.post('/flags/:id/clear', verifyToken, requireManagementAccess({ write: true, allowAdminWrite: true }), trackingController.clearFlag);
 router.get('/security-personnel', verifyToken, requireManagementAccess({ write: true, allowAdminWrite: true }), trackingController.listSecurityPersonnel);
