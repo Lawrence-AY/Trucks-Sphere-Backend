@@ -184,9 +184,12 @@ exports.createPendingGatePass = async (req, res, next) => {
     const driverName = String(req.body?.driverName || '').trim();
     const normalizedTruckNumber = normalizePlate(truckNumber);
     if (normalizedTruckNumber.length < 3 || !driverName) return res.status(400).json({ error: 'Truck number and driver name are required.' });
+    if (!req.file || !req.file.mimetype.startsWith('image/')) return res.status(400).json({ error: 'Capture one photo showing the driver and truck.' });
     const existing = await db.collection('pendingGatePasses').where('normalizedTruckNumber', '==', normalizedTruckNumber).where('status', '==', 'pending').limit(1).get();
     if (!existing.empty) return res.status(409).json({ error: 'A pending gate pass already exists for this truck.', id: existing.docs[0].id });
-    const record = { truckNumber, normalizedTruckNumber, driverName, status: 'pending', securitySessionId: req.params.sessionId, securityOfficerId: session.data.personnelId || '', securityOfficerName: session.data.personnelName || '', securityLocation: session.data.securityLocation || '', createdAt: now(), updatedAt: now() };
+    const { uploadFile } = require('../../utils/cloudStorage');
+    const photo = await uploadFile(req.file.buffer, req.file.originalname, 'PendingGatePasses', `${normalizedTruckNumber}-${Date.now()}`, req.file.mimetype);
+    const record = { truckNumber, normalizedTruckNumber, driverName, status: 'pending', photoURL: photo.url, securitySessionId: req.params.sessionId, securityOfficerId: session.data.personnelId || '', securityOfficerName: session.data.personnelName || '', securityLocation: session.data.securityLocation || '', createdAt: now(), updatedAt: now() };
     const doc = await db.collection('pendingGatePasses').add(record);
     return res.status(201).json({ id: doc.id, ...record });
   } catch (err) { next(err); }
