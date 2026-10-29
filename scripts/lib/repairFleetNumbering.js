@@ -71,6 +71,8 @@ function planNumbering(state) {
       || (trip.poNumber && po.poNumber === trip.poNumber)
       || po.poNumber === `${idParts[0]}/${idParts[1]}`
     );
+    const poFromRecord = purchaseOrder?.poNumber || String(trip.purchaseOrderId || '').replace(/-V\d+$/i, '');
+    const poBase = String(poFromRecord || idParts[0]).split('/')[0];
     const vendorFromPo = purchaseOrder
       ? normalizeVendorId(purchaseOrder.vendorNumber || purchaseOrder.vendorId || String(purchaseOrder.poNumber || '').split('/')[1])
       : normalizeVendorId(idParts[1]);
@@ -93,14 +95,16 @@ function planNumbering(state) {
       issues.push({ collection: 'deliveryOrders', id: trip.id, reason: 'NON_CANONICAL_JOB_REFERENCE' });
       continue;
     }
-    if (idParts[1] !== vendorFromPo) maps.set(trip.jobId, [idParts[0], vendorFromPo, driverFromKey, truckFromKey, idParts[4]].join('/'));
+    if (idParts[0] !== poBase || idParts[1] !== vendorFromPo) {
+      maps.set(trip.jobId, [poBase, vendorFromPo, driverFromKey, truckFromKey, idParts[4]].join('/'));
+    }
     if (trip.driverId !== driverFromKey) maps.set(trip.driverId, driverFromKey);
     if (trip.vehicleId !== truckFromKey) maps.set(trip.vehicleId, truckFromKey);
     const parts = idParts;
     const driver = maps.get(trip.driverId) || driverFromKey;
     const truck = maps.get(trip.vehicleId) || truckFromKey;
     if (!/^D\d+$/.test(driver) || !/^T\d+$/.test(truck)) throw Error('Unresolved fleet reference on ' + trip.id);
-    const job = [parts[0], vendorFromPo, driver, truck, parts[4]].join('/');
+    const job = [poBase, vendorFromPo, driver, truck, parts[4]].join('/');
     maps.set(trip.jobId, job);
     maps.set(trip.id, job.replace(/\//g, '-'));
     if (trip.jobKey) maps.set(trip.jobKey, job.split('/').slice(0,4).join('/'));
