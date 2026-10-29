@@ -56,7 +56,7 @@ async function readState(db, reader) {
 
 async function main() {
   const apply = process.argv.includes('--apply');
-  if (process.argv.some(arg => arg !== '--apply')) throw Error('Usage: node scripts/merge-metro-concepts-vendor.js [--apply]');
+  if (process.argv.slice(2).some(arg => arg !== '--apply')) throw Error('Usage: node scripts/merge-metro-concepts-vendor.js [--apply]');
   const { db, admin } = require('../config/firebase');
   try {
     if (process.env.FIREBASE_PROJECT_ID !== 'trucksphere') throw Error('Expected project trucksphere');
