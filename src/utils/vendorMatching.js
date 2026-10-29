@@ -34,7 +34,7 @@ const STOP_WORDS = new Set(['the', 'of', 'and', 'a', 'an', 'at', 'for', 'to', 'i
 // Confirmed business-name alias. The canonical vendor record remains the
 // full East Africa name; the shorter Firebase/import spelling resolves to it.
 const KNOWN_VENDOR_ALIASES = new Map([
-  ['metro concepts ea limited', 'metro concepts east africa limited'],
+  ['concepts ea limited metro', 'metro concepts east africa limited'],
 ]);
 
 function tokenize(value) {
