@@ -51,20 +51,33 @@ function planNumbering(state) {
     // This migration is strictly for quarry delivery orders. Warehouse jobs
     // deliberately use a different reference shape and must never be
     // validated, mapped, or rewritten here.
-    if (!/^PO\d{4}\/V\d{3}\//.test(String(trip.jobId || ''))) continue;
+    if (!/^PO\d{4}\/V\d+\//.test(String(trip.jobId || ''))) continue;
     const hasConsistentReference = jobParts.length === 4 && idParts.length === 5
       && idParts.slice(0, 4).join('/') === trip.jobKey
       && idParts[2] === trip.driverId && idParts[3] === trip.vehicleId;
     // Reconcile every job, not only the old AB imports. jobKey is the
     // pre-J reference selected by dispatch and is the authoritative source
     // when jobId, vehicleId, or receipt references disagree.
-    if (hasConsistentReference && !String(trip.jobId).includes('AB')) continue;
+    // Even a structurally consistent job is processed because its vendor
+    // segment may still disagree with the linked purchase order.
     if (jobParts.length !== 4 || idParts.length !== 5 || !trip.driverId || !trip.vehicleId) {
       issues.push({ collection: 'deliveryOrders', id: trip.id, reason: 'INCONSISTENT_JOB_REFERENCE' });
       continue;
     }
     const driverFromKey = jobParts[2];
     const truckFromKey = jobParts[3];
+    const purchaseOrder = (state.purchaseOrders || []).find(po =>
+      (trip.purchaseOrderId && po.id === trip.purchaseOrderId)
+      || (trip.poNumber && po.poNumber === trip.poNumber)
+      || po.poNumber === `${idParts[0]}/${idParts[1]}`
+    );
+    const vendorFromPo = purchaseOrder
+      ? normalizeVendorId(purchaseOrder.vendorNumber || purchaseOrder.vendorId || String(purchaseOrder.poNumber || '').split('/')[1])
+      : normalizeVendorId(idParts[1]);
+    if (!/^V\d{3}$/.test(vendorFromPo)) {
+      issues.push({ collection: 'deliveryOrders', id: trip.id, reason: 'NON_CANONICAL_VENDOR_REFERENCE' });
+      continue;
+    }
     // Legacy AB jobs have no canonical jobKey; retain the original migration
     // path and rebuild them from their mapped master-record IDs.
     if (String(trip.jobId).includes('AB') && (!/^D\d{3}$/.test(driverFromKey) || !/^T\d{3}$/.test(truckFromKey))) {
@@ -80,13 +93,14 @@ function planNumbering(state) {
       issues.push({ collection: 'deliveryOrders', id: trip.id, reason: 'NON_CANONICAL_JOB_REFERENCE' });
       continue;
     }
+    if (idParts[1] !== vendorFromPo) maps.set(trip.jobId, [idParts[0], vendorFromPo, driverFromKey, truckFromKey, idParts[4]].join('/'));
     if (trip.driverId !== driverFromKey) maps.set(trip.driverId, driverFromKey);
     if (trip.vehicleId !== truckFromKey) maps.set(trip.vehicleId, truckFromKey);
     const parts = idParts;
     const driver = maps.get(trip.driverId) || driverFromKey;
     const truck = maps.get(trip.vehicleId) || truckFromKey;
     if (!/^D\d+$/.test(driver) || !/^T\d+$/.test(truck)) throw Error('Unresolved fleet reference on ' + trip.id);
-    const job = [parts[0], parts[1], driver, truck, parts[4]].join('/');
+    const job = [parts[0], vendorFromPo, driver, truck, parts[4]].join('/');
     maps.set(trip.jobId, job);
     maps.set(trip.id, job.replace(/\//g, '-'));
     if (trip.jobKey) maps.set(trip.jobKey, job.split('/').slice(0,4).join('/'));
