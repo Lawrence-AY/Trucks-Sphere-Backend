@@ -23,24 +23,6 @@ function vendorWithFleet(vendor, context) {
   return { ...vendor, ...(context.stats.get(vendorFleet.normalizeVendorId(vendor.id || vendor.vendorId)) || { fleetSize: 0, truckCount: 0, tripCount: 0 }) };
 }
 
-const VENDOR_DIRECTORY_CUTOFF = '2026-10-17';
-function accessActivityDate(record = {}) {
-  if (!(record.createdBy === 'access_bridge' || record.bridgeCreated === true || record.accessBridgeKey || record.accessBridgeSource)) return null;
-  return [record.createdAt, record.updatedAt, record.accessCapture?.capturedAt, record.siteWeighInAt, record.weighInAt, record.weighOutAt]
-    .map(value => Date.parse(String(value || ''))).find(Number.isFinite) || null;
-}
-function activeDirectoryVendorIds() {
-  const orders = snapshotStore.getAll('purchaseOrders');
-  const deliveries = snapshotStore.getAll('deliveryOrders');
-  const activity = [...orders, ...deliveries].map(record => ({ record, time: accessActivityDate(record) }));
-  // Keep compatibility with legacy/test snapshots that have no timestamps;
-  // production Access records are timestamped and use the cutoff.
-  if (!activity.some(item => item.time)) return null;
-  const cutoff = Date.parse(`${VENDOR_DIRECTORY_CUTOFF}T00:00:00Z`);
-  return new Set(activity.filter(item => item.time >= cutoff).flatMap(({ record }) => [record.vendorId, record.vendorNumber]).filter(Boolean));
-}
-
-
 function normalizedMatchKey(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -127,9 +109,6 @@ const vendorsService = {
 
     const context = fleetContext();
     let results = snapshotStore.getAll(COLLECTION_NAME).map(vendor => vendorWithFleet(vendor, context));
-    const activeIds = activeDirectoryVendorIds();
-    if (activeIds) results = results.filter(vendor => activeIds.has(vendor.id) || activeIds.has(vendor.vendorId));
-
     // Stable vendor-number ordering also keeps paginated filter options fixed.
     results = [...results].sort((a, b) => {
       return String(a.vendorId || a.id).localeCompare(String(b.vendorId || b.id), 'en', { numeric: true, sensitivity: 'base' }) || String(a.id).localeCompare(String(b.id));
