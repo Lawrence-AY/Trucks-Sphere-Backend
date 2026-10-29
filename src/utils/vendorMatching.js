@@ -31,6 +31,12 @@ const SUFFIX_MAP = {
 
 const STOP_WORDS = new Set(['the', 'of', 'and', 'a', 'an', 'at', 'for', 'to', 'in', 'on']);
 
+// Confirmed business-name alias. The canonical vendor record remains the
+// full East Africa name; the shorter Firebase/import spelling resolves to it.
+const KNOWN_VENDOR_ALIASES = new Map([
+  ['metro concepts ea limited', 'metro concepts east africa limited'],
+]);
+
 function tokenize(value) {
   return String(value == null ? '' : value)
     .toLowerCase()
@@ -118,6 +124,7 @@ function matchVendor(name, vendors = [], options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const original = String(name == null ? '' : name).trim();
   const normalized = normalizeName(original);
+  const knownName = KNOWN_VENDOR_ALIASES.get(normalized) || normalized;
   const aliases = Array.isArray(opts.aliases) ? opts.aliases : [];
 
   const aliasHit = aliases.find(a =>
@@ -127,7 +134,7 @@ function matchVendor(name, vendors = [], options = {}) {
     return { status: 'exact', method: 'alias', match: vendor, score: 1, originalName: original, candidates: [] };
   }
 
-  const exact = vendors.find(v => vendorNames(v).some(vn => normalizeName(vn) === normalized));
+  const exact = vendors.find(v => vendorNames(v).some(vn => normalizeName(vn) === knownName));
   if (exact) {
     return { status: 'exact', method: 'normalized', match: exact, score: 1, originalName: original, candidates: [] };
   }

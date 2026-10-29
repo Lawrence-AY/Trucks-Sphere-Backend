@@ -426,7 +426,7 @@ const delivery_ordersService = {
         ...canonicalData,
         id: docId,
         jobId,
-        poNumber: purchaseOrderContext?.poNumber || canonicalData.poNumber || '',
+        poNumber: String(purchaseOrderContext?.poNumber || canonicalData.poNumber || '').split('/')[0],
         materialSource: normalizeMaterialSource(canonicalData.materialSource),
         banker: isWarehouseDelivery(canonicalData) ? 'Warehouse-banker' : normalizeBanker(canonicalData.banker),
         quarryId: canonicalData.quarryId || purchaseOrderContext?.quarryId || '',

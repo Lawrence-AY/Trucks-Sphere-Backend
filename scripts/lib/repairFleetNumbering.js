@@ -118,6 +118,9 @@ function planNumbering(state) {
   for (const [collection, rows] of Object.entries(state)) for (const before of rows) {
     const id = maps.get(before.id) || before.id;
     let after = replace({ ...before, ...patches.get(collection + '/' + before.id) });
+    if (collection === 'deliveryOrders' && /^PO\d{4}\/V\d+\//.test(String(before.jobId || ''))) {
+      after.poNumber = String(after.jobId || before.jobId).split('/')[0];
+    }
     if (collection === 'counters' && before.id === 'auto_ids') after = counters;
     if (JSON.stringify(before) !== JSON.stringify(after) || id !== before.id) {
       if (id !== before.id && rows.some(row => row.id === id)) throw Error('Target already exists: ' + collection + '/' + id);
