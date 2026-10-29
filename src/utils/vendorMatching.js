@@ -124,7 +124,7 @@ function matchVendor(name, vendors = [], options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const original = String(name == null ? '' : name).trim();
   const normalized = normalizeName(original);
-  const knownName = KNOWN_VENDOR_ALIASES.get(normalized) || normalized;
+  const knownName = normalizeName(KNOWN_VENDOR_ALIASES.get(normalized) || original);
   const aliases = Array.isArray(opts.aliases) ? opts.aliases : [];
 
   const aliasHit = aliases.find(a =>
