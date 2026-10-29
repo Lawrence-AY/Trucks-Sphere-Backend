@@ -48,6 +48,12 @@ function planNumbering(state) {
   for (const trip of state.deliveryOrders || []) {
     const jobParts = String(trip.jobKey || '').split('/');
     const idParts = String(trip.jobId || '').split('/');
+    // Warehouse jobs deliberately omit driver and truck placeholders.
+    // WH####/V###/J#### is a complete and valid reference.
+    if (jobParts.length === 3 && idParts.length === 3
+      && jobParts.join('/') === idParts.join('/')
+      && /^WH\d{3,4}$/.test(jobParts[0]) && /^V\d{3}$/.test(jobParts[1])
+      && /^J\d{4}$/.test(jobParts[2])) continue;
     const hasConsistentReference = jobParts.length === 4 && idParts.length === 5
       && idParts.slice(0, 4).join('/') === trip.jobKey
       && idParts[2] === trip.driverId && idParts[3] === trip.vehicleId;
