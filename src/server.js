@@ -20,6 +20,14 @@ async function startServer() {
       accessBridge.stop().finally(() => process.exit(0));
     });
     require('./integrations/odooSync').startOdooSync({ db: require('../config/firebase').db });
+    const girMasterDataSync = require('./integrations/girMasterDataSync').startGirMasterDataSync({
+      // Real-time sync is safe to start with the API. A full historical backfill
+      // is opt-in so a restart cannot unexpectedly write the whole FMS catalog.
+      runBackfill: process.env.GIR_FMS_BACKFILL_ON_START === 'true',
+    });
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+      girMasterDataSync.stop();
+    });
     processDueAccountDeletions().catch((error) => console.error('[Account deletion] Initial cleanup failed:', error.message));
     setInterval(() => {
       processDueAccountDeletions().catch((error) => console.error('[Account deletion] Cleanup failed:', error.message));

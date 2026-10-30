@@ -10,6 +10,7 @@
     "seed-superadmin": "node scripts/seed-superadmin.js",
     "seed-tracking-security": "node scripts/seed-tracking-security-codes.js",
     "sync-vendor-registry": "node scripts/sync-vendor-registry.js",
+    "sync-gir-master-data": "node scripts/sync-gir-master-data.js",
     "audit-vendor-activity": "node scripts/audit-vendor-activity.js",
     "cleanup-vendor-registry": "node scripts/cleanup-vendor-registry.js",
     "renumber-purchase-orders-only": "node scripts/renumber-purchase-orders-only.js",

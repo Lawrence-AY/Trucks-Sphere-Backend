@@ -16,6 +16,21 @@ async function findByXfield(resource, field, value) {
   const records = Array.isArray(page) ? page : [];
   return records.find((record) => String(record?.xfields?.[field] || '') === String(value)) || null;
 }
+async function listAll(resource) {
+  if (!enabled()) return [];
+  const records = [];
+  const seen = new Set();
+  let cursor = '';
+  while (true) {
+    const page = await request(`/${resource}${cursor ? `?last_id=${encodeURIComponent(cursor)}` : '?limit=500'}`, { envelope: true });
+    const rows = Array.isArray(page) ? page : (Array.isArray(page?.result) ? page.result : []);
+    records.push(...rows);
+    if (!page?.more) return records;
+    cursor = rows.at(-1)?.id;
+    if (!cursor || seen.has(cursor)) throw new Error(`Invalid GIR/FMS pagination for ${resource}`);
+    seen.add(cursor);
+  }
+}
 async function sync(resource, record, payload, key) {
   if (!enabled()) return { skipped: true };
   const existing = await findByXfield(resource, key, record.id);
@@ -121,6 +136,7 @@ async function findFuelTransaction(expected) {
 module.exports = {
   findFuelTransaction,
   enabled,
+  listAll,
   syncDriver: (driver) => sync('drivers', driver, driverPayload(driver), 'driverid'),
   syncVehicle: (vehicle) => sync('vehicles', vehicle, vehiclePayload(vehicle), 'vehicleid'),
   activateFuelSession,
