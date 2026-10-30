@@ -1,9 +1,13 @@
 require('dotenv').config();
 const { db } = require('../config/firebase');
+const redis = require('../config/redis');
+const snapshotStore = require('../src/utils/snapshotStore');
 const { backfill } = require('../src/integrations/girMasterDataSync');
 
 (async () => {
   const apply = process.argv.includes('--apply');
+  await redis.init();
+  await snapshotStore.init();
   const result = await backfill({ apply });
   console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', result }, null, 2));
   await db.terminate();
