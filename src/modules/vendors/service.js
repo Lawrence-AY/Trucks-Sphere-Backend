@@ -303,6 +303,7 @@ const vendorsService = {
       const doc = await docRef.get();
       if (!doc.exists) return null;
       const current = doc.data();
+      const contactOnly = Object.keys(data).every((key) => ['contactPerson', 'phone', 'updatedAt'].includes(key));
       const vendor = { id, ...current, ...data };
       const previousKeys = vendorUniqueKeys(current, { allowMissingCompany: true });
       const nextKeys = vendorUniqueKeys(vendor);
@@ -317,6 +318,21 @@ const vendorsService = {
       await db.runTransaction(async (transaction) => {
         const latest = await transaction.get(docRef);
         if (!latest.exists) return;
+        if (contactOnly) {
+          const phoneKey = normalizedPhoneKey(data.phone);
+          if (phoneKey) {
+            const phoneReservation = await transaction.get(uniqueKeysRef.doc(`phone:${phoneKey}`));
+            if (phoneReservation.exists && phoneReservation.data().vendorId !== id) throw duplicateVendorError();
+            transaction.set(uniqueKeysRef.doc(`phone:${phoneKey}`), {
+              vendorId: id,
+              key: `phone:${phoneKey}`,
+              createdAt: latest.data().createdAt || updates.updatedAt,
+            });
+          }
+          transaction.update(docRef, updates);
+          result = { id, ...latest.data(), ...updates };
+          return;
+        }
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
         if (reservations.some((reservation) => reservation.exists && reservation.data().vendorId !== id)) {
           throw duplicateVendorError();
