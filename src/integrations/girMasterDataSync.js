@@ -56,6 +56,14 @@ function startGirMasterDataSync({ logger = console, runBackfill = true } = {}) {
   const unsubscribers = ['drivers', 'vehicles'].map(collection => snapshotStore.subscribe(collection, change => {
     if (change.type === 'added' || change.type === 'modified') enqueue(collection, change.record, logger);
   }));
+  // A job card can be created after the driver/truck master record. Re-sync the
+  // linked master records so their latest jobId and vendor mapping reach FMS.
+  unsubscribers.push(snapshotStore.subscribe('deliveryOrders', change => {
+    if (change.type !== 'added' && change.type !== 'modified') return;
+    for (const [collection, id] of [['drivers', change.record?.driverId], ['vehicles', change.record?.vehicleId]]) {
+      if (id) enqueue(collection, snapshotStore.getById(collection, id), logger);
+    }
+  }));
   const ready = runBackfill ? backfill({ apply: true, logger }) : Promise.resolve({ skipped: true });
   return { ready, stop() { stopped = true; unsubscribers.forEach(unsubscribe => unsubscribe()); } };
 }

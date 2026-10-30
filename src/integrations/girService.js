@@ -3,6 +3,27 @@ const API_KEY = String(process.env.GIR_FMS_API_KEY || '').trim();
 
 function enabled() { return Boolean(BASE_URL && API_KEY); }
 function headers() { return { 'Content-Type': 'application/json', 'X-Klervi-API-Key': API_KEY }; }
+function operationalContext(record, kind) {
+  const snapshotStore = require('../utils/snapshotStore');
+  const orders = snapshotStore.getAll('deliveryOrders').filter(order =>
+    kind === 'driver' ? order.driverId === record.id : order.vehicleId === record.id
+  );
+  const latest = orders
+    .filter(order => order.jobId || order.receiptNoteId)
+    .sort((a, b) => String(b.siteWeighInAt || b.dispatchedAt || b.createdAt || '').localeCompare(String(a.siteWeighInAt || a.dispatchedAt || a.createdAt || '')))[0];
+  const vendorIds = Array.from(new Set([
+    record.vendorId,
+    ...(Array.isArray(record.vendorIds) ? record.vendorIds : []),
+    ...orders.map(order => order.vendorId),
+    latest?.jobId?.split('/')?.[1],
+  ].filter(Boolean).map(String)));
+  return {
+    ...record,
+    vendorId: record.vendorId || (vendorIds.length === 1 ? vendorIds[0] : ''),
+    vendorIds,
+    jobId: record.jobId || record.jobID || latest?.jobId || latest?.receiptNoteId || '',
+  };
+}
 async function request(path, options = {}) {
   const { envelope = false, ...fetchOptions } = options;
   const response = await fetch(`${BASE_URL}/api-impexp${path}`, { signal: AbortSignal.timeout(20000), ...fetchOptions, headers: { ...headers(), ...(options.headers || {}) } });
@@ -39,11 +60,11 @@ async function sync(resource, record, payload, key) {
 }
 function driverPayload(driver) {
   const baseCode = String(driver.baseDriverCode || driver.driverCode || driver.code || driver.id).trim();
-  return { name: driver.fullName || driver.name || `${driver.firstName || ''} ${driver.surname || ''}`.trim(), first_name: driver.firstName || '', code: baseCode, pin_code: baseCode, xfields: { basedrivercode: baseCode, jobid: driver.jobId || '', driverid: driver.id || '', vendorid: driver.vendorId || '' }, active: 'no' };
+  return { name: driver.fullName || driver.name || `${driver.firstName || ''} ${driver.surname || ''}`.trim(), first_name: driver.firstName || '', code: baseCode, pin_code: baseCode, xfields: { basedrivercode: baseCode, jobid: driver.jobId || '', driverid: driver.id || '', vendorid: driver.vendorId || '', vendorids: (driver.vendorIds || []).join(',') }, active: 'no' };
 }
 function vehiclePayload(vehicle) {
   const registration = vehicle.registrationNumber || vehicle.plateNumber || vehicle.plate || vehicle.id;
-  return { name: registration, code: registration, pin_code: registration, model: { name: [vehicle.make, vehicle.model].filter(Boolean).join(' ') }, xfields: { vehicle_email: vehicle.email || vehicle.vehicleEmail || '', jobid: vehicle.jobId || '', vehicleid: vehicle.id || '', vendorid: vehicle.vendorId || '' }, active: 'no' };
+  return { name: registration, code: registration, pin_code: registration, model: { name: [vehicle.make, vehicle.model].filter(Boolean).join(' ') }, xfields: { vehicle_email: vehicle.email || vehicle.vehicleEmail || '', jobid: vehicle.jobId || '', vehicleid: vehicle.id || '', vendorid: vehicle.vendorId || '', vendorids: (vehicle.vendorIds || []).join(',') }, active: 'no' };
 }
 async function activateFuelSession({ driverId, baseDriverCode, vehicleId, vendorId, jobId, fuelCode }) {
   if (!jobId || !/\/RN\d+$/.test(jobId)) throw Object.assign(new Error('An issued receipt note is required before fuel authorization.'), {statusCode: 409});
@@ -137,8 +158,8 @@ module.exports = {
   findFuelTransaction,
   enabled,
   listAll,
-  syncDriver: (driver) => sync('drivers', driver, driverPayload(driver), 'driverid'),
-  syncVehicle: (vehicle) => sync('vehicles', vehicle, vehiclePayload(vehicle), 'vehicleid'),
+  syncDriver: (driver) => { const enriched = operationalContext(driver, 'driver'); return sync('drivers', enriched, driverPayload(enriched), 'driverid'); },
+  syncVehicle: (vehicle) => { const enriched = operationalContext(vehicle, 'vehicle'); return sync('vehicles', enriched, vehiclePayload(enriched), 'vehicleid'); },
   activateFuelSession,
   recordFuelTransaction,
   clearFuelSession,
