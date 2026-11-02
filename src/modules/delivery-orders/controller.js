@@ -133,7 +133,10 @@ function canAccessDelivery(item, user, userEntity) {
       || String(item?.deliveryOrigin || '').trim().toLowerCase() === 'warehouse'
       || String(item?.materialSource || '').trim().toLowerCase() === 'warehouse';
 
-    if (userEntity?.siteId && item.siteId && userEntity.siteId !== item.siteId) return false;
+    // Site IDs have historically been stored with inconsistent casing and
+    // whitespace. Do not hide an otherwise eligible delivery because of that
+    // representation difference.
+    if (userEntity?.siteId && item.siteId && !matchesId(userEntity.siteId, item.siteId)) return false;
     const status = normalizeJobStatus(item?.status);
     if (status === JOB_STATUS.CANCELLED || item?.warehouseDeniedAt) return false;
     if (isWarehouse) return Boolean(item.warehouseAcceptedAt);

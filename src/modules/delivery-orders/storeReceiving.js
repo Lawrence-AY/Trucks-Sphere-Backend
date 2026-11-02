@@ -17,7 +17,7 @@ function assertAccess(job, actor) {
   if (!['storeman', 'inspector', 'superadmin', 'admin', 'adminlite'].includes(actor.role)) {
     throw Object.assign(new Error('Store receiving access required.'), { statusCode: 403 });
   }
-  if (actor.siteId && job.siteId && actor.siteId !== job.siteId) {
+  if (actor.siteId && job.siteId && String(actor.siteId).trim().toLowerCase() !== String(job.siteId).trim().toLowerCase()) {
     throw Object.assign(new Error('Delivery not found.'), { statusCode: 404 });
   }
 }
