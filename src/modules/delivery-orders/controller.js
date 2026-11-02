@@ -141,7 +141,7 @@ function canAccessDelivery(item, user, userEntity) {
     // Non-bulky loads can arrive at site without passing through the
     // weighbridge. Keep those jobs visible to Store Receiving as soon as the
     // site workflow records the arrival marker.
-    return !bulk && (item.siteWeighInWeight != null || item.siteArrivalWeight != null || item.siteWeighOutWeight != null || item.arrivedAtSiteAt || ['ARRIVED_AT_SITE', 'SITE_WEIGHED_IN', 'SITE_WEIGHED_OUT', 'COMPLETED'].includes(status));
+    return !bulk && (item.siteWeighInWeight != null || item.siteArrivalWeight != null || item.siteWeighOutWeight != null || item.arrivedAtSiteAt || item.siteInTime || ['ARRIVED_AT_SITE', 'SITE_WEIGHED_IN', 'SITE_WEIGHED_OUT', 'COMPLETED'].includes(status));
   }
 
   // Inspectors can work before or after site weigh-out. They may

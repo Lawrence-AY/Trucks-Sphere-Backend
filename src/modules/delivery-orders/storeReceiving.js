@@ -28,7 +28,7 @@ function assertIncoming(job) {
   if (isWarehouseReceipt(job)) {
     if (!job.warehouseAcceptedAt) fail('The site operator must accept this shipment first.');
     if ((job.siteWeighInWeight != null || job.siteArrivalWeight != null) && job.siteWeighOutWeight == null) fail('Complete site weigh-out before receiving.');
-  } else if (!(job.siteWeighInWeight != null || job.siteArrivalWeight != null || job.arrivedAtSiteAt || ['ARRIVED_AT_SITE', 'SITE_WEIGHED_IN', 'SITE_WEIGHED_OUT', 'COMPLETED'].includes(String(job.status).toUpperCase()))) {
+  } else if (!(job.siteWeighInWeight != null || job.siteArrivalWeight != null || job.arrivedAtSiteAt || job.siteInTime || ['ARRIVED_AT_SITE', 'SITE_WEIGHED_IN', 'SITE_WEIGHED_OUT', 'COMPLETED'].includes(String(job.status).toUpperCase()))) {
     fail('This delivery has not arrived at site.');
   }
 }
