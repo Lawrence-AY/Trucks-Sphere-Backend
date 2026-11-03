@@ -91,8 +91,27 @@ const fuelService = {
     }
     const job = snapshotStore.getAll('deliveryOrders').find(j => j.jobId === authorization.jobId || j.id === authorization.jobId);
     const receiptNoteId = receiptReference(job);
-    const transaction = await girService.findFuelTransaction({ receiptNoteId, jobId: authorization.jobId, fmsTransactionId: references.fmsTransactionId, activeDriverCode: authorization.girDriverCode,
-      driverId: authorization.driverId, vehicleId: authorization.vehicleId, vendorId: authorization.vendorId, authorizedAt: authorization.authorizedAt });
+    const expected = { receiptNoteId, jobId: authorization.jobId, fmsTransactionId: references.fmsTransactionId, activeDriverCode: authorization.girDriverCode,
+      driverId: authorization.driverId, vehicleId: authorization.vehicleId, vendorId: authorization.vendorId, authorizedAt: authorization.authorizedAt };
+    let transaction;
+    try {
+      transaction = await girService.findFuelTransaction(expected);
+    } catch (error) {
+      // GIR can clear the temporary driver/truck job reference after a
+      // previous attempt, even though the TruckSphere authorization remains
+      // authorized. Restore the same authorized session and retry once before
+      // reporting that the pump transaction is still pending.
+      if (error.code !== 'FMS_REFERENCE_MISMATCH' || !authorization.fuelCode) throw error;
+      await girService.activateFuelSession({
+        driverId: authorization.driverId,
+        baseDriverCode: authorization.driverCode || authorization.driverId,
+        vehicleId: authorization.vehicleId,
+        vendorId: authorization.vendorId,
+        jobId: receiptNoteId,
+        fuelCode: authorization.fuelCode,
+      });
+      transaction = await girService.findFuelTransaction(expected);
+    }
     return { transaction, receiptNoteId, authorization };
   },
 
