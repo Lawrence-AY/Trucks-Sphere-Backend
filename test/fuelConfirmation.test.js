@@ -11,7 +11,7 @@ function fixture({ failFirstClear = false } = {}) {
  const job={id:'j1',jobId:'J1',receiptNoteId:'J1/RN001'};
  const deps={ '../../utils/receiptReference':require('../src/utils/receiptReference'), '../../utils/fuelEligibility':{isSupersededForFuel:()=>false},'../../../config/firebase':{db},'../../utils/counterService':{},'../../utils/snapshotStore':{getAll:()=>[job]},'../../integrations/girService':{clearFuelSession:async refs=>{cleared.push(refs);if(failFirstClear && cleared.length===1)throw new Error('FMS unavailable');},findFuelTransaction:async expected=>{assert.equal(expected.receiptNoteId,'J1/RN001');return {id:'TX1',volume:21.5};}} };
  const module={exports:{}};
- vm.runInNewContext(fs.readFileSync(require.resolve('../src/modules/fuel/service'),'utf8'),{module,console:{error(){}},require:name=>deps[name] || require(name)});
+ vm.runInNewContext(fs.readFileSync(require.resolve('../src/modules/fuel/service'),'utf8'),{module,console:{error(){},warn(){}},require:name=>deps[name] || require(name)});
  return {service:module.exports,records,cleared};
 }
 test('finalization uses FMS volume and records the transaction once on retry',async()=>{
@@ -32,13 +32,12 @@ test('finalization rejects an unconfirmed transaction',async()=>{
  const {service,records}=fixture();await assert.rejects(service.create({authorizationId:'A1',jobId:'J1',dispensedByEmail:'agent@test',fmsTransactionId:'wrong'}),{statusCode:409});
  assert.equal([...records.keys()].filter(k=>k.startsWith('fuelRecords/')).length,0);
 });
-test('failed FMS deactivation can be retried without duplicating the fuel record',async()=>{
+test('failed FMS deactivation does not hide the saved fuel record',async()=>{
  const {service,records,cleared}=fixture({failFirstClear:true});
  const request={authorizationId:'A1',jobId:'J1',dispensedByEmail:'agent@test',fmsTransactionId:'TX1'};
- await assert.rejects(service.create(request),/FMS unavailable/);
  const saved=await service.create(request);
  assert.equal(saved.fuelAmount,21.5);
- assert.equal(cleared.length,2);
+ assert.equal(cleared.length,1);
  assert.equal([...records.keys()].filter(k=>k.startsWith('fuelRecords/')).length,1);
 });
 test('confirmation endpoint returns pending without an HTTP conflict',async()=>{

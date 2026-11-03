@@ -160,7 +160,14 @@ const fuelService = {
         transaction.update(authRef, { finalizedFuelRecordId: fuelId });
         return item;
       });
-      await girService.clearFuelSession({ driverId: saved.driverId, vehicleId: saved.vehicleId, jobId: saved.receiptNoteId });
+      // The Firestore write above is the authoritative fuel receipt. GIR
+      // cleanup is best-effort: a cleanup/network failure must not make the
+      // client report finalization failure after the receipt was saved.
+      try {
+        await girService.clearFuelSession({ driverId: saved.driverId, vehicleId: saved.vehicleId, jobId: saved.receiptNoteId });
+      } catch (cleanupError) {
+        console.warn('fuelService.create: fuel record saved but GIR session cleanup failed:', cleanupError?.message || cleanupError);
+      }
       // Cache is updated via onSnapshot — no need to manually update
       return { id: fuelId, ...saved };
     } catch (error) {
