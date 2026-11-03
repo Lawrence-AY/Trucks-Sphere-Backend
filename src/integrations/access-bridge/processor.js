@@ -298,10 +298,19 @@ function createProcessor({ repository, deliveries, config }) {
         const allSites = await repository.all('sites');
         const targetSite = allSites.find(s => s.id === targetSiteId);
         const weights = capture(row, config, config.sourceWeightUnit || targetSite?.weighbridgeWeightUnit);
-        if (Math.abs(Number(target.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('FIRST_WEIGHT_CHANGED');
+        // Access can correct the first weighing when it publishes the completed
+        // KAYITLAR row. The completed row is authoritative because it contains
+        // both weights and the ticket number; do not leave the delivery blocked
+        // on the older provisional first-weight value.
+        const firstWeightChanged = Math.abs(Number(target.siteWeighInWeight) - weights.first) > 0.000001;
         const actor = String(row.OPERATOR_ADI || 'Access weighbridge');
         const net = Math.abs(weights.first - weights.second);
         const updated = await deliveries.updateFresh(target.id, {
+          ...(firstWeightChanged ? {
+            siteWeighInWeight: weights.first,
+            siteWeighInAt: weights.firstAt,
+            siteWeighInByName: actor,
+          } : {}),
           siteWeighOutWeight: weights.second, siteWeighOutAt: weights.secondAt, siteNetWeight: net,
           accessWeighDirection: weights.second > weights.first ? 'loading' : 'unloading',
           ...(isWarehouseReceipt(target) ? {} : { quantityDelivered: net }),
