@@ -8,6 +8,14 @@ const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../../modules/warehouse-jobs/receipt');
 const normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
 const plate = value => normalize(value).replace(/[\s-]/g, '');
+// Access sometimes sends a truck and trailer as `TRACTOR/TRAILER`. Resolve
+// either component against the fleet registry while retaining the raw
+// compound registration in the capture audit trail.
+const plateParts = value => normalize(value).split('/').map(part => part.replace(/[\s-]/g, '')).filter(Boolean);
+const plateMatches = (left, right) => {
+  const a = plateParts(left), b = plateParts(right);
+  return a.some(value => b.includes(value));
+};
 // "v11", "11" or "V011" â†’ "V011" (matches purchase-orders normalizeVendorId).
 const vendorShort = id => {
   const match = String(id ?? '').trim().match(/^[Vv]?(\d+)$/);
@@ -222,7 +230,11 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
   const orders = (await repository.all('purchaseOrders')) || [];
   let order;
   try { order = customOrder(orders, row, config, { vendor, material, site }); }
-  catch (error) { if (error.code !== 'PURCHASE_ORDER_REQUIRED') throw error; }
+  catch (error) {
+    // A closed PO is historical commercial data. Start a fresh active PO for
+    // the new physical delivery instead of attaching the load to history.
+    if (!['PURCHASE_ORDER_REQUIRED', 'PURCHASE_ORDER_CLOSED'].includes(error.code)) throw error;
+  }
   if (!order) {
     const poSeq = await repository.nextId('purchase_order_v2');
     const poNumber = `${poSeq}/${vendorShort(vendor.id)}`;
@@ -246,7 +258,7 @@ function createProcessor({ repository, deliveries, config }) {
     capture(row, config, config.sourceWeightUnit || 'kg');
     const identity = captureIdentity(row, config);
     const vehicles = await repository.all('vehicles');
-    let vehicle = unique(vehicles.filter(v => plate(v.registrationNumber || v.plateNumber) === plate(row.PLAKA)), 'AMBIGUOUS_TRUCK');
+    let vehicle = unique(vehicles.filter(v => plateMatches(v.registrationNumber || v.plateNumber, row.PLAKA)), 'AMBIGUOUS_TRUCK');
     const drivers = await repository.all('drivers');
     const driverValue = normalize(row[config.driverField || 'DIGER3_ISIM']);
     let capturedDriver = driverValue ? pickDriver(drivers, driverValue) : null;
@@ -275,7 +287,7 @@ function createProcessor({ repository, deliveries, config }) {
     const hasSecondWeigh = row.TARTIM2 != null && row.TARTIM2 !== '' && Number(row.TARTIM2) !== 0;
     if (hasSecondWeigh) {
       const weighOutTargets = jobs.filter(j =>
-        plate(j.plateNumber) === plate(row.PLAKA)
+        plateMatches(j.plateNumber, row.PLAKA)
         && j.siteWeighInWeight != null && j.siteWeighOutWeight == null
         && j.siteWeighInAt && Math.abs(Date.parse(j.siteWeighInAt) - Date.parse(identity.firstAt)) <= WEIGH_OUT_MATCH_WINDOW_MS);
       if (weighOutTargets.length) {
@@ -302,7 +314,7 @@ function createProcessor({ repository, deliveries, config }) {
     let job = unique(jobs.filter(j => j.accessBridgeKey === identity.key), 'DUPLICATE_CAPTURE');
     if (!job) {
       const candidates = jobs.filter(j => (isSiteSchedule(j) || (j.siteWeighInAt && Math.abs(Date.parse(j.siteWeighInAt) - Date.parse(identity.firstAt)) <= CAPTURE_CLOCK_SKEW_MS))
-        && (plate(j.plateNumber) ? plate(j.plateNumber) === plate(row.PLAKA) : vehicle && j.vehicleId === vehicle.id)
+        && (plate(j.plateNumber) ? plateMatches(j.plateNumber, row.PLAKA) : vehicle && j.vehicleId === vehicle.id)
         && scheduleExistedAtCapture(j, identity.firstAt, event.observed_utc));
       const contextual = hasSecondWeigh || candidates.length > 1 ? candidates.filter(contextMatches) : candidates;
       // A completed two-weigh record is a physically completed trip. If it
@@ -341,9 +353,9 @@ function createProcessor({ repository, deliveries, config }) {
       // A scheduled job matched by plate still needs its truck registered.
       throw blocked('UNKNOWN_TRUCK');
     }
-    if ((plate(job.plateNumber) && plate(job.plateNumber) !== plate(row.PLAKA))
+    if ((plate(job.plateNumber) && !plateMatches(job.plateNumber, row.PLAKA))
       || (job.vehicleId && job.vehicleId !== vehicle.id)
-      || (job.accessCapture?.plateNumber && plate(job.accessCapture.plateNumber) !== plate(row.PLAKA))) throw blocked('CAPTURE_PLATE_MISMATCH');
+      || (job.accessCapture?.plateNumber && !plateMatches(job.accessCapture.plateNumber, row.PLAKA))) throw blocked('CAPTURE_PLATE_MISMATCH');
     if (capturedDriver && job.driverId && capturedDriver.id !== job.driverId) throw blocked('SCHEDULE_DRIVER_MISMATCH');
     // Registered identifiers (including national ID) confirm the same driver.
     if (!newOrder && !contextMatches(job)) throw blocked('SCHEDULE_CONTEXT_MISMATCH');

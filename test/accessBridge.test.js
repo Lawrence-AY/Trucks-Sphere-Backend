@@ -389,12 +389,15 @@ for (const spelling of ['MURRAM', 'MUURRRAAM', 'MUURRAM', 'MURRRAM']) {
     assert.ok(f.data.deliveryOrders.every(job => job.purchaseOrderId === 'PO1'));
   });
 }
-test('closed matching PO does not generate a replacement PO', async () => {
+test('closed matching PO generates a replacement PO for the new capture', async () => {
   const f = fixture([]);
   f.data.purchaseOrders[0].status = 'closed';
-  await assert.rejects(f.process(f.event({ ...first, DIGER3_ISIM: 'Driver' })), { code: 'PURCHASE_ORDER_CLOSED' });
-  assert.equal(f.data.purchaseOrders.length, 1);
-  assert.equal(f.data.deliveryOrders.length, 0);
+  await f.process(f.event({ ...first, DIGER3_ISIM: 'Driver' }));
+  assert.equal(f.data.purchaseOrders.length, 2);
+  assert.equal(f.data.purchaseOrders[1].status, 'active');
+  assert.notEqual(f.data.purchaseOrders[1].id, f.data.purchaseOrders[0].id);
+  assert.equal(f.data.deliveryOrders.length, 1);
+  assert.equal(f.data.deliveryOrders[0].purchaseOrderId, f.data.purchaseOrders[1].id);
 });
 
 function suppliedCaptureFixture({ vendor = 'WELLSELECT ENTERPRISES LIMITED', material = 'RIVER SAND', driver = 'STEPHEN KAHINDI', registration = 'KDW838F', code = 'SAND', firstWeight = 49000, lastWeight = 18600 } = {}) {
