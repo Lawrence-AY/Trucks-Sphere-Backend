@@ -115,7 +115,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
     const siteNet = d.siteWeighInWeight != null && d.siteWeighOutWeight != null ? Number(d.siteWeighInWeight) - Number(d.siteWeighOutWeight) : '';
     const effectiveSiteNet = siteNet;
 
-    return {
+    const reportRow = {
       jobId: d.jobId || '',
       poExcessQuantity: require('../purchase-orders/deliverySummary').formatExcess(require('../purchase-orders/deliverySummary').buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials),
       poExcessFlag: require('../purchase-orders/deliverySummary').buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered,
@@ -164,6 +164,17 @@ function buildVendorMasterAudit(vendorId, options = {}) {
         ? `${d.weighOutGeoLocation.latitude},${d.weighOutGeoLocation.longitude}`
         : '',
     };
+    // Vendor deliveries must not expose internal workflow, warehouse-control,
+    // lot, or location fields. Keep these out of the row object so CSV, Excel,
+    // and vendor report summaries all use the same safe serializer.
+    const {
+      poExcessFlag, jobStatusCode, banker, lotNumber,
+      warehouseAcceptedBy, warehouseAcceptedAt, warehouseReceiptStatus,
+      warehouseReceivedItems, warehouseDeniedAt, warehouseDenialReason,
+      geolocation,
+      ...vendorDeliveryRow
+    } = reportRow;
+    return vendorDeliveryRow;
   });
 }
 

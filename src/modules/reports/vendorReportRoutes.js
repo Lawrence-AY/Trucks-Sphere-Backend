@@ -290,10 +290,10 @@ router.get('/summary', async (req, res, next) => {
       deliveries: {
         total: deliveries.length,
         completed: deliveries.filter((d) =>
-          ['completed', 'delivered'].includes(String(d.jobStatusCode || '').toLowerCase())
+          ['completed', 'delivered'].includes(String(d.jobStatus || '').toLowerCase())
         ).length,
         inTransit: deliveries.filter((d) =>
-          ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(String(d.jobStatusCode || '').toLowerCase())
+          ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(String(d.jobStatus || '').toLowerCase())
         ).length,
         totalTonnage,
       },
@@ -352,10 +352,10 @@ router.get('/summary/:category', async (req, res, next) => {
           total: deliveries.length,
           totalTonnage: deliveries.reduce((s, d) => s + (Number(d.quantityDelivered) || 0), 0),
           completed: deliveries.filter((d) =>
-            ['completed', 'delivered'].includes(String(d.jobStatusCode || '').toLowerCase())
+            ['completed', 'delivered'].includes(String(d.jobStatus || '').toLowerCase())
           ).length,
           inTransit: deliveries.filter((d) =>
-            ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(String(d.jobStatusCode || '').toLowerCase())
+            ['loaded', 'dispatched', 'in_transit', 'en_route'].includes(String(d.jobStatus || '').toLowerCase())
           ).length,
           preview: deliveries.slice(0, 5),
         };
