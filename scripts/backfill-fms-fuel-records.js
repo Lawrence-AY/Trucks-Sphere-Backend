@@ -16,6 +16,7 @@ const normalize = value => String(value || '').trim().replace(/[\s-]/g, '').toUp
 const name = value => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
 const arg = key => { const i = process.argv.indexOf(key); return i >= 0 ? process.argv[i + 1] : ''; };
 const write = process.argv.includes('--write');
+const repair = process.argv.includes('--repair');
 const vendorId = String(arg('--vendor') || 'V001').trim().toUpperCase();
 const from = Date.parse(arg('--from') || '2026-11-03T00:00:00+03:00');
 const to = Date.parse(arg('--to') || '2026-11-04T00:00:00+03:00');
@@ -83,9 +84,9 @@ function chooseJob(row, jobs, vehicles, drivers) {
 async function main() {
   if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) throw new Error('Invalid --from/--to range');
   if (!girService.enabled()) throw new Error('GIR_FMS_BASE_URL/GIR_FMS_API_KEY are not configured');
-  const [transactions, jobs, vehicles, drivers, vendors, existing] = await Promise.all([
+  const [transactions, jobs, vehicles, drivers, vendors, existing, authorizations] = await Promise.all([
     girService.listAll('transac_fuels'),
-    all('deliveryOrders'), all('vehicles'), all('drivers'), all('vendors'), all('fuelRecords'),
+    all('deliveryOrders'), all('vehicles'), all('drivers'), all('vendors'), all('fuelRecords'), all('fuelAuthorizations'),
   ]);
   const existingFmsIds = new Set(existing.map(record => String(record.fmsTransactionId || '')).filter(Boolean));
   const vendor = vendors.find(item => String(item.id || '').toUpperCase() === vendorId);
@@ -94,9 +95,9 @@ async function main() {
     const plate = transactionPlate(row);
     return Number(row.volume) > 0 && date >= from && date < to
       && (!requestedPlates.length || requestedPlates.includes(plate))
-      && !existingFmsIds.has(transactionId(row));
+      && (repair || !existingFmsIds.has(transactionId(row)));
   });
-  console.log(JSON.stringify({ mode: write ? 'WRITE' : 'DRY_RUN', vendorId, range: { from: new Date(from).toISOString(), to: new Date(to).toISOString() }, candidateCount: rows.length }, null, 2));
+  console.log(JSON.stringify({ mode: write ? 'WRITE' : 'DRY_RUN', repair, vendorId, range: { from: new Date(from).toISOString(), to: new Date(to).toISOString() }, candidateCount: rows.length }, null, 2));
   for (const row of rows) {
     const { job, candidates } = chooseJob(row, jobs, vehicles, drivers);
     const transactionKey = transactionId(row);
@@ -106,6 +107,11 @@ async function main() {
       continue;
     }
     const recordId = stableId(transactionKey);
+    const authorization = authorizations
+      .filter(item => String(item.vendorId || '').toUpperCase() === vendorId
+        && item.driverId === job.driverId && item.vehicleId === job.vehicleId
+        && (item.jobId === job.jobId || item.jobId === job.id))
+      .sort((a, b) => String(b.authorizedAt || b.createdAt || '').localeCompare(String(a.authorizedAt || a.createdAt || '')))[0];
     const record = {
       id: recordId,
       source: 'fms_backfill',
@@ -125,11 +131,24 @@ async function main() {
       jobId: job.jobId || job.id,
       poNumber: job.poNumber || job.purchaseOrderId || '',
       receiptNoteId: job.receiptNoteId || '',
+      ...(authorization ? {
+        authorizationId: authorization.id,
+        authorizationCode: String(authorization.otp || authorization.authorizationCode || ''),
+        dispensedByEmail: authorization.requestedByEmail || '',
+        dispensedBy: authorization.requestedBy || authorization.requestedByEmail || '',
+        pricePerLiter: Number(authorization.pricePerLiter || 0),
+      } : {}),
       backfilledAt: new Date().toISOString(),
       backfillReason: 'FMS positive-volume transaction missing from Firebase fuelRecords',
     };
     console.log(JSON.stringify({ action: write ? 'WRITE' : 'WOULD_WRITE', id: recordId, transactionId: transactionKey, plate, driver: record.driverName, volume: record.fuelAmount, jobId: record.jobId }));
-    if (write) await db.collection('fuelRecords').doc(recordId).create(record);
+    if (write) {
+      if (repair && existingFmsIds.has(transactionKey)) {
+        await db.collection('fuelRecords').doc(recordId).set(record, { merge: true });
+      } else if (!existingFmsIds.has(transactionKey)) {
+        await db.collection('fuelRecords').doc(recordId).create(record);
+      }
+    }
   }
 }
 
