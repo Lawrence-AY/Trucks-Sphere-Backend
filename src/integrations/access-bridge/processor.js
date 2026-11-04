@@ -16,6 +16,13 @@ const plateMatches = (left, right) => {
   const a = plateParts(left), b = plateParts(right);
   return a.some(value => b.includes(value));
 };
+const resolveVehicle = (vehicles, capturedPlate) => {
+  const exact = vehicles.filter(vehicle => plate(vehicle.registrationNumber || vehicle.plateNumber) === plate(capturedPlate));
+  // Prefer the exact compound registration when Access sends one. This avoids
+  // treating KBK389R and KBK389R/ZC3006 as two possible trucks.
+  if (exact.length) return unique(exact, 'AMBIGUOUS_TRUCK');
+  return unique(vehicles.filter(vehicle => plateMatches(vehicle.registrationNumber || vehicle.plateNumber, capturedPlate)), 'AMBIGUOUS_TRUCK');
+};
 // "v11", "11" or "V011" â†’ "V011" (matches purchase-orders normalizeVendorId).
 const vendorShort = id => {
   const match = String(id ?? '').trim().match(/^[Vv]?(\d+)$/);
@@ -258,7 +265,7 @@ function createProcessor({ repository, deliveries, config }) {
     capture(row, config, config.sourceWeightUnit || 'kg');
     const identity = captureIdentity(row, config);
     const vehicles = await repository.all('vehicles');
-    let vehicle = unique(vehicles.filter(v => plateMatches(v.registrationNumber || v.plateNumber, row.PLAKA)), 'AMBIGUOUS_TRUCK');
+    let vehicle = resolveVehicle(vehicles, row.PLAKA);
     const drivers = await repository.all('drivers');
     const driverValue = normalize(row[config.driverField || 'DIGER3_ISIM']);
     let capturedDriver = driverValue ? pickDriver(drivers, driverValue) : null;
@@ -387,10 +394,12 @@ function createProcessor({ repository, deliveries, config }) {
     // Save the cross-table identity before weighing. Recovery can find this job
     // even if the process dies between a job write and acknowledging the event.
     if (!job.accessBridgeKey) {
-      if (job.siteWeighInWeight != null && Math.abs(Number(job.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('APP_WEIGHT_CONFLICT');
+      if (!hasSecondWeigh && job.siteWeighInWeight != null && Math.abs(Number(job.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('APP_WEIGHT_CONFLICT');
       job = toTonnes(await repository.bind(job.id, weights.key, config.sourceId, siteId));
     } else if (job.accessBridgeKey !== weights.key) throw blocked('JOB_ALREADY_BOUND');
-    if (job.siteWeighInWeight != null && Math.abs(Number(job.siteWeighInWeight) - weights.first) > 0.000001) throw blocked('FIRST_WEIGHT_CHANGED');
+    const bridgeFirstWeightDiffers = job.siteWeighInWeight != null
+      && Math.abs(Number(job.siteWeighInWeight) - weights.first) > 0.000001;
+    if (bridgeFirstWeightDiffers && !hasSecondWeigh) throw blocked('FIRST_WEIGHT_CHANGED');
     if (job.siteWeighOutWeight != null) {
       if (weights.second !== null && Math.abs(Number(job.siteWeighOutWeight) - weights.second) > 0.000001) throw blocked('SECOND_WEIGHT_CHANGED');
       return { status: 'processed', jobId: job.id, receiptNoteId: job.receiptNoteId || null };
@@ -407,6 +416,11 @@ function createProcessor({ repository, deliveries, config }) {
     if (weights.second !== null) {
       const net = Math.abs(weights.first - weights.second);
       job = await deliveries.updateFresh(job.id, {
+        ...(bridgeFirstWeightDiffers ? {
+          siteWeighInWeight: weights.first,
+          siteWeighInAt: weights.firstAt,
+          siteWeighInByName: actor,
+        } : {}),
         siteWeighOutWeight: weights.second, siteWeighOutAt: weights.secondAt, siteNetWeight: net,
         accessWeighDirection: weights.second > weights.first ? 'loading' : 'unloading',
         ...(isWarehouseReceipt(job) ? {} : { quantityDelivered: net }),
