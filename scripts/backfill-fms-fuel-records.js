@@ -42,6 +42,10 @@ function stableId(transactionId) {
   return `FMS-${crypto.createHash('sha256').update(String(transactionId)).digest('hex')}`;
 }
 
+function fuelId(transactionId) {
+  return `FUEL-${crypto.createHash('sha256').update(`fuel:${String(transactionId)}`).digest('hex').slice(0, 8).toUpperCase()}`;
+}
+
 async function all(collection) {
   const snapshot = await db.collection(collection).get();
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -114,6 +118,7 @@ async function main() {
       .sort((a, b) => String(b.authorizedAt || b.createdAt || '').localeCompare(String(a.authorizedAt || a.createdAt || '')))[0];
     const record = {
       id: recordId,
+      fuelId: fuelId(transactionKey),
       source: 'fms_backfill',
       status: 'completed',
       fmsTransactionId: transactionKey,
