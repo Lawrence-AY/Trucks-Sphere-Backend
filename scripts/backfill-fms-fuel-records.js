@@ -57,8 +57,27 @@ function chooseJob(row, jobs, vehicles, drivers) {
     && driverIds.includes(job.driverId)
     && ['SITE_WEIGHED_OUT', 'COMPLETED'].includes(String(job.status || '').toUpperCase())
   );
-  if (candidates.length !== 1) return { candidates, job: null };
-  return { candidates, job: candidates[0] };
+  if (!candidates.length) return { candidates, job: null };
+
+  // Prefer an explicit job/receipt reference if FMS retained it.
+  const xfields = row.xfields || {};
+  const explicitReference = String(xfields.jobid || xfields.jobID || xfields.receiptnoteid || xfields.receiptNoteId || row.jobid || '').trim();
+  if (explicitReference) {
+    const exact = candidates.filter(job => [job.id, job.jobId, job.receiptNoteId].some(value => String(value || '') === explicitReference));
+    if (exact.length === 1) return { candidates, job: exact[0] };
+  }
+
+  // Otherwise use the completed job whose operational timestamp is closest to
+  // the FMS dispense time. A tie remains review-only for safety.
+  const when = transactionDate(row);
+  const scored = candidates.map(job => {
+    const timestamps = [job.siteWeighOutAt, job.receiptNoteIssuedAt, job.receivedAt, job.siteWeighInAt, job.dispatchedAt, job.createdAt]
+      .map(value => Date.parse(value || '')).filter(Number.isFinite);
+    const distance = timestamps.length ? Math.min(...timestamps.map(value => Math.abs(value - when))) : Infinity;
+    return { job, distance };
+  }).sort((a, b) => a.distance - b.distance);
+  if (!Number.isFinite(scored[0].distance) || (scored[1] && scored[1].distance === scored[0].distance)) return { candidates, job: null };
+  return { candidates, job: scored[0].job };
 }
 
 async function main() {
