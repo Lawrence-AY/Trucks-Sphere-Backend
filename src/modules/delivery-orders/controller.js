@@ -139,7 +139,18 @@ function canAccessDelivery(item, user, userEntity) {
     if (userEntity?.siteId && item.siteId && !matchesId(userEntity.siteId, item.siteId)) return false;
     const status = normalizeJobStatus(item?.status);
     if (status === JOB_STATUS.CANCELLED || item?.warehouseDeniedAt) return false;
-    if (isWarehouse) return Boolean(item.warehouseAcceptedAt);
+    // A warehouse load may be accepted by the warehouse operator or may arrive
+    // through the Access bridge with its site-weigh/arrival markers already
+    // recorded. Do not hide the latter from Store Receiving.
+    if (isWarehouse) return Boolean(
+      item.warehouseAcceptedAt
+      || item.siteWeighInWeight != null
+      || item.siteArrivalWeight != null
+      || item.siteWeighOutWeight != null
+      || item.arrivedAtSiteAt
+      || item.siteInTime
+      || ['ARRIVED_AT_SITE', 'SITE_WEIGHED_IN', 'SITE_WEIGHED_OUT', 'COMPLETED'].includes(status),
+    );
     const bulk = require('../../utils/receivingRoute').isBulkMaterial(item);
     // Non-bulky loads can arrive at site without passing through the
     // weighbridge. Keep those jobs visible to Store Receiving as soon as the
