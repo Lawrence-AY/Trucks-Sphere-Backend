@@ -2,6 +2,11 @@ function isBulkMaterial(job) {
   if (job?.isWarehouseDelivery || job?.isWarehouseMaterial || job?.materials?.some(line => line.isWarehouseMaterial) || [job?.deliveryOrigin, job?.materialSource].some(v => String(v || '').trim().toLowerCase() === 'warehouse')) return false;
   const lines = (job?.materials?.length ? job.materials : [job]).filter(Boolean);
   return lines.some(line => {
+    const category = String(line.materialCategory || line.category || '').trim().toLowerCase();
+    const cementSubtype = String(line.cementSubtype || line.materialSubtype || line.subtype || '').trim().toLowerCase();
+    if (cementSubtype === 'cement-bagged' || cementSubtype === 'bagged') return false;
+    if (['other', 'steel', 'blocks', 'block', 'warehouse'].includes(category)) return false;
+    if (['liquid', 'aggregate', 'aggregates', 'cement'].includes(category)) return true;
     const unit = String(line.measurementType || line.unit || '').trim().toLowerCase();
     const description = String(line.materialCategory || line.category || line.materialType || line.materialName || '');
     // The weighbridge records the truck weight in tonnes, but manufactured
@@ -13,4 +18,7 @@ function isBulkMaterial(job) {
       || /\b(bulk|bulky|unbagged|murram|aggregate|sand|ballast)\b/i.test(description);
   });
 }
-module.exports = { isBulkMaterial };
+function materialRoutingTag(material = {}) {
+  return isBulkMaterial(material) ? 'bulky' : 'non-bulky';
+}
+module.exports = { isBulkMaterial, materialRoutingTag };

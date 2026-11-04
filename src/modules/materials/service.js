@@ -3,6 +3,7 @@ const snapshotStore = require('../../utils/snapshotStore');
 const { getNextId } = require('../../utils/counterService');
 const { matchMaterial } = require('../../utils/materialMatching');
 const collectionRef = db.collection('materials');
+const { materialRoutingTag } = require('../../utils/receivingRoute');
 
 const COLLECTION_NAME = 'materials';
 
@@ -58,6 +59,7 @@ const materialsService = {
       const docRef = collectionRef.doc(materialId);
       const item = {
         ...data,
+        routingTag: materialRoutingTag(data),
         ...(data.isWarehouseMaterial ? { category: 'Warehouse' } : {}),
         id: materialId,
         materialId,
@@ -86,6 +88,7 @@ const materialsService = {
       const material = { id, ...doc.data(), ...data };
       const updates = {
         ...data,
+        routingTag: materialRoutingTag(material),
         ...(material.isWarehouseMaterial ? { category: 'Warehouse' } : {}),
         updatedAt: new Date().toISOString(),
       };
