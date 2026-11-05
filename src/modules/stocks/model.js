@@ -9,9 +9,12 @@ function stockRows(delivery) {
   delivery = toTonnes(delivery);
   const wh = warehouse(delivery);
   const inspected = delivery.materialInspection;
+  const bulk = isBulkMaterial(delivery);
   // Preserve historical inspected receipts and the bulk weighbridge workflow.
   // New countable receipts cannot become inventory through truck completion.
-  if (!wh && !isBulkMaterial(delivery) && !inspected?.materialReceipts?.length) return [];
+  // Countable material must complete the store receiving + quality approval
+  // workflow before it can create or update a stock record.
+  if (!wh && !bulk && (delivery.receivingStatus !== 'inventory_added' || delivery.storeQualityInspection?.result !== 'Pass' || !inspected?.materialReceipts?.length)) return [];
   const completed = ['COMPLETED', 'SITE_WEIGHED_OUT'].includes(String(delivery.status).toUpperCase());
   if (!wh && !inspected?.mrfNumber && !completed) return [];
   const lines = wh ? (delivery.materials?.length ? delivery.materials : [
