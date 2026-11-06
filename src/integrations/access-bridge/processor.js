@@ -2,6 +2,7 @@ const { normalizeCaptureDates } = require('./captureDates');
 const { selectBridgePurchaseOrder } = require('../../utils/bridgePurchaseOrder');
 const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { matchVendor } = require('../../utils/vendorMatching');
+const { matchDriver } = require('../../utils/driverMatching');
 const { matchMaterial, materialNamesMatch } = require('../../utils/materialMatching');
 const { createHash } = require('node:crypto');
 const { isActiveJob, normalizeJobStatus } = require('../../utils/jobLifecycle');
@@ -28,7 +29,7 @@ const vendorShort = id => {
   const match = String(id ?? '').trim().match(/^[Vv]?(\d+)$/);
   return match ? `V${String(parseInt(match[1], 10)).padStart(3, '0')}` : String(id ?? '');
 };
-const blocked = code => Object.assign(new Error(code), { code });
+const blocked = (code, details) => Object.assign(new Error(code), { code, ...(details ? { details } : {}) });
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const CAPTURE_CLOCK_SKEW_MS = 120000;
 // A completed weigh-out is minutes after its weigh-in; allow a full day so the
@@ -92,14 +93,17 @@ function unique(items, code) {
 // Duplicate driver records (a bridge-created stub plus a manually registered
 // profile) share a name but must not stall the whole weighbridge. Prefer the
 // most complete record, then a stable id, so unscheduled captures resolve.
-function pickDriver(drivers, driverValue) {
-  const matches = drivers.filter(d =>
-    [d.id, d.nationalId, d.licenseNumber, d.name, d.fullName].some(v => normalize(v) === driverValue));
-  if (matches.length <= 1) return matches[0] || null;
-  return matches.slice().sort((a, b) => {
-    const complete = d => (d.registrationIncomplete ? 0 : 1);
-    return complete(b) - complete(a) || String(a.id).localeCompare(String(b.id));
-  })[0];
+function pickDriver(drivers, driverValue, config = {}, aliases = [], vendorId) {
+  const identifierMatches = drivers.filter(driver => [driver.id, driver.nationalId, driver.licenseNumber, driver.phone]
+    .some(value => normalize(value) === driverValue));
+  if (identifierMatches.length === 1) return { driver: identifierMatches[0], resolution: { status: 'exact', method: 'identifier', score: 1, originalName: driverValue, candidates: [] } };
+  if (identifierMatches.length > 1) throw blocked('DRIVER_REVIEW_REQUIRED', { originalName: driverValue, status: 'ambiguous_identifier' });
+  const result = matchDriver(driverValue, drivers, { ...(config.driverMatching || {}), aliases, vendorId });
+  if (result.status === 'exact' || result.status === 'auto') return { driver: result.match, resolution: result };
+  if (result.status === 'review' || result.status === 'ambiguous') {
+    throw blocked('DRIVER_REVIEW_REQUIRED', { originalName: result.originalName, status: result.status, score: result.score, candidates: result.candidates });
+  }
+  return { driver: null, resolution: result };
 }
 
 function matchesContext(job, row, config) {
@@ -210,12 +214,7 @@ async function resolveCustomCapture(repository, row, config, vehicle, capturedDr
     vehicle.vendorIds = [vendor.id];
   }
 
-  if (!capturedDriver) {
-    const name = String(row[config.driverField || 'DIGER3_ISIM'] || '').trim();
-    if (!name) throw blocked('DRIVER_NAME_REQUIRED');
-    capturedDriver = { id: await repository.nextId('driver'), name, fullName: name, vendorId: vendor.id, status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId };
-    toCreate.push(['drivers', capturedDriver.id, capturedDriver]);
-  }
+  if (!capturedDriver) throw blocked('DRIVER_REVIEW_REQUIRED', { originalName: String(row[config.driverField || 'DIGER3_ISIM'] || '').trim() });
 
   const sites = (await repository.all('sites')) || [];
   const siteName = String(row.DIGER2_ISIM || '').trim() || `Unspecified site (${config.sourceId})`;
@@ -268,7 +267,9 @@ function createProcessor({ repository, deliveries, config }) {
     let vehicle = resolveVehicle(vehicles, row.PLAKA);
     const drivers = await repository.all('drivers');
     const driverValue = normalize(row[config.driverField || 'DIGER3_ISIM']);
-    let capturedDriver = driverValue ? pickDriver(drivers, driverValue) : null;
+    const driverAliases = (await repository.all('driverAliases')) || [];
+    let driverResolution = driverValue ? pickDriver(drivers, driverValue, config, driverAliases) : null;
+    let capturedDriver = driverResolution?.driver || null;
     const jobs = (await repository.all('deliveryOrders')).map(toTonnes);
     const orders = await repository.all('purchaseOrders');
     const orderFor = job => orders.find(order => (job.purchaseOrderId && order.id === job.purchaseOrderId)

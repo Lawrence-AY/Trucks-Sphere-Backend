@@ -2,6 +2,7 @@ const { normalizeCaptureDates } = require('./captureDates');
 const { selectBridgePurchaseOrder } = require('../../utils/bridgePurchaseOrder');
 const { matchMaterial, materialNamesMatch } = require('../../utils/materialMatching');
 const { matchVendor } = require('../../utils/vendorMatching');
+const { matchDriver } = require('../../utils/driverMatching');
 const { createHash } = require('node:crypto');
 const { captureTime } = require('./processor');
 const text = value => String(value ?? '').trim();
@@ -10,7 +11,7 @@ const plate = value => normalize(value).replace(/[\s-]/g, '');
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const closed = new Set(['COMPLETED', 'COMPLETE', 'DELIVERED', 'FULFILLED', 'CLOSED', 'CANCELLED', 'CANCELED', 'ARCHIVED', 'EXCESS', 'OVERDELIVERED', 'OVER_DELIVERED']);
-const collections = ['vehicles', 'drivers', 'vendors', 'materials', 'sites', 'purchaseOrders'];
+const collections = ['vehicles', 'drivers', 'driverAliases', 'vendors', 'materials', 'sites', 'purchaseOrders'];
 
 function parseCapture(event, config) {
   const row = normalizeCaptureDates(JSON.parse(event.payload), event.observed_utc, config.utcOffset);
@@ -63,8 +64,9 @@ function resolveEntities(data, row, config) {
     { plateNumber: plate(row.PLAKA), registrationNumber: plate(row.PLAKA), vendorId: vendor.id, vendorIds: [vendor.id], status: 'active' });
   const driverName = text(row[config.driverField || 'DIGER3_ISIM']);
   if (!driverName) fail('DRIVER_NAME_REQUIRED');
-  const driver = select('drivers', driverName, ['id', 'nationalId', 'licenseNumber', 'name', 'fullName'],
-    { name: driverName, fullName: driverName, vendorId: vendor.id, status: 'active', registrationIncomplete: true }, vendor.id);
+  const driverResult = matchDriver(driverName, data.drivers, { ...(config.driverMatching || {}), aliases: data.driverAliases, vendorId: vendor.id });
+  if (!driverResult.match) fail('DRIVER_REVIEW_REQUIRED');
+  const driver = driverResult.match;
   const materialName = text(row.MALZEME_ADI || row.MALZEME_KODU) || 'Unspecified material';
   const materialMatch = matchMaterial(materialName, text(row.MALZEME_KODU), data.materials);
   const material = materialMatch || select('materials', materialName, ['name', 'materialName'],
@@ -92,7 +94,8 @@ function resolveEntities(data, row, config) {
   const order = selectBridgePurchaseOrder(orders, { vendor: row.FIRMA_ADI, material: row.MALZEME_ADI || row.MALZEME_KODU, siteId: site.id, siteName: row.DIGER2_ISIM, origin: row.DIGER1_ISIM });
   return { planned, truckId: vehicle.id, driverId: driver.id, vendorId: vendor.id, vendorName: vendor.companyName || vendor.name || vendorName,
     materialId: material.id, siteId: site.id, purchaseOrderId: order?.id || null,
-    poResolution: order ? 'matched' : orders.length > 1 ? 'ambiguous' : 'unmatched' };
+    poResolution: order ? 'matched' : orders.length > 1 ? 'ambiguous' : 'unmatched',
+    driverResolution: { status: driverResult.status, method: driverResult.method, score: driverResult.score, originalName: driverResult.originalName } };
 }
 
 function createLoadingProcessor({ db, config, logger = console, vendorCreator }) {

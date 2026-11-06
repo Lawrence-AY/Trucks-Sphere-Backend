@@ -303,7 +303,10 @@ const vendorsService = {
       const doc = await docRef.get();
       if (!doc.exists) return null;
       const current = doc.data();
-      const contactOnly = Object.keys(data).every((key) => ['contactPerson', 'phone', 'updatedAt'].includes(key));
+      // Contact details are editable without changing the vendor's identity.
+      // Include email because the management edit form submits it with the
+      // contact person and phone fields.
+      const contactOnly = Object.keys(data).every((key) => ['contactPerson', 'phone', 'email', 'updatedAt'].includes(key));
       const vendor = { id, ...current, ...data };
       const previousKeys = vendorUniqueKeys(current, { allowMissingCompany: true });
       const nextKeys = vendorUniqueKeys(vendor);
@@ -322,7 +325,7 @@ const vendorsService = {
           const phoneKey = normalizedPhoneKey(data.phone);
           if (phoneKey) {
             const phoneReservation = await transaction.get(uniqueKeysRef.doc(`phone:${phoneKey}`));
-            if (phoneReservation.exists && phoneReservation.data().vendorId !== id) throw duplicateVendorError();
+            if (phoneReservation.exists && String(phoneReservation.data().vendorId) !== String(id)) throw duplicateVendorError();
             transaction.set(uniqueKeysRef.doc(`phone:${phoneKey}`), {
               vendorId: id,
               key: `phone:${phoneKey}`,
@@ -334,7 +337,7 @@ const vendorsService = {
           return;
         }
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (reservations.some((reservation) => reservation.exists && reservation.data().vendorId !== id)) {
+        if (reservations.some((reservation) => reservation.exists && String(reservation.data().vendorId) !== String(id))) {
           throw duplicateVendorError();
         }
 

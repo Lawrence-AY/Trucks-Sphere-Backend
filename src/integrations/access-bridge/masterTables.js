@@ -1,5 +1,6 @@
 const { getNextId } = require('../../utils/counterService');
 const { matchVendor } = require('../../utils/vendorMatching');
+const { similarity } = require('../../utils/vendorMatching');
 const vendorsService = require('../../modules/vendors/service');
 
 const MASTER_TABLES = new Set(['FIRMALAR', 'DIGER3', 'TANIMLI_ARACLAR']);
@@ -32,11 +33,24 @@ function createMasterTableProcessor({ db, config, nextId = getNextId }) {
   async function driver(row) {
     const name = normalize(row.DIGER3_ISIM);
     if (!name) return { status: 'ignored', reason: 'EMPTY_DRIVER_NAME' };
-    const existing = (await all('drivers')).find(item => [item.name, item.fullName].some(value => normalize(value) === name));
-    if (existing) { await merge('drivers', existing.id, stamp); return { status: 'processed', driverId: existing.id }; }
-    const id = await nextId('driver');
-    await db.collection('drivers').doc(id).set({ id, name: text(row.DIGER3_ISIM), fullName: text(row.DIGER3_ISIM), status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, createdAt: new Date().toISOString() });
-    return { status: 'processed', driverId: id };
+    const originalName = text(row.DIGER3_ISIM);
+    const drivers = await all('drivers');
+    const aliases = await all('driverAliases');
+    const alias = aliases.find(item => normalize(item.alias || item.aliasNormalized) === normalize(originalName));
+    const exact = alias ? drivers.find(item => item.id === alias.driverId) : drivers.find(item => [item.name, item.fullName].some(value => normalize(value) === name));
+    const ranked = drivers.map(item => ({ item, score: Math.max(similarity(item.name, originalName), similarity(item.fullName, originalName)) })).sort((a, b) => b.score - a.score);
+    const threshold = Number(config.driverMatching?.autoMatchThreshold || 0.92);
+    const result = exact ? { match: exact, method: alias ? 'alias' : 'normalized', score: 1 } : ranked[0]?.score >= threshold && (!ranked[1] || ranked[0].score - ranked[1].score >= Number(config.driverMatching?.ambiguityMargin || 0.05)) ? { match: ranked[0].item, method: 'fuzzy', score: ranked[0].score } : { match: null, candidates: ranked.slice(0, 5).map(item => ({ driverId: item.item.id, name: item.item.name, score: item.score })) };
+    // DIGER3 is the authoritative Access master table. A new driver listed
+    // there may be provisioned; transactional captures themselves never use
+    // this fallback and remain reviewable when unmatched.
+    if (!result.match) {
+      const id = await nextId('driver');
+      await db.collection('drivers').doc(id).set({ id, name: originalName, fullName: originalName, status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge_master', sourceId: config.sourceId, createdAt: new Date().toISOString() });
+      return { status: 'processed', driverId: id, method: 'master_created' };
+    }
+    await merge('drivers', result.match.id, { ...stamp, bridgeDriverResolution: { method: result.method, score: result.score, originalName: text(row.DIGER3_ISIM) } });
+    return { status: 'processed', driverId: result.match.id, method: result.method };
   }
 
   async function vehicle(row) {
