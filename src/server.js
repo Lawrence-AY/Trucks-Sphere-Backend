@@ -20,6 +20,7 @@ async function startServer() {
       accessBridge.stop().finally(() => process.exit(0));
     });
     require('./integrations/odooSync').startOdooSync({ db: require('../config/firebase').db });
+    const stopStoreReceivingReminders = require('./modules/delivery-orders/storeReceivingReminder').startStoreReceivingReminders();
     const girMasterDataSync = require('./integrations/girMasterDataSync').startGirMasterDataSync({
       // Real-time sync is safe to start with the API. A full historical backfill
       // is opt-in so a restart cannot unexpectedly write the whole FMS catalog.
@@ -27,6 +28,7 @@ async function startServer() {
     });
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
       girMasterDataSync.stop();
+      stopStoreReceivingReminders();
     });
     processDueAccountDeletions().catch((error) => console.error('[Account deletion] Initial cleanup failed:', error.message));
     setInterval(() => {
