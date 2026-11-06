@@ -17,7 +17,8 @@ const name = value => String(value || '').trim().replace(/\s+/g, ' ').toUpperCas
 const arg = key => { const i = process.argv.indexOf(key); return i >= 0 ? process.argv[i + 1] : ''; };
 const write = process.argv.includes('--write');
 const repair = process.argv.includes('--repair');
-const vendorId = String(arg('--vendor') || 'V001').trim().toUpperCase();
+const allVendors = process.argv.includes('--all-vendors');
+const vendorId = String(arg('--vendor') || '').trim().toUpperCase();
 const from = Date.parse(arg('--from') || '2026-11-03T00:00:00+03:00');
 const to = Date.parse(arg('--to') || '2026-11-04T00:00:00+03:00');
 const requestedPlates = (arg('--plates') || '').split(',').map(normalize).filter(Boolean);
@@ -57,7 +58,7 @@ function chooseJob(row, jobs, vehicles, drivers) {
   const vehicleIds = vehicles.filter(v => normalize(v.registrationNumber || v.plateNumber || v.plate) === plate).map(v => v.id);
   const driverIds = drivers.filter(d => name(d.name || d.fullName) === driver).map(d => d.id);
   const candidates = jobs.filter(job =>
-    String(job.vendorId || '').toUpperCase() === vendorId
+    (allVendors || String(job.vendorId || '').toUpperCase() === vendorId)
     && vehicleIds.includes(job.vehicleId)
     && driverIds.includes(job.driverId)
     && ['SITE_WEIGHED_OUT', 'COMPLETED'].includes(String(job.status || '').toUpperCase())
@@ -93,7 +94,7 @@ async function main() {
     all('deliveryOrders'), all('vehicles'), all('drivers'), all('vendors'), all('fuelRecords'), all('fuelAuthorizations'),
   ]);
   const existingFmsIds = new Set(existing.map(record => String(record.fmsTransactionId || '')).filter(Boolean));
-  const vendor = vendors.find(item => String(item.id || '').toUpperCase() === vendorId);
+  const vendorById = new Map(vendors.map(item => [String(item.id || '').toUpperCase(), item]));
   const rows = transactions.filter(row => {
     const date = transactionDate(row);
     const plate = transactionPlate(row);
@@ -112,7 +113,7 @@ async function main() {
     }
     const recordId = stableId(transactionKey);
     const authorization = authorizations
-      .filter(item => String(item.vendorId || '').toUpperCase() === vendorId
+      .filter(item => String(item.vendorId || '').toUpperCase() === String(job.vendorId || '').toUpperCase()
         && item.driverId === job.driverId && item.vehicleId === job.vehicleId
         && (item.jobId === job.jobId || item.jobId === job.id))
       .sort((a, b) => String(b.authorizedAt || b.createdAt || '').localeCompare(String(a.authorizedAt || a.createdAt || '')))[0];
@@ -127,8 +128,8 @@ async function main() {
       dispensedAt: new Date(transactionDate(row)).toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      vendorId,
-      vendorName: vendor?.name || vendor?.companyName || job.vendorName || '',
+      vendorId: job.vendorId || '',
+      vendorName: vendorById.get(String(job.vendorId || '').toUpperCase())?.name || vendorById.get(String(job.vendorId || '').toUpperCase())?.companyName || job.vendorName || '',
       driverId: job.driverId,
       driverName: job.driverName || transactionDriver(row),
       vehicleId: job.vehicleId,

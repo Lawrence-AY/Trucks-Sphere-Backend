@@ -74,13 +74,27 @@ function inspectionUpdates(job, input, actor, now) {
   if (input.result === 'Pass' && !METRICS.every(metric => checks[metric])) fail('Verify every quality metric before adding inventory.');
   if (input.result === 'Failed' && !reason) fail('Enter the quality inspection rejection reason.');
   const passed = input.result === 'Pass';
+  const sourceLines = job.storeReceiving.materialReceipts;
+  const decisions = Array.isArray(input.lineDecisions) ? input.lineDecisions : [];
+  if (decisions.length && decisions.length !== sourceLines.length) fail('Record accepted and rejected quantities for every material.');
   const decision = { result: input.result, qualityChecks: checks, reason: passed ? '' : reason,
     inspectedAt: now, inspectorUid: actor.uid, inspectorName: actor.displayName || actor.email || '' };
-  const materialReceipts = job.storeReceiving.materialReceipts.map(line => ({ ...line,
-    initialVisualInspection: input.result, qualityChecks: checks, failureReason: passed ? '' : reason,
-    damagedQuantity: passed ? 0 : line.receivedQuantity }));
+  const materialReceipts = sourceLines.map((line, index) => {
+    const split = decisions[index];
+    const received = Number(line.receivedQuantity) || 0;
+    const rejected = split ? Number(split.rejectedQuantity) : (passed ? 0 : received);
+    const accepted = split ? Number(split.acceptedQuantity) : received - rejected;
+    if (![accepted, rejected].every(Number.isFinite) || accepted < 0 || rejected < 0 || Math.abs(accepted + rejected - received) > 1e-6) fail('Accepted and rejected quantities must equal the received quantity.');
+    const failureReason = String(split?.failureReason || (passed ? '' : reason)).trim();
+    if (rejected > 0 && !failureReason) fail('Enter a failure reason for rejected quantities.');
+    return { ...line, acceptedQuantity: accepted, rejectedQuantity: rejected,
+      initialVisualInspection: rejected >= received && received > 0 ? 'Failed' : 'Pass', qualityChecks: checks,
+      failureReason, damagedQuantity: rejected };
+  });
+  const hasAccepted = materialReceipts.some(line => line.acceptedQuantity > 0);
+  const hasRejected = materialReceipts.some(line => line.rejectedQuantity > 0);
   return {
-    receivingStatus: passed ? 'inventory_added' : 'inspection_rejected', storeQualityInspection: decision,
+    receivingStatus: passed && hasAccepted ? 'inventory_added' : 'inspection_rejected', storeQualityInspection: { ...decision, hasRejected },
     materialInspection: { ...decision, initialVisualInspection: input.result, materialReceipts,
       mrfNumber: job.materialInspection?.mrfNumber || `${job.jobId || job.id}/MIF`,
       photoURLs: materialReceipts.flatMap(line => line.photoURLs), driverName: job.storeReceiving.driverName, plateNumber: job.storeReceiving.plateNumber },

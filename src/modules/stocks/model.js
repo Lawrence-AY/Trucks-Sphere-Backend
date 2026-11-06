@@ -66,7 +66,8 @@ function validateInspection(delivery, inspection) {
     if (receipt.damagedQuantity != null) {
       const damaged = Number(receipt.damagedQuantity);
       if (String(receipt.damagedQuantity).trim() === '' || !Number.isFinite(damaged) || damaged < 0 || damaged > Number(receipt.receivedQuantity)) fail('Damaged quantity must be between zero and received quantity.');
-      if (receipt.initialVisualInspection === 'Pass' && damaged !== 0) fail('Mark damaged materials Failed and record the damaged quantity.');
+      if (receipt.initialVisualInspection === 'Pass' && damaged > 0 && receipt.acceptedQuantity == null) fail('Record accepted and rejected quantities separately for a partial pass.');
+      if (receipt.initialVisualInspection === 'Pass' && damaged > Number(receipt.receivedQuantity)) fail('Rejected quantity cannot exceed received quantity.');
       if (receipt.initialVisualInspection === 'Failed' && damaged === 0 && Number(receipt.receivedQuantity) > 0) fail('Enter the quantity that failed inspection.');
     }
     if (receipt.initialVisualInspection === 'Failed' && !String(receipt.failureReason || '').trim()) fail('Enter a reason for each failed product.');
