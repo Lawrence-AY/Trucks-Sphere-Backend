@@ -95,7 +95,20 @@ const fuelService = {
       driverId: authorization.driverId, vehicleId: authorization.vehicleId, vendorId: authorization.vendorId, authorizedAt: authorization.authorizedAt };
     let transaction;
     try {
-      transaction = await girService.findFuelTransaction(expected);
+      // The pump and GIR publish the completed fuel ledger entry
+      // asynchronously. A completion tap can therefore arrive just before
+      // the transaction is visible in /transac_fuels. Poll briefly so a
+      // normal propagation delay does not become a failed fuel receipt.
+      const maxAttempts = 5;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          transaction = await girService.findFuelTransaction(expected);
+          break;
+        } catch (error) {
+          if (error.code !== 'FMS_TRANSACTION_PENDING' || attempt === maxAttempts) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
     } catch (error) {
       // GIR can clear the temporary driver/truck job reference after a
       // previous attempt, even though the TruckSphere authorization remains
