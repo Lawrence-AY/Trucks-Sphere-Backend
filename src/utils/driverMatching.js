@@ -8,7 +8,9 @@ function normalizeDriverName(value) {
 }
 
 function nameVariants(driver) {
-  return [driver.name, driver.fullName, ...(Array.isArray(driver.aliases) ? driver.aliases : [])]
+  const first = driver.firstName || driver.first_name || '';
+  const last = driver.lastName || driver.last_name || driver.surname || '';
+  return [driver.name, driver.fullName, `${first} ${last}`, `${last} ${first}`, ...(Array.isArray(driver.aliases) ? driver.aliases : [])]
     .filter(value => text(value));
 }
 
@@ -24,7 +26,9 @@ function matchDriver(name, drivers = [], options = {}) {
     const match = drivers.find(driver => driver.id === aliasDriverIds[0]);
     if (match) return { status: 'exact', method: 'alias', match, score: 1, originalName, candidates: [] };
   }
-  const exact = drivers.filter(driver => nameVariants(driver).some(value => normalizeDriverName(value) === normalized));
+  const exact = drivers.filter(driver => nameVariants(driver).some(value =>
+    normalizeDriverName(value) === normalized,
+  ));
   if (exact.length === 1) return { status: 'exact', method: 'normalized', match: exact[0], score: 1, originalName, candidates: [] };
   const scored = drivers.map(driver => {
     const score = Math.max(0, ...nameVariants(driver).map(value => similarity(value, originalName)));

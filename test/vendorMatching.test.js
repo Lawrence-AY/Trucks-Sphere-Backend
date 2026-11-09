@@ -72,6 +72,19 @@ test('two near-identical vendors are ambiguous, not auto-matched', () => {
   assert.strictEqual(r.match, null);
 });
 
+test('shared vendor tokens do not auto-match distinct full names', () => {
+  const vendors = [
+    { id: 'V010', name: 'UNITED ENGINEERING LIMITED' },
+    { id: 'V011', name: 'UNITED TOOLS LIMITED' },
+  ];
+  const r = matchVendor('UNITED ENGINEERING LIMITED', vendors);
+  assert.strictEqual(r.status, 'exact');
+  assert.strictEqual(r.match.id, 'V010');
+  const different = matchVendor('UNITED TOOLS LIMITED', [{ id: 'V010', name: 'UNITED ENGINEERING LIMITED' }]);
+  assert.notStrictEqual(different.status, 'auto');
+  assert.strictEqual(different.match, null);
+});
+
 test('normalizeName strips punctuation and normalises suffixes', () => {
   assert.strictEqual(normalizeName('ABC Construction Ltd.'), 'abc construction limited');
   assert.strictEqual(normalizeName('ABC & Co'), 'abc company');

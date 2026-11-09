@@ -52,7 +52,10 @@ function canonicalTokens(value) {
 }
 
 function normalizeName(value) {
-  return canonicalTokens(value).join(' ');
+  return tokenize(value)
+    .map(token => SUFFIX_MAP[token] || token)
+    .filter(token => !STOP_WORDS.has(token))
+    .join(' ');
 }
 
 function jaro(a, b) {
@@ -110,7 +113,10 @@ function similarity(a, b) {
   const nb = normalizeName(b);
   if (!na || !nb) return 0;
   if (na === nb) return 1;
-  return Math.max(jaroWinkler(na, nb), tokenSimilarity(canonicalTokens(a), canonicalTokens(b)));
+  // Compare the complete normalized name in its original order. Token
+  // overlap/sorting makes distinct vendors such as "UNITED ENGINEERING
+  // LIMITED" and "UNITED TOOLS LIMITED" look deceptively similar.
+  return jaroWinkler(na, nb);
 }
 
 function vendorNames(vendor) {

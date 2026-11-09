@@ -12,3 +12,4 @@ assert.equal(matchDriver('Abraham Mwaleng', drivers).status, 'auto');
 assert.equal(matchDriver('unknown driver', drivers).status, 'no_match');
 assert.equal(matchDriver('A. Salim', drivers).status, 'no_match');
 assert.equal(matchDriver('A. Salim', drivers, { aliases: [{ alias: 'A. Salim', driverId: 'D001' }] }).match.id, 'D001');
+assert.equal(matchDriver('BENJAMIN MUTUA', [{ id: 'D002', firstName: 'Benjamin', surname: 'Mutua' }]).match.id, 'D002');
