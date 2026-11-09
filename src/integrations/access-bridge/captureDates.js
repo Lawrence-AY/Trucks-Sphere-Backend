@@ -36,6 +36,22 @@ function normalizeCaptureDates(row, observedAt, offset = '+03:00') {
       : null;
     if (resolved) result[field] = resolved + value.slice(parts[0].length);
   }
+  // Some Access rows retain an old TARIH2 while SAAT2 belongs to the same
+  // short trip as SAAT1. Correct only the safe same-day case; overnight or
+  // otherwise ambiguous captures remain subject to chronology validation.
+  const firstDate = String(result.TARIH1 || '').slice(0, 10);
+  const secondDate = String(result.TARIH2 || '').slice(0, 10);
+  const clock = field => String(result[field] || '').match(/(?:T|\s|^)(\d{2}):(\d{2}):(\d{2})/);
+  const firstClock = clock('SAAT1');
+  const secondClock = clock('SAAT2');
+  if (valid(firstDate) && valid(secondDate) && secondDate < firstDate && firstClock && secondClock) {
+    const firstSeconds = Number(firstClock[1]) * 3600 + Number(firstClock[2]) * 60 + Number(firstClock[3]);
+    const secondSeconds = Number(secondClock[1]) * 3600 + Number(secondClock[2]) * 60 + Number(secondClock[3]);
+    if (secondSeconds >= firstSeconds && secondSeconds - firstSeconds <= 24 * 3600) {
+      result.TARIH2 = firstDate + String(result.TARIH2).slice(10);
+      result.__accessDateCorrection = { field: 'TARIH2', from: secondDate, to: firstDate, reason: 'STALE_PRIOR_DATE_SAME_DAY_CLOCK' };
+    }
+  }
   return result;
 }
 module.exports = { normalizeCaptureDates };
