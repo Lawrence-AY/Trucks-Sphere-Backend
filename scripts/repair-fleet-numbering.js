@@ -11,7 +11,8 @@ async function main() {
   try {
     if (process.env.FIREBASE_PROJECT_ID !== 'trucksphere') throw Error('Expected project trucksphere');
     const refs = ['drivers', 'vehicles', 'deliveryOrders', 'fuelRecords', 'fuelAuthorizations',
-      'receiptNotes', 'stocks', 'stockMovements', 'accessBridgeTickets', 'counters']
+      'receiptNotes', 'stocks', 'stockMovements', 'accessBridgeTickets', 'counters',
+      'vendors', 'purchaseOrders', 'vendorAliases', 'driverAliases']
       .map(name => db.collection(name));
     for (const source of (await db.collection('accessBridgeSources').get()).docs) {
       refs.push(source.ref.collection('snapshots'), source.ref.collection('events'));
