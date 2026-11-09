@@ -64,7 +64,13 @@ exports.createWithAccount = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
-    const item = await vendorsService.update(req.params.id, req.body);
+    const user = req.user || {};
+    const updatedBy = {
+      uid: user.uid || '', userId: user.userId || user.id || '',
+      username: user.username || '', displayName: user.displayName || user.name || '',
+      email: user.email || '', role: user.role || '', vendorId: user.vendorId || user.entityId || '',
+    };
+    const item = await vendorsService.update(req.params.id, { ...req.body, updatedBy });
     if (!item) return res.status(404).json({ error: 'Not found' });
     res.json(item);
   } catch (err) { next(err); }

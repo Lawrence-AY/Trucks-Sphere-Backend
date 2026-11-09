@@ -306,12 +306,24 @@ const vendorsService = {
       // Contact details are editable without changing the vendor's identity.
       // Include email because the management edit form submits it with the
       // contact person and phone fields.
-      const contactOnly = Object.keys(data).every((key) => ['contactPerson', 'phone', 'email', 'updatedAt'].includes(key));
+      const contactOnly = Object.keys(data).every((key) => ['contactPerson', 'phone', 'phoneNumber', 'email', 'updatedAt', 'updatedBy'].includes(key));
       const vendor = { id, ...current, ...data };
+      // Legacy records may use phoneNumber or omit optional contact fields.
+      // Normalize only the fields supplied by the edit request and preserve
+      // the existing document identity.
+      if (data.phone === undefined && data.phoneNumber !== undefined) vendor.phone = data.phoneNumber;
       const previousKeys = vendorUniqueKeys(current, { allowMissingCompany: true });
       const nextKeys = vendorUniqueKeys(vendor);
       const updates = {
+        contactPerson: data.contactPerson ?? current.contactPerson ?? '',
+        phone: vendor.phone ?? '',
+        email: data.email ?? current.email ?? '',
+        address: data.address ?? current.address ?? '',
+        registrationNumber: data.registrationNumber ?? current.registrationNumber ?? '',
+        registrationIncomplete: data.registrationIncomplete ?? current.registrationIncomplete ?? true,
         ...data,
+        ...(data.phoneNumber !== undefined && data.phone === undefined ? { phone: data.phoneNumber } : {}),
+        ...(data.phoneNumber !== undefined ? { phoneNumber: data.phoneNumber } : {}),
         companyNameNormalized: normalizedMatchKey(vendor.companyName || vendor.name),
         kraPinNormalized: normalizedMatchKey(vendor.kraPin),
         phoneNormalized: normalizedPhoneKey(vendor.phone),
@@ -322,10 +334,13 @@ const vendorsService = {
         const latest = await transaction.get(docRef);
         if (!latest.exists) return;
         if (contactOnly) {
-          const phoneKey = normalizedPhoneKey(data.phone);
+          const phoneKey = normalizedPhoneKey(vendor.phone);
           if (phoneKey) {
             const phoneReservation = await transaction.get(uniqueKeysRef.doc(`phone:${phoneKey}`));
-            if (phoneReservation.exists && String(phoneReservation.data().vendorId) !== String(id)) throw duplicateVendorError();
+            const reservationData = phoneReservation.exists ? phoneReservation.data() : {};
+            const owner = String(reservationData.vendorId || reservationData.id || '');
+            const currentOwner = String(current.vendorId || current.id || id);
+            if (phoneReservation.exists && owner !== String(id) && owner !== currentOwner) throw duplicateVendorError();
             transaction.set(uniqueKeysRef.doc(`phone:${phoneKey}`), {
               vendorId: id,
               key: `phone:${phoneKey}`,
@@ -337,7 +352,12 @@ const vendorsService = {
           return;
         }
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (reservations.some((reservation) => reservation.exists && String(reservation.data().vendorId) !== String(id))) {
+        if (reservations.some((reservation) => {
+          if (!reservation.exists) return false;
+          const owner = String(reservation.data().vendorId || reservation.data().id || '');
+          const currentOwner = String(current.vendorId || current.id || id);
+          return owner !== String(id) && owner !== currentOwner;
+        })) {
           throw duplicateVendorError();
         }
 
