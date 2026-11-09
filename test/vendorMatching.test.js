@@ -106,3 +106,18 @@ test('vendor registry aliases resolve to the exact vendor identity', () => {
   assert.strictEqual(r.status, 'exact');
   assert.strictEqual(r.match.id, 'V100');
 });
+
+test('HINDI agency aliases resolve to General Agencies and do not affect HINDI WATER', () => {
+  const vendors = [
+    { id: 'V003', name: 'HINDI GENERAL AGENCIES LIMITED' },
+    { id: 'V006', name: 'HINDI WATER' },
+  ];
+  for (const name of ['HINDI GEN AGENCY LTD', 'HINDI GEN AGENCY LIMITED']) {
+    const result = matchVendor(name, vendors);
+    assert.strictEqual(result.status, 'exact');
+    assert.strictEqual(result.match.id, 'V003');
+  }
+  const water = matchVendor('HINDI WATER', vendors);
+  assert.strictEqual(water.status, 'exact');
+  assert.strictEqual(water.match.id, 'V006');
+});

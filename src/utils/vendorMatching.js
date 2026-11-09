@@ -35,6 +35,8 @@ const STOP_WORDS = new Set(['the', 'of', 'and', 'a', 'an', 'at', 'for', 'to', 'i
 // full East Africa name; the shorter Firebase/import spelling resolves to it.
 const KNOWN_VENDOR_ALIASES = new Map([
   ['concepts ea limited metro', 'metro concepts east africa limited'],
+  ['hindi gen agency limited', 'hindi general agencies limited'],
+  ['hindi gen agency ltd', 'hindi general agencies limited'],
 ]);
 
 function tokenize(value) {
