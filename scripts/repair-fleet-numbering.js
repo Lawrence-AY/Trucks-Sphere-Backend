@@ -1,8 +1,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { randomUUID } = require('node:crypto');
 const { planNumbering } = require('./lib/repairFleetNumbering');
 async function main() {
+  console.log('[fleet repair] starting');
   const args = process.argv.slice(2);
   if (args.some(arg => !['--apply'].includes(arg))) throw Error('Usage: node scripts/repair-fleet-numbering.js [--apply]');
   const { db, admin } = require('../config/firebase');
