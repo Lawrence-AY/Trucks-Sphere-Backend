@@ -38,7 +38,12 @@ function planNumbering(state) {
       ? plate(source.PLAKA) && plate(source.PLAKA) === plate(row.registrationNumber || row.plateNumber)
       : normalize(source.DIGER3_ISIM) && [row.name,row.fullName].some(name => normalize(name) === normalize(source.DIGER3_ISIM))
     ).map(item => item.vendorId)])];
-    if (ids.some(id => !vendorIds.has(id))) throw Error('Unknown vendor on ' + collection + '/' + row.id);
+    const unknownVendorIds = ids.filter(id => !vendorIds.has(id));
+    if (unknownVendorIds.length) {
+      issues.push({ collection, id: row.id, name: row.name || row.fullName || row.plateNumber || '', reason: 'UNKNOWN_VENDOR_REFERENCE', vendorIds: unknownVendorIds });
+      // Do not invent or rewrite vendor ownership during an ID-only migration.
+      ids = ids.filter(id => vendorIds.has(id));
+    }
     const patch = {};
     if (collection === 'vehicles' && ids.length) patch.vendorIds = ids.sort();
     if (!row.vendorId && ids.length === 1) patch.vendorId = ids[0];
