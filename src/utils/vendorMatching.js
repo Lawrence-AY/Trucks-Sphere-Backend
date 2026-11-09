@@ -37,6 +37,7 @@ const KNOWN_VENDOR_ALIASES = new Map([
   ['concepts ea limited metro', 'metro concepts east africa limited'],
   ['hindi gen agency limited', 'hindi general agencies limited'],
   ['hindi gen agency ltd', 'hindi general agencies limited'],
+  ['spades atlas', 'spades atlas company limited'],
 ]);
 
 function tokenize(value) {

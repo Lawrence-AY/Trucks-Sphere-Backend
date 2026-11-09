@@ -121,3 +121,17 @@ test('HINDI agency aliases resolve to General Agencies and do not affect HINDI W
   assert.strictEqual(water.status, 'exact');
   assert.strictEqual(water.match.id, 'V006');
 });
+
+test('SPADES ATLAS resolves to SPADES ATLAS COMPANY LIMITED', () => {
+  const vendors = [
+    { id: 'V007', name: 'SPADES ATLAS COMPANY LIMITED' },
+    { id: 'V008', name: 'HINDI WATER' },
+    { id: 'V009', name: 'HINDI GENERAL AGENCIES LIMITED' },
+  ];
+  const result = matchVendor('SPADES ATLAS', vendors);
+  assert.strictEqual(result.status, 'exact');
+  assert.strictEqual(result.match.id, 'V007');
+  const water = matchVendor('HINDI WATER', vendors);
+  assert.strictEqual(water.status, 'exact');
+  assert.strictEqual(water.match.id, 'V008');
+});
