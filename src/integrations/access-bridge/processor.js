@@ -270,6 +270,15 @@ function createProcessor({ repository, deliveries, config }) {
     const driverAliases = (await repository.all('driverAliases')) || [];
     let driverResolution = driverValue ? pickDriver(drivers, driverValue, config, driverAliases) : null;
     let capturedDriver = driverResolution?.driver || null;
+    if (driverValue && !capturedDriver && driverResolution?.resolution?.status === 'no_match') {
+      const id = `AB-${hash(['driver', config.sourceId, driverValue]).slice(0, 24)}`;
+      capturedDriver = await repository.create('drivers', id, {
+        id, name: driverValue, fullName: driverValue, status: 'active',
+        bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId,
+        registrationIncomplete: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+      driverResolution = { driver: capturedDriver, resolution: { ...driverResolution.resolution, status: 'created', method: 'new_driver' } };
+    }
     const jobs = (await repository.all('deliveryOrders')).map(toTonnes);
     const orders = await repository.all('purchaseOrders');
     const orderFor = job => orders.find(order => (job.purchaseOrderId && order.id === job.purchaseOrderId)

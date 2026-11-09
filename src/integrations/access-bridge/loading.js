@@ -65,8 +65,16 @@ function resolveEntities(data, row, config) {
   const driverName = text(row[config.driverField || 'DIGER3_ISIM']);
   if (!driverName) fail('DRIVER_NAME_REQUIRED');
   const driverResult = matchDriver(driverName, data.drivers, { ...(config.driverMatching || {}), aliases: data.driverAliases, vendorId: vendor.id });
-  if (!driverResult.match) fail('DRIVER_REVIEW_REQUIRED');
-  const driver = driverResult.match;
+  let driver = driverResult.match;
+  if (!driver && driverResult.status === 'no_match') {
+    // A genuinely new/low-confidence Access name is provisioned with a stable
+    // ID. Medium-confidence and ambiguous matches remain review-only.
+    const id = `AB-${hash(['driver', config.sourceId, normalize(driverName)]).slice(0, 24)}`;
+    driver = { id, name: driverName, fullName: driverName, status: 'active', bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId, registrationIncomplete: true };
+    planned.push({ collection: 'drivers', record: driver });
+    data.drivers.push(driver);
+  }
+  if (!driver) fail('DRIVER_REVIEW_REQUIRED');
   const materialName = text(row.MALZEME_ADI || row.MALZEME_KODU) || 'Unspecified material';
   const materialMatch = matchMaterial(materialName, text(row.MALZEME_KODU), data.materials);
   const material = materialMatch || select('materials', materialName, ['name', 'materialName'],
