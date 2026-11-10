@@ -112,6 +112,16 @@ const fuelService = {
       });
       transaction = await girService.findFuelTransaction(expected);
     }
+    // Confirmation and receipt creation are separate requests. Persist the
+    // verified FMS result so finalization does not perform a second lookup
+    // after GIR has already settled/closed the ledger entry.
+    await db.collection('fuelAuthorizations').doc(authorizationId).update({
+      confirmedFmsTransactionId: transaction.id,
+      confirmedFmsVolume: transaction.volume,
+      confirmedReceiptNoteId: receiptNoteId,
+      confirmedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     return { transaction, receiptNoteId, authorization };
   },
 
@@ -134,7 +144,23 @@ const fuelService = {
           return { id: retryFuelId, ...saved };
         }
       }
-      const confirmed = await fuelService.confirm(data.authorizationId, data.dispensedByEmail, data);
+      let confirmed;
+      try {
+        confirmed = await fuelService.confirm(data.authorizationId, data.dispensedByEmail, data);
+      } catch (error) {
+        // The operator already confirmed this transaction on screen 2. GIR
+        // may no longer return the same ledger row during screen 3, so use
+        // the server-persisted confirmation rather than failing finalization.
+        if (error.code !== 'FMS_TRANSACTION_PENDING') throw error;
+        const authDoc = await db.collection('fuelAuthorizations').doc(data.authorizationId).get();
+        const savedAuth = authDoc.exists ? authDoc.data() : null;
+        if (!savedAuth?.confirmedFmsTransactionId || !(Number(savedAuth.confirmedFmsVolume) > 0)) throw error;
+        confirmed = {
+          transaction: { id: savedAuth.confirmedFmsTransactionId, volume: Number(savedAuth.confirmedFmsVolume) },
+          receiptNoteId: savedAuth.confirmedReceiptNoteId || receiptReference(job),
+          authorization: savedAuth,
+        };
+      }
       if (confirmed.authorization.jobId !== data.jobId) throw Object.assign(new Error('Authorization does not belong to this job.'), {statusCode: 409});
       if (String(data.fmsTransactionId || '') !== confirmed.transaction.id) throw Object.assign(new Error('Confirm the FMS transaction before finalizing.'), {statusCode: 409});
       const fuelId = 'FMS-' + require('crypto').createHash('sha256').update(confirmed.transaction.id).digest('hex');
