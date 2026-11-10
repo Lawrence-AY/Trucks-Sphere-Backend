@@ -34,6 +34,10 @@ function createMasterTableProcessor({ db, config, nextId = getNextId }) {
     const name = normalize(row.DIGER3_ISIM);
     if (!name) return { status: 'ignored', reason: 'EMPTY_DRIVER_NAME' };
     const originalName = text(row.DIGER3_ISIM);
+    const vendorName = text(row.FIRMA_ADI || row.VENDOR || row.vendorName);
+    const vendorResult = vendorName
+      ? matchVendor(vendorName, await all('vendors'), { ...(config.vendorMatching || {}), aliases: await all('vendorAliases') })
+      : null;
     const drivers = await all('drivers');
     const aliases = await all('driverAliases');
     const alias = aliases.find(item => normalize(item.alias || item.aliasNormalized) === normalize(originalName));
@@ -46,10 +50,18 @@ function createMasterTableProcessor({ db, config, nextId = getNextId }) {
     // this fallback and remain reviewable when unmatched.
     if (!result.match) {
       const id = await nextId('driver');
-      await db.collection('drivers').doc(id).set({ id, name: originalName, fullName: originalName, status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge_master', sourceId: config.sourceId, createdAt: new Date().toISOString() });
+      const vendorId = vendorResult?.match?.id || '';
+      await db.collection('drivers').doc(id).set({ id, name: originalName, fullName: originalName, driverCode: id, driverNumber: id, vendorId, vendorIds: vendorId ? [vendorId] : [], status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge_master', sourceId: config.sourceId, createdAt: new Date().toISOString() });
       return { status: 'processed', driverId: id, method: 'master_created' };
     }
-    await merge('drivers', result.match.id, { ...stamp, bridgeDriverResolution: { method: result.method, score: result.score, originalName: text(row.DIGER3_ISIM) } });
+    const updates = { ...stamp, bridgeDriverResolution: { method: result.method, score: result.score, originalName: text(row.DIGER3_ISIM) } };
+    if (vendorResult?.match?.id && (!result.match.vendorId || !Array.isArray(result.match.vendorIds) || !result.match.vendorIds.includes(vendorResult.match.id))) {
+      updates.vendorId = vendorResult.match.id;
+      updates.vendorIds = Array.from(new Set([...(result.match.vendorIds || []), vendorResult.match.id]));
+    }
+    if (!result.match.driverCode) updates.driverCode = result.match.driverNumber || result.match.id;
+    if (!result.match.driverNumber) updates.driverNumber = result.match.driverCode || result.match.id;
+    await merge('drivers', result.match.id, updates);
     return { status: 'processed', driverId: result.match.id, method: result.method };
   }
 
