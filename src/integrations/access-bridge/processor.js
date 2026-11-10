@@ -271,9 +271,9 @@ function createProcessor({ repository, deliveries, config }) {
     let driverResolution = driverValue ? pickDriver(drivers, driverValue, config, driverAliases) : null;
     let capturedDriver = driverResolution?.driver || null;
     if (driverValue && !capturedDriver && driverResolution?.resolution?.status === 'no_match') {
-      const id = `AB-${hash(['driver', config.sourceId, driverValue]).slice(0, 24)}`;
+      const id = await repository.nextId('driver');
       capturedDriver = await repository.create('drivers', id, {
-        id, name: driverValue, fullName: driverValue, status: 'active',
+        id, name: driverValue, fullName: driverValue, driverCode: id, driverNumber: id, status: 'active',
         bridgeCreated: true, createdBy: 'access_bridge', sourceId: config.sourceId,
         registrationIncomplete: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       });
@@ -285,6 +285,12 @@ function createProcessor({ repository, deliveries, config }) {
       || (job.poNumber && normalize(order.poNumber) === normalize(job.poNumber)));
     const materials = await repository.all('materials');
     const vendorResult = row.FIRMA_ADI ? matchVendor(row.FIRMA_ADI, await repository.all('vendors'), { ...(config.vendorMatching || {}), aliases: await repository.all('vendorAliases') }) : null;
+    if (capturedDriver && vendorResult?.match?.id) {
+      const vendorId = vendorResult.match.id;
+      const vendorIds = Array.from(new Set([...(capturedDriver.vendorIds || []), vendorId]));
+      await repository.update('drivers', capturedDriver.id, { vendorId, vendorIds, driverCode: capturedDriver.driverCode || capturedDriver.id, driverNumber: capturedDriver.driverNumber || capturedDriver.id });
+      capturedDriver = { ...capturedDriver, vendorId, vendorIds, driverCode: capturedDriver.driverCode || capturedDriver.id, driverNumber: capturedDriver.driverNumber || capturedDriver.id };
+    }
     const contextMatches = job => {
       const enriched = { ...orderFor(job), ...job };
       const material = materials.find(item => item.id === enriched.materialId);

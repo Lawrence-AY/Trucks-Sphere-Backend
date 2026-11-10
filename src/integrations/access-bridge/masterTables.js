@@ -15,6 +15,15 @@ function createMasterTableProcessor({ db, config, nextId = getNextId }) {
   };
   const merge = (collection, id, data) => db.collection(collection).doc(id).set(data, { merge: true });
   const stamp = { bridgeSourceId: config.sourceId, bridgeSyncedAt: new Date().toISOString() };
+  async function inferVendorId(driverId, driverName) {
+    const orders = await all('deliveryOrders');
+    const matches = orders.filter(order =>
+      (driverId && order.driverId === driverId) ||
+      (driverName && [order.driverName, order.driverFullName].some(value => normalize(value) === normalize(driverName))),
+    );
+    const ids = [...new Set(matches.map(order => order.vendorId).filter(Boolean))];
+    return ids.length === 1 ? ids[0] : '';
+  }
 
   async function vendor(row) {
     const name = text(row.FIRMA_ADI);
@@ -50,14 +59,15 @@ function createMasterTableProcessor({ db, config, nextId = getNextId }) {
     // this fallback and remain reviewable when unmatched.
     if (!result.match) {
       const id = await nextId('driver');
-      const vendorId = vendorResult?.match?.id || '';
+      const vendorId = vendorResult?.match?.id || await inferVendorId('', originalName);
       await db.collection('drivers').doc(id).set({ id, name: originalName, fullName: originalName, driverCode: id, driverNumber: id, vendorId, vendorIds: vendorId ? [vendorId] : [], status: 'active', registrationIncomplete: true, bridgeCreated: true, createdBy: 'access_bridge_master', sourceId: config.sourceId, createdAt: new Date().toISOString() });
       return { status: 'processed', driverId: id, method: 'master_created' };
     }
     const updates = { ...stamp, bridgeDriverResolution: { method: result.method, score: result.score, originalName: text(row.DIGER3_ISIM) } };
-    if (vendorResult?.match?.id && (!result.match.vendorId || !Array.isArray(result.match.vendorIds) || !result.match.vendorIds.includes(vendorResult.match.id))) {
-      updates.vendorId = vendorResult.match.id;
-      updates.vendorIds = Array.from(new Set([...(result.match.vendorIds || []), vendorResult.match.id]));
+    const inferredVendorId = vendorResult?.match?.id || await inferVendorId(result.match.id, originalName);
+    if (inferredVendorId && (!result.match.vendorId || !Array.isArray(result.match.vendorIds) || !result.match.vendorIds.includes(inferredVendorId))) {
+      updates.vendorId = inferredVendorId;
+      updates.vendorIds = Array.from(new Set([...(result.match.vendorIds || []), inferredVendorId]));
     }
     if (!result.match.driverCode) updates.driverCode = result.match.driverNumber || result.match.id;
     if (!result.match.driverNumber) updates.driverNumber = result.match.driverCode || result.match.id;

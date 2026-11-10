@@ -23,6 +23,10 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
       await ref.set({ ...record, id });
       return { ...record, id };
     },
+    async update(collection, id, patch) {
+      await db.collection(collection).doc(id).set({ ...patch, updatedAt: new Date().toISOString() }, { merge: true });
+      return { id, ...patch };
+    },
     async nextId(entityType) {
       return getNextId(entityType);
     },
