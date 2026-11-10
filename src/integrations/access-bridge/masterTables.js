@@ -93,4 +93,40 @@ function createMasterTableProcessor({ db, config, nextId = getNextId }) {
   };
 }
 
-module.exports = { MASTER_TABLES, createMasterTableProcessor };
+async function repairBridgeDrivers({ db, nextId = getNextId, logger = console } = {}) {
+  const [driversSnap, ordersSnap] = await Promise.all([
+    db.collection('drivers').get(),
+    db.collection('deliveryOrders').get(),
+  ]);
+  const orders = ordersSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+  let repaired = 0;
+  for (const doc of driversSnap.docs) {
+    const driver = { ...doc.data(), id: doc.id };
+    if (!driver.bridgeCreated && driver.createdBy !== 'access_bridge') continue;
+    const matches = orders.filter(order =>
+      (order.driverId && order.driverId === driver.id) ||
+      [order.driverName, order.driverFullName].some(value => normalize(value) === normalize(driver.name || driver.fullName)),
+    );
+    const vendorIds = [...new Set(matches.map(order => order.vendorId).filter(Boolean))];
+    const patch = {};
+    if (!driver.driverCode && !driver.driverNumber) {
+      const code = await nextId('driver');
+      patch.driverCode = code;
+      patch.driverNumber = code;
+    } else if (!driver.driverCode) patch.driverCode = driver.driverNumber;
+    else if (!driver.driverNumber) patch.driverNumber = driver.driverCode;
+    if (!driver.vendorId && vendorIds.length === 1) {
+      patch.vendorId = vendorIds[0];
+      patch.vendorIds = Array.from(new Set([...(driver.vendorIds || []), vendorIds[0]]));
+    }
+    if (Object.keys(patch).length) {
+      patch.updatedAt = new Date().toISOString();
+      await db.collection('drivers').doc(doc.id).set(patch, { merge: true });
+      repaired += 1;
+    }
+  }
+  logger.info(`[Access Bridge] repaired ${repaired} bridge driver record(s)`);
+  return { repaired };
+}
+
+module.exports = { MASTER_TABLES, createMasterTableProcessor, repairBridgeDrivers };

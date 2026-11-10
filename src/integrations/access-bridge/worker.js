@@ -3,7 +3,7 @@ const { readConfig } = require('./config');
 const { createProcessor } = require('./processor');
 const { createStore } = require('./store');
 const { createLoadingProcessor } = require('./loading');
-const { createMasterTableProcessor, MASTER_TABLES } = require('./masterTables');
+const { createMasterTableProcessor, MASTER_TABLES, repairBridgeDrivers } = require('./masterTables');
 const { getNextId } = require('../../utils/counterService');
 const vendorsService = require('../../modules/vendors/service');
 let current = { enabled: false };
@@ -47,6 +47,7 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
   const processor = config.weighingMode === 'unloading'
     ? createProcessor({ repository, deliveries, config })
     : createLoadingProcessor({ db, config, logger, vendorCreator: vendorsService.create });
+  repairBridgeDrivers({ db, nextId: getNextId, logger }).catch(error => logger.error('[Access Bridge] driver repair failed:', error.message));
   const masterProcessor = createMasterTableProcessor({ db, config, logger });
   async function tick() {
     if (running || stopped) return;
