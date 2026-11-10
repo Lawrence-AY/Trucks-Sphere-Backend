@@ -140,6 +140,19 @@ async function repairBridgeDrivers({ db, nextId = getNextId, logger = console } 
           }
           if (count) await batch.commit();
         }
+        // Some legacy delivery references also embed the driver ID in a
+        // composite jobKey, e.g. PO/VENDOR/DRIVER/TRUCK/JOB.
+        for (const collection of ['deliveryOrders', 'purchaseOrders']) {
+          const snapshot = await db.collection(collection).get();
+          for (const ref of snapshot.docs) {
+            const data = ref.data();
+            const replacements = {};
+            for (const field of ['jobKey', 'jobId', 'reference', 'deliveryReference']) {
+              if (typeof data[field] === 'string' && data[field].includes(doc.id)) replacements[field] = data[field].split(doc.id).join(newId);
+            }
+            if (Object.keys(replacements).length) await ref.ref.set({ ...replacements, updatedAt: new Date().toISOString() }, { merge: true });
+          }
+        }
         await doc.ref.delete();
       } else {
         await doc.ref.set(patch, { merge: true });

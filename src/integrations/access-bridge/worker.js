@@ -10,6 +10,10 @@ let current = { enabled: false };
 const status = () => current;
 function startAccessBridge({ db, deliveries, config = readConfig(), logger = console }) {
   current = { enabled: config.enabled, sourceId: config.sourceId };
+  // Repair existing bridge records even when live Access ingestion is
+  // disabled; historical AB driver records must not depend on the listener
+  // being enabled to migrate.
+  repairBridgeDrivers({ db, nextId: getNextId, logger }).catch(error => logger.error('[Access Bridge] driver repair failed:', error.message));
   if (!config.enabled) return { stop: async () => {} };
   const owner = randomUUID(), store = createStore(db, config.sourceId);
   let running = false, stopped = false;
@@ -47,7 +51,6 @@ function startAccessBridge({ db, deliveries, config = readConfig(), logger = con
   const processor = config.weighingMode === 'unloading'
     ? createProcessor({ repository, deliveries, config })
     : createLoadingProcessor({ db, config, logger, vendorCreator: vendorsService.create });
-  repairBridgeDrivers({ db, nextId: getNextId, logger }).catch(error => logger.error('[Access Bridge] driver repair failed:', error.message));
   const masterProcessor = createMasterTableProcessor({ db, config, logger });
   async function tick() {
     if (running || stopped) return;
