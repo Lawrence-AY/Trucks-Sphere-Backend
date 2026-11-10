@@ -120,6 +120,20 @@ const fuelService = {
       const jobs = snapshotStore.getAll('deliveryOrders');
       const job = jobs.find((item) => item.jobId === data.jobId || item.id === data.jobId);
       if (job && isSupersededForFuel(job, jobs)) throw Object.assign(new Error('This driver or truck has a newer job. Refresh the fuel queue.'), { statusCode: 409, code: 'FUEL_JOB_SUPERSEDED' });
+      // Idempotent retry: the receipt may already have been committed even if
+      // the previous HTTP response was lost. Return it before asking FMS to
+      // confirm an authorization that is already finalized.
+      if (data.fmsTransactionId) {
+        const retryFuelId = 'FMS-' + require('crypto').createHash('sha256').update(String(data.fmsTransactionId)).digest('hex');
+        const existing = await collectionRef.doc(retryFuelId).get();
+        if (existing.exists) {
+          const saved = existing.data();
+          if (saved.authorizationId && data.authorizationId && saved.authorizationId !== data.authorizationId) {
+            throw Object.assign(new Error('FMS transaction is already recorded.'), { statusCode: 409 });
+          }
+          return { id: retryFuelId, ...saved };
+        }
+      }
       const confirmed = await fuelService.confirm(data.authorizationId, data.dispensedByEmail, data);
       if (confirmed.authorization.jobId !== data.jobId) throw Object.assign(new Error('Authorization does not belong to this job.'), {statusCode: 409});
       if (String(data.fmsTransactionId || '') !== confirmed.transaction.id) throw Object.assign(new Error('Confirm the FMS transaction before finalizing.'), {statusCode: 409});

@@ -17,7 +17,7 @@ function fixture({ failFirstClear = false } = {}) {
 test('finalization uses FMS volume and records the transaction once on retry',async()=>{
  const {service,records,cleared}=fixture(); const request={authorizationId:'A1',jobId:'J1',dispensedByEmail:'agent@test',fmsTransactionId:'TX1',fuelAmount:999,vendorId:'V001',otp:'forged',authorizationCode:'forged'};
  const first=await service.create(request); const second=await service.create(request);
- assert.equal(first.otp,'234'); assert.equal(first.authorizationCode,'012345'); assert.equal(cleared.length,2); assert.equal(cleared[0].driverId,'D1'); assert.equal(cleared[0].vehicleId,'T1'); assert.equal(first.driverCode,'D1'); assert.equal(first.fuelAmount,21.5); assert.equal(first.receiptNoteId,'J1/RN001'); assert.equal(first.id,second.id);
+ assert.equal(first.otp,'234'); assert.equal(first.authorizationCode,'012345'); assert.equal(cleared.length,1); assert.equal(cleared[0].driverId,'D1'); assert.equal(cleared[0].vehicleId,'T1'); assert.equal(first.driverCode,'D1'); assert.equal(first.fuelAmount,21.5); assert.equal(first.receiptNoteId,'J1/RN001'); assert.equal(first.id,second.id);
  assert.equal([...records.keys()].filter(k=>k.startsWith('fuelRecords/')).length,1);
 });
 test('confirmation cannot use another operator authorization',async()=>{
