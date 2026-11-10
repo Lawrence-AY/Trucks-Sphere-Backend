@@ -121,7 +121,29 @@ async function repairBridgeDrivers({ db, nextId = getNextId, logger = console } 
     }
     if (Object.keys(patch).length) {
       patch.updatedAt = new Date().toISOString();
-      await db.collection('drivers').doc(doc.id).set(patch, { merge: true });
+      // Bridge-created AB IDs were provisional. Migrate them to the assigned
+      // D### ID and rewrite every persisted reference before deleting the old
+      // document, so existing jobs and fuel history remain connected.
+      if (doc.id.startsWith('AB-') && patch.driverCode && patch.driverCode.startsWith('D')) {
+        const newId = patch.driverCode;
+        const newRef = db.collection('drivers').doc(newId);
+        const existingNew = await newRef.get();
+        if (!existingNew.exists) await newRef.set({ ...driver, ...patch, id: newId });
+        for (const collection of ['deliveryOrders', 'fuelRecords', 'fuelAuthorizations', 'driverAliases']) {
+          const refs = await db.collection(collection).where('driverId', '==', doc.id).get();
+          let batch = db.batch();
+          let count = 0;
+          for (const ref of refs.docs) {
+            batch.update(ref.ref, { driverId: newId, updatedAt: new Date().toISOString() });
+            count += 1;
+            if (count === 450) { await batch.commit(); batch = db.batch(); count = 0; }
+          }
+          if (count) await batch.commit();
+        }
+        await doc.ref.delete();
+      } else {
+        await doc.ref.set(patch, { merge: true });
+      }
       repaired += 1;
     }
   }
