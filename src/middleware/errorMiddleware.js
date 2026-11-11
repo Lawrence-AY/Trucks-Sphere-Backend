@@ -24,10 +24,12 @@ const errorHandler = (err, req, res, next) => {
 
   console.error(`[Error] ${statusCode}: ${err.message}`, err.stack);
 
-  res.status(statusCode).json({
-    code,
-    error: code,
-  });
+  const body = { code, error: code };
+  // Store receiving validation is intentionally strict, but the client needs
+  // the failed rule in order to correct the form. Keep the stable machine code
+  // while exposing the safe, server-authored validation detail.
+  if (code === 'STORE_RECEIVING_INVALID' && err.message) body.message = err.message;
+  res.status(statusCode).json(body);
 };
 
 module.exports = { ApiError, notFoundHandler, errorHandler };

@@ -4,6 +4,7 @@ const { isBulkMaterial } = require('../../utils/receivingRoute');
 const warehouse = (d) => Boolean(d.isWarehouseDelivery) || d.deliveryOrigin === 'warehouse';
 const number = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const round = (n) => Math.round((n + Number.EPSILON) * 1e6) / 1e6;
+const isPieces = (unit) => ['piece', 'pieces', 'pc', 'pcs'].includes(String(unit || '').trim().toLowerCase());
 function fail(message) { throw Object.assign(new Error(message), { statusCode: 409 }); }
 function stockRows(delivery) {
   delivery = toTonnes(delivery);
@@ -87,7 +88,7 @@ function balance(row, existing = {}) {
 function issue(row, quantity, unit = row.unit) {
   const amount = Number(quantity);
   if (!Number.isFinite(amount) || amount <= 0) fail('Enter a positive usage quantity.');
-  const isPieceIssue = String(unit).toLowerCase() === 'pieces' && row.piecesPerSet;
+  const isPieceIssue = isPieces(unit) && row.piecesPerSet;
   const availableBase = isPieceIssue ? number(row.remainingBasePieces ?? row.remainingQuantity * row.piecesPerSet) : number(row.remainingQuantity);
   if (amount > availableBase) fail('Usage exceeds available stock.');
   const next = balance(row, { ...row, consumedQuantity: isPieceIssue ? number(row.consumedQuantity) + amount / row.piecesPerSet : number(row.consumedQuantity) + amount });
