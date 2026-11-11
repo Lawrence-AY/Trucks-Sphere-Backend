@@ -80,10 +80,16 @@ function inspectionUpdates(job, input, actor, now) {
   const decision = { result: input.result, qualityChecks: checks, reason: passed ? '' : reason,
     inspectedAt: now, inspectorUid: actor.uid, inspectorName: actor.displayName || actor.email || '' };
   const materialReceipts = sourceLines.map((line, index) => {
-    const split = decisions[index];
+    const candidate = decisions[index];
+    // Older clients may submit an empty line-decision object when the
+    // inspector intends a normal Pass. Treat that as no split, rather than
+    // converting both quantities to zero and rejecting a valid inspection.
+    const hasAccepted = candidate && candidate.acceptedQuantity != null && String(candidate.acceptedQuantity).trim() !== '';
+    const hasRejected = candidate && candidate.rejectedQuantity != null && String(candidate.rejectedQuantity).trim() !== '';
+    const split = hasAccepted || hasRejected ? candidate : null;
     const received = Number(line.receivedQuantity) || 0;
-    const rejected = split ? Number(split.rejectedQuantity) : (passed ? 0 : received);
-    const accepted = split ? Number(split.acceptedQuantity) : received - rejected;
+    const rejected = split ? (hasRejected ? Number(split.rejectedQuantity) : 0) : (passed ? 0 : received);
+    const accepted = split ? (hasAccepted ? Number(split.acceptedQuantity) : received - rejected) : received - rejected;
     if (![accepted, rejected].every(Number.isFinite) || accepted < 0 || rejected < 0 || Math.abs(accepted + rejected - received) > 1e-6) fail('Accepted and rejected quantities must equal the received quantity.');
     const failureReason = String(split?.failureReason || (passed ? '' : reason)).trim();
     if (rejected > 0 && !failureReason) fail('Enter a failure reason for rejected quantities.');

@@ -119,13 +119,13 @@ async function repairBridgeDrivers({ db, nextId = getNextId, logger = console } 
       patch.vendorId = vendorIds[0];
       patch.vendorIds = Array.from(new Set([...(driver.vendorIds || []), vendorIds[0]]));
     }
-    if (Object.keys(patch).length) {
+    if (Object.keys(patch).length || (doc.id.startsWith('AB-') && String(driver.driverCode || '').startsWith('D'))) {
       patch.updatedAt = new Date().toISOString();
       // Bridge-created AB IDs were provisional. Migrate them to the assigned
       // D### ID and rewrite every persisted reference before deleting the old
       // document, so existing jobs and fuel history remain connected.
-      if (doc.id.startsWith('AB-') && patch.driverCode && patch.driverCode.startsWith('D')) {
-        const newId = patch.driverCode;
+      if (doc.id.startsWith('AB-') && String(patch.driverCode || driver.driverCode || '').startsWith('D')) {
+        const newId = patch.driverCode || driver.driverCode;
         const newRef = db.collection('drivers').doc(newId);
         const existingNew = await newRef.get();
         if (!existingNew.exists) await newRef.set({ ...driver, ...patch, id: newId });
