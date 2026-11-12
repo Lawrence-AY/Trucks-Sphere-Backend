@@ -12,6 +12,22 @@ const linesFor = (job) => job.materials?.length ? job.materials : [
   { materialId: job.materialId || '', materialName: job.materialName || '', quantity: job.quantityOrdered || 0, unit: job.unit || '' },
   ...(job.additionalItems || []),
 ];
+const WEIGHT_UNITS = new Set(['tonne', 'tonnes', 'ton', 'tons', 't', 'kg', 'kilogram', 'kilograms']);
+const GENERIC_UNITS = new Set(['unit', 'units', 'each', 'no', 'nos']);
+function storeUnit(line, fallback = '') {
+  const explicit = String(line.measurementType || line.defaultUnit || line.unit || fallback || '').trim();
+  if (explicit && !WEIGHT_UNITS.has(explicit.toLowerCase()) && !GENERIC_UNITS.has(explicit.toLowerCase())) return explicit;
+  const category = String(line.materialCategory || line.category || '').trim().toLowerCase();
+  const name = String(line.materialName || line.productName || line.materialType || '').trim().toLowerCase();
+  const subtype = String(line.cementSubtype || line.materialSubtype || line.subtype || '').trim().toLowerCase();
+  if (category === 'cement' && (line.isBagged || ['bagged', 'cement-bagged'].includes(subtype) || /bagged|\bbag\b/.test(name))) return 'Bags';
+  if (['aggregate', 'aggregates', 'liquid', 'liquids'].includes(category) || (category === 'cement' && !line.isBagged && !['bagged', 'cement-bagged'].includes(subtype))) return explicit || fallback || 'Tonnes';
+  if (explicit && WEIGHT_UNITS.has(explicit.toLowerCase()) && isBulkMaterial(line)) return explicit;
+  if (category === 'blocks' || /\b(blocks?|bricks?|pipes?|ducts?|fittings?|valves?|bolts?|nuts?|screws?)\b/.test(name)) return 'Pieces';
+  if (/\b(cables?|conduits?|timber|pipes?)\b/.test(name) && /\b(metre|meter|length)\b/.test(name)) return 'Metres';
+  if (explicit || ['steel', 'other', 'warehouse'].includes(category)) return 'Pieces';
+  return fallback || 'Pieces';
+}
 
 function assertAccess(job, actor) {
   if (!['storeman', 'inspector', 'superadmin', 'admin', 'adminlite'].includes(actor.role)) {
@@ -50,7 +66,8 @@ function receiveUpdates(job, input, actor, now) {
     const photoURLs = evidence.filter(photo => photo.lineIndex === index).map(photo => photo.url);
     if (!photoURLs.length) fail('Capture a photo for every received material before saving.');
     return { lineIndex: index, materialId: line.materialId || '', materialName: line.materialName || line.productName || '',
-      orderedQuantity: Number(line.quantity || 0), receivedQuantity: Number(value), unit: line.unit || job.unit || '',
+      orderedQuantity: Number(line.quantity || 0), receivedQuantity: Number(value), unit: storeUnit(line, input.units?.[index] || job.unit),
+      materialCategory: line.materialCategory || line.category || '',
       initialVisualInspection: input.condition, failureReason: input.condition === 'Failed' ? reason : '', photoURLs };
   });
   const failed = input.condition === 'Failed';
@@ -89,12 +106,13 @@ function inspectionUpdates(job, input, actor, now) {
     const split = hasAccepted || hasRejected ? candidate : null;
     const received = Number(line.receivedQuantity) || 0;
     const rejected = split ? (hasRejected ? Number(split.rejectedQuantity) : 0) : (passed ? 0 : received);
-    const accepted = split ? (hasAccepted ? Number(split.acceptedQuantity) : received - rejected) : received - rejected;
-    if (![accepted, rejected].every(Number.isFinite) || accepted < 0 || rejected < 0 || Math.abs(accepted + rejected - received) > 1e-6) fail('Accepted and rejected quantities must equal the received quantity.');
+    const accepted = split ? (hasAccepted ? Number(split.acceptedQuantity) : 0) : received - rejected;
+    const counted = accepted + rejected;
+    if (![accepted, rejected].every(Number.isFinite) || accepted < 0 || rejected < 0 || !Number.isFinite(counted) || (split && counted <= 0)) fail('Enter valid accepted and rejected quantities.');
     const failureReason = String(split?.failureReason || (passed ? '' : reason)).trim();
     if (rejected > 0 && !failureReason) fail('Enter a failure reason for rejected quantities.');
-    return { ...line, acceptedQuantity: accepted, rejectedQuantity: rejected,
-      initialVisualInspection: rejected >= received && received > 0 ? 'Failed' : 'Pass', qualityChecks: checks,
+    return { ...line, ...(split ? { sourceReceivedQuantity: line.receivedQuantity, receivedQuantity: counted, unit: storeUnit({ ...line, unit: split.unit || line.unit }) } : {}), acceptedQuantity: accepted, rejectedQuantity: rejected,
+      initialVisualInspection: rejected >= counted && counted > 0 ? 'Failed' : 'Pass', qualityChecks: checks,
       failureReason, damagedQuantity: rejected };
   });
   const hasAccepted = materialReceipts.some(line => line.acceptedQuantity > 0);
@@ -113,4 +131,4 @@ function assertGenericUpdate(job, input) {
   if (job.receivingStatus && ['materials', 'additionalItems', 'materialId', 'quantityOrdered', 'materialInspection', 'siteId'].some(key => Object.hasOwn(input, key))) fail('Received materials and inspection decisions are immutable.');
   if (input.materialInspection && !isBulkMaterial(job) && !job.materialInspection?.materialReceipts?.length) fail('Receive the materials first, then use the quality inspection action.');
 }
-module.exports = { METRICS, PROTECTED_FIELDS, linesFor, assertAccess, assertIncoming, receiveUpdates, inspectionUpdates, assertGenericUpdate };
+module.exports = { METRICS, PROTECTED_FIELDS, linesFor, storeUnit, assertAccess, assertIncoming, receiveUpdates, inspectionUpdates, assertGenericUpdate };

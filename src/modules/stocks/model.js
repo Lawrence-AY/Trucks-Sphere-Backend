@@ -1,6 +1,7 @@
 const { toTonnes } = require('../../utils/deliveryWeightUnits');
 const { createHash } = require('node:crypto');
 const { isBulkMaterial } = require('../../utils/receivingRoute');
+const { storeUnit } = require('../delivery-orders/storeReceiving');
 const warehouse = (d) => Boolean(d.isWarehouseDelivery) || d.deliveryOrigin === 'warehouse';
 const number = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const round = (n) => Math.round((n + Number.EPSILON) * 1e6) / 1e6;
@@ -32,6 +33,9 @@ function stockRows(delivery) {
     const received = hasReceipt ? Math.max(0, number(receipt.receivedQuantity)) : 0;
     const piecesPerSet = String(line.unit || delivery.unit || '').toLowerCase() === 'sets' ? Math.max(1, Math.floor(number(line.piecesPerSet || receipt?.piecesPerSet))) : null;
     const receivedBasePieces = piecesPerSet ? Math.round(received * piecesPerSet + number(line.loosePieces || receipt?.loosePieces)) : null;
+    const materialUnit = delivery.receivingStatus
+      ? storeUnit({ ...line, ...receipt }, receipt?.unit || line.unit || delivery.unit || '')
+      : line.unit || delivery.unit || '';
     const passed = hasReceipt && (receipt.initialVisualInspection === 'Pass' || (!inspected?.mrfNumber && completed));
     // Historical failed receipts without a split remain fully quarantined.
     const damaged = hasReceipt ? wh && receipt.damagedQuantity != null
@@ -41,7 +45,8 @@ function stockRows(delivery) {
       deliveryOrderId: delivery.id, jobId: delivery.jobId || delivery.id, purchaseOrderId: delivery.purchaseOrderId || '', poNumber: delivery.poNumber || delivery.purchaseOrderNumber || '',
       siteId: delivery.siteId || '', siteName: delivery.siteName || delivery.siteId || 'Unassigned',
       materialId: line.materialId || '', materialName: line.materialName || line.productName || delivery.materialName || '',
-      vendorName: delivery.vendorName || '', origin: wh ? 'Warehouse' : 'Quarry', unit: line.unit || delivery.unit || '',
+      materialCategory: line.materialCategory || line.category || receipt?.materialCategory || '',
+      vendorName: delivery.vendorName || '', origin: wh ? 'Warehouse' : 'Quarry', unit: materialUnit,
       dispatchedQuantity: sent, receivedQuantity: received, usableQuantity: round(received - damaged), piecesPerSet, receivedBasePieces,
       damagedQuantity: damaged, quarantinedQuantity: damaged,
       excessQuantity: hasReceipt ? Math.max(0, round(received - sent)) : 0,

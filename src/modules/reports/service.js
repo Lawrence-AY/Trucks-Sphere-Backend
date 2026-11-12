@@ -1,6 +1,7 @@
 const { buildDeliverySummary, formatExcess } = require('../purchase-orders/deliverySummary');
 const { dispatchMaterials } = require('../../utils/dispatchMaterials');
 const { warehouseReportFields } = require('./warehouseReport');
+const { storeUnit } = require('../delivery-orders/storeReceiving');
 /**
  * Reports Service â€” Data Aggregator
  *
@@ -387,12 +388,17 @@ function buildMasterAudit(options = {}) {
       inspectorName: d.materialInspection?.inspectorName || '',
       inspectionAtEAT: formatEAT(d.materialInspection?.inspectedAt),
       inspectionMaterialReceipts: (d.materialInspection?.materialReceipts || [])
-        .map((line) => [
-          `${line.materialName || 'Material'}: ${line.receivedQuantity ?? ''} ${line.unit || ''}`.trim(),
-          line.initialVisualInspection || 'Pending',
-          line.failureReason ? `Reason: ${line.failureReason}` : '',
-          line.deficiency ? `Deficiency: ${line.deficiency}` : '',
-        ].filter(Boolean).join(' Â· '))
+        .map((line) => {
+          const unit = storeUnit(line, line.unit || d.unit || '');
+          return [
+            `${line.materialName || 'Material'}: ${line.receivedQuantity ?? ''} ${unit}`.trim(),
+            line.acceptedQuantity != null ? `Accepted: ${line.acceptedQuantity} ${unit}`.trim() : '',
+            line.rejectedQuantity != null ? `Rejected: ${line.rejectedQuantity} ${unit}`.trim() : '',
+            line.initialVisualInspection || 'Pending',
+            line.failureReason ? `Reason: ${line.failureReason}` : '',
+            line.deficiency ? `Deficiency: ${line.deficiency}` : '',
+          ].filter(Boolean).join(' · ');
+        })
         .join(' | '),
       // System accountability
       quarryOperator: d.weighOutByName || d.weighOutBy || '',
@@ -413,7 +419,7 @@ function buildMaterialInspectionReport(options = {}) {
     if (!inspection?.mrfNumber) return [];
     const base = { mifNumber: inspection.mrfNumber, jobId: delivery.jobId || '', poNumber: delivery.poNumber || '', inspectorName: inspection.inspectorName || '', inspectedAtEAT: formatEAT(inspection.inspectedAt) };
     const lines = Array.isArray(inspection.materialReceipts) && inspection.materialReceipts.length ? inspection.materialReceipts : [{ materialName: delivery.materialName || '', unit: delivery.unit || '', orderedQuantity: delivery.quantityOrdered, receivedQuantity: '', initialVisualInspection: inspection.initialVisualInspection || 'Pending', failureReason: inspection.failureReason || '', deficiency: inspection.deficiency || '' }];
-    return lines.map((line) => ({ ...base, mrfSource: delivery.materials?.find(item => item.materialId === line.materialId)?.source || warehouseReportFields(delivery).mrfSource || '', materialSource: delivery.materials?.find(item => item.materialId === line.materialId)?.source || warehouseReportFields(delivery).materialSource || delivery.materialSource || '', warehouseMrf: delivery.materials?.find(item => item.materialId === line.materialId)?.mrfNo || warehouseReportFields(delivery).warehouseMrf || '', materialName: line.materialName || 'Material', orderedQuantity: line.orderedQuantity ?? '', receivedQuantity: line.receivedQuantity ?? '', unit: line.unit || '', result: line.initialVisualInspection || 'Pending', failureReason: line.failureReason || '', deficiency: line.deficiency || '' }));
+    return lines.map((line) => ({ ...base, mrfSource: delivery.materials?.find(item => item.materialId === line.materialId)?.source || warehouseReportFields(delivery).mrfSource || '', materialSource: delivery.materials?.find(item => item.materialId === line.materialId)?.source || warehouseReportFields(delivery).materialSource || delivery.materialSource || '', warehouseMrf: delivery.materials?.find(item => item.materialId === line.materialId)?.mrfNo || warehouseReportFields(delivery).warehouseMrf || '', materialName: line.materialName || 'Material', orderedQuantity: line.orderedQuantity ?? '', receivedQuantity: line.receivedQuantity ?? '', acceptedQuantity: line.acceptedQuantity ?? '', rejectedQuantity: line.rejectedQuantity ?? '', unit: storeUnit(line, line.unit || delivery.unit || ''), result: line.initialVisualInspection || 'Pending', failureReason: line.failureReason || '', deficiency: line.deficiency || '' }));
   });
 }
 
@@ -459,9 +465,11 @@ function buildStoreActivityReport(options = {}) {
       siteWeighIn: warehouse.siteWeighIn ?? '',
       inspectedAtEAT: formatEAT(inspection.inspectedAt || delivery.updatedAt),
       receivedQuantity: line.receivedQuantity ?? '',
+      acceptedQuantity: line.acceptedQuantity ?? '',
+      rejectedQuantity: line.rejectedQuantity ?? '',
       poNumber: delivery.poNumber || delivery.purchaseOrderId || '',
       materialName: line.materialName || delivery.materialName || '',
-      materialType: line.unit || delivery.unit || '',
+      materialType: storeUnit(line, line.unit || delivery.unit || ''),
       images: [line.photoURL, ...(inspection.photoURLs || [])].filter(Boolean).join(', '),
       receiptStatus: line.initialVisualInspection || 'Pending',
       failureReason: line.failureReason || line.deficiency || '',
