@@ -19,7 +19,21 @@ function harness() {
     },
   });
   const auth = {
-    createUser: async (data) => { const uid = `auth-${++sequence}`; accounts.set(uid, data); return { uid }; },
+    createUser: async (data) => {
+      const duplicate = [...accounts.values()].some((existing) => (existing.email || '') === (data.email || ''));
+      if (duplicate) {
+        const error = new Error('The email address is already in use by another account.');
+        error.code = 'auth/email-already-exists';
+        throw error;
+      }
+      const uid = `auth-${++sequence}`; accounts.set(uid, data); return { uid };
+    },
+    getUserByEmail: async (email) => {
+      for (const [uid, data] of accounts) if ((data.email || '') === email) return { uid, email };
+      const error = new Error('There is no user record corresponding to the provided email.');
+      error.code = 'auth/user-not-found';
+      throw error;
+    },
     setCustomUserClaims: async (uid, claims) => { accounts.get(uid).claims = claims; },
     deleteUser: async (uid) => accounts.delete(uid),
   };
@@ -40,7 +54,7 @@ function harness() {
   };
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/modules/vendors/service'), 'utf8'), { module, console, require: (name) => dependencies[name] });
-  return { service: module.exports, records, accounts };
+  return { service: module.exports, records, accounts, auth };
 }
 const vendor = { companyName: 'Example', contactPerson: 'Test Person', phone: '0700000000', email: '' };
 
@@ -89,4 +103,28 @@ test('already linked vendor and missing vendor never create an Auth account', as
   await assert.rejects(service.createAccount('V001', { password: 'Test7$' }), { code: 'VENDOR_ACCOUNT_ALREADY_EXISTS' });
   await assert.rejects(service.createAccount('missing', { password: 'Test7$' }), err => err.statusCode === 404);
   assert.equal(accounts.size, 0);
+});
+
+test('an orphaned Auth account forces a suffixed username instead of failing', async () => {
+  const { service, accounts } = harness();
+  // Simulate a previous attempt that left an Auth account without a users profile.
+  accounts.set('orphan', { email: 'testper@users.trucksphere.local', claims: { role: 'vendor' } });
+  const result = await service.createWithAccount({ vendor, account: { password: 'Test7$', isActive: true } });
+  assert.equal(result.username, 'testper1');
+  assert.equal(result.user.authEmail, 'testper1@users.trucksphere.local');
+});
+
+test('an already registered login email returns a 409 instead of a 500', async () => {
+  const { service, auth, accounts } = harness();
+  accounts.set('existing', { email: 'testper@users.trucksphere.local', claims: { role: 'vendor' } });
+  // Force a race: the pre-check misses the account but createUser still sees it.
+  auth.getUserByEmail = async () => {
+    const error = new Error('not found');
+    error.code = 'auth/user-not-found';
+    throw error;
+  };
+  await assert.rejects(
+    service.createWithAccount({ vendor, account: { password: 'Test7$', isActive: true } }),
+    { code: 'EMAIL_ALREADY_EXISTS', statusCode: 409 },
+  );
 });

@@ -83,6 +83,41 @@ function splitName(value = '') {
   return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') || '' };
 }
 
+const VENDOR_AUTH_EMAIL_DOMAIN = 'users.trucksphere.local';
+function vendorAuthEmail(username) {
+  return `${username}@${VENDOR_AUTH_EMAIL_DOMAIN}`;
+}
+
+async function authEmailExists(auth, email) {
+  try {
+    await auth.getUserByEmail(email);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'auth/user-not-found') return false;
+    throw error;
+  }
+}
+
+async function createVendorAuthUser(auth, { email, password, displayName, disabled }) {
+  try {
+    const userRecord = await auth.createUser({ email, password, displayName, disabled });
+    await auth.setCustomUserClaims(userRecord.uid, { role: 'vendor' });
+    return userRecord;
+  } catch (error) {
+    // A previous attempt can leave a Firebase Auth account behind without a
+    // matching users profile (for example when the Firestore commit fails and
+    // the rollback cannot delete the account). Surface that as a conflict the
+    // client can show instead of an opaque HTTP 500.
+    if (error && error.code === 'auth/email-already-exists') {
+      throw Object.assign(new Error('A login account already uses this email address.'), {
+        statusCode: 409,
+        code: 'EMAIL_ALREADY_EXISTS',
+      });
+    }
+    throw error;
+  }
+}
+
 async function generateUniqueUsername(name) {
   const { firstName, lastName } = splitName(name);
   const sanitize = (value) => value.replace(/[^a-zA-Z]/g, '').toLowerCase();
@@ -90,12 +125,17 @@ async function generateUniqueUsername(name) {
   const last = sanitize(lastName);
   if (!first) throw Object.assign(new Error('A contact person is required to generate a username'), { statusCode: 400 });
 
+  const auth = getAuth();
   const base = `${first}${last.slice(0, 3)}`;
   let username = base;
   let suffix = 1;
   while (true) {
     const existing = await db.collection('users').where('generatedUsername', '==', username).limit(1).get();
-    if (existing.empty) return username;
+    // A generated username maps to a synthetic login email. Skip any username
+    // whose email is already registered in Firebase Auth, otherwise the account
+    // creation step fails with an opaque 500.
+    const emailTaken = await authEmailExists(auth, vendorAuthEmail(username));
+    if (existing.empty && !emailTaken) return username;
     username = `${base}${suffix++}`;
   }
 }
@@ -199,19 +239,18 @@ const vendorsService = {
     const uniqueKeys = vendorUniqueKeys(vendor);
     const accountName = String(vendor.contactPerson || vendor.companyName || vendor.name || '').trim();
     const username = await generateUniqueUsername(accountName);
-    const authEmail = email || `${username}@users.trucksphere.local`;
+    const authEmail = email || vendorAuthEmail(username);
     const vendorId = existingVendorId || await getNextId('vendor');
     const now = new Date().toISOString();
     let authUser;
 
     try {
-      authUser = await getAuth().createUser({
+      authUser = await createVendorAuthUser(getAuth(), {
         email: authEmail,
         password,
         displayName: accountName,
         disabled: account.isActive === false,
       });
-      await getAuth().setCustomUserClaims(authUser.uid, { role: 'vendor' });
 
       const vendorItem = {
         ...vendor,
