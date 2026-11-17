@@ -39,9 +39,15 @@ exports.create = async (req, res, next) => {
     }
     const firstName = String(req.body.firstName || '').trim();
     const surname = String(req.body.surname || '').trim();
+    const vendorId = String(req.body.vendorId || '').trim();
+    const phone = String(req.body.phone || '').trim();
+    const licenseNumber = String(req.body.licenseNumber || '').trim();
+    if (!vendorId) return res.status(400).json({ code: 'VENDOR_REQUIRED', error: 'VENDOR_REQUIRED' });
     if (!firstName || !surname) {
       return res.status(400).json({ code: 'DRIVER_NAME_REQUIRED', error: 'DRIVER_NAME_REQUIRED' });
     }
+    if (!phone) return res.status(400).json({ code: 'DRIVER_PHONE_REQUIRED', error: 'DRIVER_PHONE_REQUIRED' });
+    if (!licenseNumber) return res.status(400).json({ code: 'DRIVER_LICENSE_REQUIRED', error: 'DRIVER_LICENSE_REQUIRED' });
     const item = await driversService.create({
       ...req.body,
       registrationSource: 'MANUAL',
