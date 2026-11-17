@@ -1,5 +1,6 @@
 const { dispatchMaterials } = require('../../utils/dispatchMaterials');
 const { warehouseReportFields } = require('./warehouseReport');
+const { buildDeliverySummary, formatExcess } = require('../purchase-orders/deliverySummary');
 /**
  * Vendor Reports Service
  *
@@ -96,6 +97,17 @@ function buildVendorMasterAudit(vendorId, options = {}) {
   const materials = buildMap(snapshotStore.getAll('materials'));
   const users = buildMap(snapshotStore.getAll('users'));
   const allFuel = snapshotStore.getAll('fuelRecords');
+  const allDeliveries = snapshotStore.getAll('deliveryOrders');
+
+  // Memoize per-PO delivery summaries against the stable full delivery set.
+  const poSummaryCache = new Map();
+  const poSummary = (po) => {
+    if (!po || !po.id) return null;
+    if (!poSummaryCache.has(po.id)) {
+      poSummaryCache.set(po.id, buildDeliverySummary(po, allDeliveries));
+    }
+    return poSummaryCache.get(po.id);
+  };
 
   return deliveries.map((d) => {
     const vendor = vendors[d.vendorId] || {};
@@ -105,6 +117,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
     const material = materials[d.materialId] || {};
     const quarryLocation = getQuarryLocation(d, users);
     const vendorInsurance = getInsuranceDetails(vendor);
+    const summary = poSummary(po);
     const jobFuel = allFuel.filter((f) => f.jobId === d.jobId);
     const totalFuelLitres = jobFuel.reduce(
       (sum, f) => sum + (Number(f.litres || f.fuelAmount) || 0), 0,
@@ -117,8 +130,8 @@ function buildVendorMasterAudit(vendorId, options = {}) {
 
     const reportRow = {
       jobId: d.jobId || '',
-      poExcessQuantity: require('../purchase-orders/deliverySummary').formatExcess(require('../purchase-orders/deliverySummary').buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials),
-      poExcessFlag: require('../purchase-orders/deliverySummary').buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered,
+      poExcessQuantity: summary ? formatExcess(summary.materials) : '',
+      poExcessFlag: Boolean(summary && summary.overDelivered),
 
       dispatchedAt: formatEAT(d.weighOutAt || d.dispatchedAt || d.dispatchedToSiteAt || d.warehouseSubmittedAt),
       poNumber: d.poNumber || po.poNumber || '',

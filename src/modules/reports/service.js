@@ -185,8 +185,12 @@ function withinTimeframe(dateStr, options) {
 function getDeliveries(options = {}) {
   const users = buildMap(snapshotStore.getAll('users'));
   const shipments = snapshotStore.getAll('warehouseJobs');
+  // Index warehouse jobs by id and deliveryOrderId for O(1) lookup per delivery
+  // instead of a linear find() over every shipment for every delivery.
+  const shipmentById = buildMap(shipments);
+  const shipmentByDeliveryOrderId = buildMap(shipments, 'deliveryOrderId');
   const all = snapshotStore.getAll('deliveryOrders').map(record => {
-    const shipment = shipments.find(job => job.id === record.warehouseJobId || job.deliveryOrderId === record.id);
+    const shipment = shipmentById[record.warehouseJobId] || shipmentByDeliveryOrderId[record.id] || null;
     const delivery = shipment ? { ...record, materials: record.materials?.length ? record.materials.map((line, index) => {
       const original = shipment.items?.find(item => item.materialId && item.materialId === line.materialId) || (shipment.items?.length === record.materials.length ? shipment.items[index] : null);
       return { ...line, source: line.source || original?.source || '', mrfNo: line.mrfNo || line.mrfNumber || original?.mrfNo || original?.mrfNumber || '' };
@@ -295,6 +299,27 @@ function buildMasterAudit(options = {}) {
   const materials = buildMap(snapshotStore.getAll('materials'));
   const users = buildMap(snapshotStore.getAll('users'));
   const allFuel = snapshotStore.getAll('fuelRecords');
+  const allDeliveries = snapshotStore.getAll('deliveryOrders');
+
+  // Index tracking sessions by orderId once (avoids a full tracking scan per delivery).
+  const trackingSessions = snapshotStore.getAll('trackingReportSessions');
+  const trackingByOrder = new Map();
+  for (const session of trackingSessions) {
+    const bucket = trackingByOrder.get(session.orderId);
+    if (bucket) bucket.push(session);
+    else trackingByOrder.set(session.orderId, [session]);
+  }
+
+  // Memoize per-PO delivery summaries against the stable full delivery set so a
+  // PO referenced by many deliveries is summarized only once.
+  const poSummaryCache = new Map();
+  const poSummary = (po) => {
+    if (!po || !po.id) return null;
+    if (!poSummaryCache.has(po.id)) {
+      poSummaryCache.set(po.id, buildDeliverySummary(po, allDeliveries));
+    }
+    return poSummaryCache.get(po.id);
+  };
 
   return deliveries.map((d) => {
     const vendor = vendors[d.vendorId] || {};
@@ -304,6 +329,7 @@ function buildMasterAudit(options = {}) {
     const material = materials[d.materialId] || {};
     const quarryLocation = getQuarryLocation(d, users);
     const vendorInsurance = getInsuranceDetails(vendor);
+    const summary = poSummary(po);
 
     // Fuel for this job
     const jobFuel = allFuel.filter((f) => f.jobId === d.jobId);
@@ -314,13 +340,14 @@ function buildMasterAudit(options = {}) {
     // No fallback to quarry data or stored siteNetWeight.
     const siteNet = d.siteWeighInWeight != null && d.siteWeighOutWeight != null ? Number(d.siteWeighInWeight) - Number(d.siteWeighOutWeight) : '';
 
+    const sessions = (trackingByOrder.get(d.id) || []).slice().sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
     return {
       // Order
       jobId: d.jobId || '',
-      poExcessQuantity: formatExcess(buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials),
-      poExcessFlag: buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered,
-      trackingActivity: snapshotStore.getAll('trackingReportSessions').filter(session => session.orderId === d.id).sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt))).map(session => [session.personnelName, session.securityLocation, session.status, formatEAT(session.decidedAt || session.startedAt), session.reason].filter(Boolean).join(' / ')).join(' | '),
-      trackingPhotos: snapshotStore.getAll('trackingReportSessions').filter(session => session.orderId === d.id && session.driverPhotoURL).map(session => session.driverPhotoURL).join(' | '),
+      poExcessQuantity: summary ? formatExcess(summary.materials) : '',
+      poExcessFlag: Boolean(summary && summary.overDelivered),
+      trackingActivity: sessions.map(session => [session.personnelName, session.securityLocation, session.status, formatEAT(session.decidedAt || session.startedAt), session.reason].filter(Boolean).join(' / ')).join(' | '),
+      trackingPhotos: sessions.filter(session => session.driverPhotoURL).map(session => session.driverPhotoURL).join(' | '),
       dispatchedAt: formatEAT(d.weighOutAt || d.dispatchedAt || d.dispatchedToSiteAt || d.warehouseSubmittedAt),
       poNumber: d.poNumber || po.poNumber || '',
       jobStatusCode: d.status || '',
@@ -582,6 +609,17 @@ function buildVendorReport(options = {}) {
   const vendorDocs = snapshotStore.getAll('vendors');
   const deliveries = getDeliveries(options);
   const pos = snapshotStore.getAll('purchaseOrders');
+  const allDeliveries = snapshotStore.getAll('deliveryOrders');
+
+  // Memoize per-PO delivery summaries against the stable full delivery set.
+  const poSummaryCache = new Map();
+  const poSummary = (po) => {
+    if (!po || !po.id) return null;
+    if (!poSummaryCache.has(po.id)) {
+      poSummaryCache.set(po.id, buildDeliverySummary(po, allDeliveries));
+    }
+    return poSummaryCache.get(po.id);
+  };
 
   return vendorDocs.map((v) => {
     const vendorDeliveries = deliveries.filter((d) => d.vendorId === v.id);
@@ -592,8 +630,8 @@ function buildVendorReport(options = {}) {
       vendorName: v.companyName || '',
       activePOs: vendorPOs.filter((p) => ['active', 'approved', 'in_progress', 'pending'].includes(p.status)).length,
       fulfilledPOs: vendorPOs.filter((p) => ['completed', 'delivered', 'fulfilled'].includes(String(p.status).toLowerCase())).length,
-      excessQuantity: formatExcess(vendorPOs.flatMap(po => buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).materials)),
-      excessFlag: vendorPOs.some(po => buildDeliverySummary(po, snapshotStore.getAll('deliveryOrders')).overDelivered),
+      excessQuantity: formatExcess(vendorPOs.flatMap(po => { const s = poSummary(po); return s ? s.materials : []; })),
+      excessFlag: vendorPOs.some(po => { const s = poSummary(po); return Boolean(s && s.overDelivered); }),
       totalPOs: vendorPOs.length,
       deliveryCount: vendorDeliveries.length,
       insuranceCompany: insurance.insuranceCompany,
