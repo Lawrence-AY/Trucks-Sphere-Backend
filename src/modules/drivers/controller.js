@@ -1,5 +1,5 @@
 const driversService = require('./service');
-const { lookupDriverIdentity } = require('../../integrations/iprsService');
+const { lookupDriverIdentity, verifyDriverIdentity } = require('../../integrations/iprsService');
 
 function scopedQuery(req) {
   return req.user?.role === 'vendor' ? { ...req.query, vendorId: req.user?.entityId || '__none__' } : req.query;
@@ -59,6 +59,16 @@ exports.checkNationalId = async (req, res, next) => {
       req.query.excludeId,
     );
     res.json({ available });
+  } catch (err) { next(err); }
+};
+
+// Keep the existing verification endpoint available to clients that still
+// explicitly request identity verification. Driver create/update no longer
+// depend on IPRS for manual name entry.
+exports.verifyIdentity = async (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    res.json(await verifyDriverIdentity(req.body));
   } catch (err) { next(err); }
 };
 
