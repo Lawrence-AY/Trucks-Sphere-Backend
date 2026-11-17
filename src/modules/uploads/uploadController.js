@@ -14,7 +14,85 @@
 const { db } = require('../../../config/firebase');
 const { uploadFile, deleteFile } = require('../../utils/cloudStorage');
 const upload = require('./uploadMiddleware');
-const { validateUploadedFile } = require('./uploadMiddleware');
+const { validateUploadedFile, logoUpload } = require('./uploadMiddleware');
+
+function logoDimensions(buffer, mimeType) {
+  if (mimeType === 'image/png') {
+    if (buffer.length < 24) return null;
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  if (mimeType === 'image/webp' && buffer.length >= 30 && buffer.toString('ascii', 12, 16) === 'VP8X') {
+    return { width: 1 + buffer.readUIntLE(24, 3), height: 1 + buffer.readUIntLE(27, 3) };
+  }
+  return null;
+}
+
+exports.uploadProfileLogo = [
+  logoUpload.single('file'),
+  validateUploadedFile,
+  async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No logo file provided.' });
+      const dimensions = logoDimensions(req.file.buffer, req.file.mimetype);
+      if (!dimensions || dimensions.width < 200 || dimensions.height < 75) {
+        return res.status(400).json({ error: 'Logo must be at least 200 × 75 px.' });
+      }
+      const ratio = dimensions.width / dimensions.height;
+      if (!((ratio >= 1.4) || (ratio >= 0.85 && ratio <= 1.15))) {
+        return res.status(400).json({ error: 'Use a horizontal logo (approximately 8:3) or a square logo.' });
+      }
+      const brandingRef = db.collection('settings').doc('branding');
+      const existing = await brandingRef.get();
+      if (existing.exists && existing.data().logoURL) {
+        const oldPath = extractStoragePath(existing.data().logoURL);
+        if (oldPath) await deleteFile(oldPath);
+      }
+      const { url } = await uploadFile(req.file.buffer, req.file.originalname, 'branding', 'logo', req.file.mimetype);
+      await brandingRef.set({ logoURL: url, logoWidth: dimensions.width, logoHeight: dimensions.height, updatedAt: new Date().toISOString(), updatedBy: req.user?.uid || '' }, { merge: true });
+      res.json({ success: true, logoURL: url, width: dimensions.width, height: dimensions.height });
+    } catch (err) { next(err); }
+  },
+];
+
+exports.uploadVendorLogo = [
+  logoUpload.single('file'),
+  validateUploadedFile,
+  async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No logo file provided.' });
+      const vendorRef = db.collection('vendors').doc(req.params.vendorId);
+      const vendor = await vendorRef.get();
+      if (!vendor.exists) return res.status(404).json({ error: 'Vendor not found.' });
+      const dimensions = logoDimensions(req.file.buffer, req.file.mimetype);
+      const ratio = dimensions ? dimensions.width / dimensions.height : 0;
+      if (!dimensions || dimensions.width < 200 || dimensions.height < 75) return res.status(400).json({ error: 'Logo must be at least 200 × 75 px.' });
+      if (!((ratio >= 1.4) || (ratio >= 0.85 && ratio <= 1.15))) return res.status(400).json({ error: 'Use a horizontal logo (approximately 8:3) or a square logo.' });
+      const previous = vendor.data().logoURL;
+      if (previous) { const oldPath = extractStoragePath(previous); if (oldPath) await deleteFile(oldPath); }
+      const { url } = await uploadFile(req.file.buffer, req.file.originalname, 'vendors', req.params.vendorId, req.file.mimetype);
+      await vendorRef.update({ logoURL: url, logoWidth: dimensions.width, logoHeight: dimensions.height, updatedAt: new Date().toISOString() });
+      res.json({ success: true, logoURL: url, width: dimensions.width, height: dimensions.height });
+    } catch (err) { next(err); }
+  },
+];
+
+exports.uploadWarehouseSignoff = [
+  upload.single('file'),
+  validateUploadedFile,
+  async (req, res, next) => {
+    try {
+      const kind = req.params.kind === 'stamp' ? 'stamp' : req.params.kind === 'signature' ? 'signature' : null;
+      if (!kind) return res.status(400).json({ error: 'Sign-off type must be signature or stamp.' });
+      if (!req.file) return res.status(400).json({ error: 'No sign-off file provided.' });
+      const ref = db.collection('deliveryOrders').doc(req.params.deliveryOrderId);
+      const doc = await ref.get();
+      if (!doc.exists || !doc.data().isWarehouseDelivery) return res.status(404).json({ error: 'Warehouse delivery not found.' });
+      const { url } = await uploadFile(req.file.buffer, req.file.originalname, 'warehouse-signoff', `${req.params.deliveryOrderId}-${kind}`, req.file.mimetype);
+      await ref.update({ [`warehouse${kind[0].toUpperCase()}${kind.slice(1)}URL`]: url, updatedAt: new Date().toISOString() });
+      res.json({ success: true, url, photoURL: url, kind });
+    } catch (err) { next(err); }
+  },
+];
 
 /**
  * POST /api/uploads/driver-photo/:driverId

@@ -81,7 +81,7 @@ async function createAuthorization(params) {
     plateNumber: plateNumber || '',
     requestedBy: requestedBy || '',
     requestedByEmail: requestedByEmail || '',
-    fuelAmount: fuelAmount || 0,
+    fuelAmount: Number(Number(fuelAmount || 0).toFixed(3)),
     jobId: jobId || null,
     otp, // stored temporarily for verification
     status: 'pending', // pending | authorized | denied | expired

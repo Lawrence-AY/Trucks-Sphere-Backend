@@ -19,6 +19,7 @@ router.post('/logout', authController.logout);
 
 // Get current user profile (requires valid token in Authorization header)
 router.get('/profile', verifyToken, authController.getProfile);
+router.get('/branding', verifyToken, authController.getBranding);
 
 // Update user profile (display name, phone, etc.)
 router.put('/profile', verifyToken, authController.updateProfile);

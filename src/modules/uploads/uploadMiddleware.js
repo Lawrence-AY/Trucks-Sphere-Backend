@@ -6,6 +6,15 @@
  */
 const multer = require('multer');
 
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1, parts: 2 },
+  fileFilter: (_req, file, cb) => {
+    if (['image/png', 'image/webp'].includes(file.mimetype)) return cb(null, true);
+    cb(new Error('Logo must be a PNG or WebP image.'));
+  },
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -90,3 +99,4 @@ module.exports = upload;
 module.exports.multerErrorHandler = multerErrorHandler;
 module.exports.validateUploadedFile = validateUploadedFile;
 module.exports.detectFileType = detectFileType;
+module.exports.logoUpload = logoUpload;

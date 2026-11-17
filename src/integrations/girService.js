@@ -26,7 +26,22 @@ function operationalContext(record, kind) {
 }
 async function request(path, options = {}) {
   const { envelope = false, ...fetchOptions } = options;
-  const response = await fetch(`${BASE_URL}/api-impexp${path}`, { signal: AbortSignal.timeout(20000), ...fetchOptions, headers: { ...headers(), ...(options.headers || {}) } });
+  const requestOptions = { ...fetchOptions, headers: { ...headers(), ...(options.headers || {}) } };
+  let response;
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await fetch(`${BASE_URL}/api-impexp${path}`, { signal: AbortSignal.timeout(20000), ...requestOptions });
+      // Retry transient server failures, but return validation/auth/permission
+      // responses immediately so bad data is not retried unnecessarily.
+      if (response.status < 500 || attempt === 2) break;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+  }
+  if (!response && lastError) throw lastError;
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(body.message || body.error || `GIR/FMS request failed (${response.status})`), { statusCode: 502, code: 'GIR_FMS_REQUEST_FAILED' });
   return envelope ? body : body?.result ?? body;

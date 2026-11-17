@@ -24,6 +24,15 @@ router.post('/driver-photo/:driverId', uploadController.uploadDriverPhoto);
 router.post('/delivery-note/:deliveryOrderId', uploadController.uploadDeliveryNote);
 router.post('/warehouse-packaging/:warehouseJobId', uploadController.uploadWarehousePackagingPhoto);
 router.post('/receipt-note/:weighRecordId', uploadController.uploadReceiptNote);
+router.post('/profile-logo', requireRoles(
+  MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE
+), uploadController.uploadProfileLogo);
+router.post('/vendor-logo/:vendorId', requireRoles(
+  MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE
+), uploadController.uploadVendorLogo);
+router.post('/warehouse-signoff/:deliveryOrderId/:kind', requireRoles(
+  MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'storeman'
+), uploadController.uploadWarehouseSignoff);
 router.post('/inspection-photo/:deliveryOrderId', requireRoles(
   MANAGEMENT_ROLES.SUPER_ADMIN, MANAGEMENT_ROLES.ADMIN, MANAGEMENT_ROLES.ADMIN_LITE, 'inspector', 'storeman'
 ), uploadController.uploadInspectionPhoto);

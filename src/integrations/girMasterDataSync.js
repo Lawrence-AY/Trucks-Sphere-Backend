@@ -45,8 +45,19 @@ function enqueue(collection, record, logger = console) {
   if (stopped || !record?.id || !girService.enabled()) return;
   const key = keyFor(collection, record);
   if (jobs.has(key)) return;
-  const job = syncOne(collection, record, { apply: true })
-    .catch(error => logger.error(`[GIR/FMS] ${collection} event sync failed for ${record.id}: ${error.message}`))
+  const job = (async () => {
+    let lastError;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await syncOne(collection, record, { apply: true });
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
+      }
+    }
+    throw lastError;
+  })()
+    .catch(error => logger.error(`[GIR/FMS] ${collection} event sync failed for ${record.id} after retries: ${error.message}`))
     .finally(() => jobs.delete(key));
   jobs.set(key, job);
 }

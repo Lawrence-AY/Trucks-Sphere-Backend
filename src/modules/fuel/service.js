@@ -167,7 +167,7 @@ const fuelService = {
       const docRef = collectionRef.doc(fuelId);
       // Normalize vendorId to consistent V### format
       const normalizedVendorId = normalizeVendorId(confirmed.authorization.vendorId);
-      const girVolume = confirmed.transaction.volume;
+      const girVolume = Number(Number(confirmed.transaction.volume).toFixed(3));
       const item = {
         ...data,
         receiptNoteId: confirmed.receiptNoteId,
@@ -182,7 +182,7 @@ const fuelService = {
         id: fuelId,
         vendorId: normalizedVendorId || confirmed.authorization.vendorId,
         companyName: data.companyName || data.vendorName || '',
-        totalCost: (Number(data.pricePerLiter) || 0) * confirmed.transaction.volume,
+        totalCost: (Number(data.pricePerLiter) || 0) * girVolume,
         status: 'completed',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

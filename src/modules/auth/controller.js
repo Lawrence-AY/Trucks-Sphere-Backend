@@ -581,6 +581,13 @@ exports.getProfile = async (req, res) => {
   }
 };
 
+exports.getBranding = async (_req, res, next) => {
+  try {
+    const doc = await db.collection('settings').doc('branding').get();
+    res.json(doc.exists ? doc.data() : {});
+  } catch (error) { next(error); }
+};
+
 exports.updateProfile = async (req, res) => {
   try {
     const { uid, email, role } = req.user;

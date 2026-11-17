@@ -170,8 +170,9 @@ function applySiteArrivalWorkflow(data, updates, existing = {}) {
   if (!hasSiteArrivalWeight) return false;
 
   const now = new Date().toISOString();
-  updates.siteWeighInWeight = Number(data.siteWeighInWeight);
-  updates.siteArrivalWeight = Number(data.siteWeighInWeight);
+  updates.siteWeighInWeight = Number(Number(data.siteWeighInWeight).toFixed(3));
+  updates.siteArrivalWeight = updates.siteWeighInWeight;
+  if (Object.prototype.hasOwnProperty.call(data, 'destination')) updates.destination = String(data.destination || '').trim();
   updates.siteWeighInAt = data.siteWeighInAt || now;
   updates.siteArrivalCompleted = true;
   updates.arrivalCompleted = true;
@@ -183,7 +184,7 @@ function applySiteArrivalWorkflow(data, updates, existing = {}) {
   // Site arrival variance is always measured from the quarry weigh-out:
   // positive = site arrival is heavier; negative = site arrival is lighter.
   const quarryWeighOut = Number(data.weighOutWeight ?? existing.weighOutWeight);
-  const siteWeighIn = Number(data.siteWeighInWeight);
+  const siteWeighIn = updates.siteWeighInWeight;
   if (Number.isFinite(quarryWeighOut) && quarryWeighOut > 0 && Number.isFinite(siteWeighIn)) {
     const variance = siteWeighIn - quarryWeighOut;
     const isFlagged = Math.abs(variance) > SITE_ARRIVAL_VARIANCE_TOLERANCE_TONNES;
