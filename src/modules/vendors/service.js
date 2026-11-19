@@ -305,8 +305,12 @@ const vendorsService = {
       await db.runTransaction(async (transaction) => {
         const latest = await transaction.get(docRef);
         if (!latest.exists) return;
-        const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (!identityUnchanged && reservations.some((reservation, index) => reservation.exists && !reservationBelongsToVendor(reservation.data(), id, current, nextKeys[index], previousKeys))) {
+        const existingVendors = await transaction.get(collectionRef);
+        const hasRealDuplicate = existingVendors.docs
+          .filter((existing) => existing.id !== id)
+          .some((existing) => vendorUniqueKeys(existing.data(), { allowMissingCompany: true })
+            .some((key) => nextKeys.includes(key)));
+        if (hasRealDuplicate) {
           throw duplicateVendorError();
         }
 
