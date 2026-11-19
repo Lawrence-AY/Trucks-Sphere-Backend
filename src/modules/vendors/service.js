@@ -64,6 +64,10 @@ function reservationBelongsToVendor(reservation, id, current = {}) {
   return new Set([id, current.id, current.vendorId].map((value) => String(value || '').trim()).filter(Boolean)).has(owner);
 }
 
+function sameKeySet(left = [], right = []) {
+  return left.length === right.length && left.every((key) => right.includes(key));
+}
+
 async function createVendorWithUniqueKeys(docRef, item, uniqueKeys) {
   await db.runTransaction(async (transaction) => {
     const [, existingVendors] = await Promise.all([
@@ -359,6 +363,7 @@ const vendorsService = {
       if (data.phone === undefined && data.phoneNumber !== undefined) vendor.phone = data.phoneNumber;
       const previousKeys = vendorUniqueKeys(current, { allowMissingCompany: true });
       const nextKeys = vendorUniqueKeys(vendor);
+      const identityUnchanged = sameKeySet(previousKeys, nextKeys);
       const updates = {
         contactPerson: data.contactPerson ?? current.contactPerson ?? '',
         phone: vendor.phone ?? '',
@@ -383,7 +388,7 @@ const vendorsService = {
           if (phoneKey) {
             const phoneReservation = await transaction.get(uniqueKeysRef.doc(`phone:${phoneKey}`));
             const reservationData = phoneReservation.exists ? phoneReservation.data() : {};
-            if (phoneReservation.exists && !reservationBelongsToVendor(reservationData, id, current)) throw duplicateVendorError();
+            if (phoneReservation.exists && !identityUnchanged && !reservationBelongsToVendor(reservationData, id, current)) throw duplicateVendorError();
             transaction.set(uniqueKeysRef.doc(`phone:${phoneKey}`), {
               vendorId: id,
               key: `phone:${phoneKey}`,
@@ -395,7 +400,7 @@ const vendorsService = {
           return;
         }
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (reservations.some((reservation) => {
+        if (!identityUnchanged && reservations.some((reservation) => {
           if (!reservation.exists) return false;
           return !reservationBelongsToVendor(reservation.data(), id, current);
         })) {
