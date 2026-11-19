@@ -48,6 +48,10 @@ function reservationBelongsToVendor(reservation, id, current = {}) {
   return new Set([id, current.id, current.vendorId].map((value) => String(value || '').trim()).filter(Boolean)).has(owner);
 }
 
+function sameKeySet(left = [], right = []) {
+  return left.length === right.length && left.every((key) => right.includes(key));
+}
+
 async function createVendorWithUniqueKeys(docRef, item, uniqueKeys) {
   await db.runTransaction(async (transaction) => {
     const [, existingVendors] = await Promise.all([
@@ -280,6 +284,7 @@ const vendorsService = {
       const vendor = { id, ...current, ...data };
       const previousKeys = vendorUniqueKeys(current, { allowMissingCompany: true });
       const nextKeys = vendorUniqueKeys(vendor);
+      const identityUnchanged = sameKeySet(previousKeys, nextKeys);
       const updates = {
         ...data,
         companyNameNormalized: normalizedMatchKey(vendor.companyName || vendor.name),
@@ -292,7 +297,7 @@ const vendorsService = {
         const latest = await transaction.get(docRef);
         if (!latest.exists) return;
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (reservations.some((reservation) => reservation.exists && !reservationBelongsToVendor(reservation.data(), id, current))) {
+        if (!identityUnchanged && reservations.some((reservation) => reservation.exists && !reservationBelongsToVendor(reservation.data(), id, current))) {
           throw duplicateVendorError();
         }
 
