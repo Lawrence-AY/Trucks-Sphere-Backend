@@ -71,6 +71,15 @@ function sameKeySet(left = [], right = []) {
   return left.length === right.length && left.every((key) => right.includes(key));
 }
 
+function identityFieldsChanged(current = {}, data = {}) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(data, key);
+  if (has('companyName') && normalizedMatchKey(data.companyName) !== normalizedMatchKey(current.companyName || current.name)) return true;
+  if (has('kraPin') && normalizedMatchKey(data.kraPin) !== normalizedMatchKey(current.kraPin)) return true;
+  if (has('phone') && normalizedPhoneKey(data.phone) !== normalizedPhoneKey(current.phone || current.phoneNumber)) return true;
+  if (has('phoneNumber') && normalizedPhoneKey(data.phoneNumber) !== normalizedPhoneKey(current.phone || current.phoneNumber)) return true;
+  return false;
+}
+
 async function createVendorWithUniqueKeys(docRef, item, uniqueKeys) {
   await db.runTransaction(async (transaction) => {
     const [, existingVendors] = await Promise.all([
@@ -366,7 +375,7 @@ const vendorsService = {
       if (data.phone === undefined && data.phoneNumber !== undefined) vendor.phone = data.phoneNumber;
       const previousKeys = vendorUniqueKeys(current, { allowMissingCompany: true });
       const nextKeys = vendorUniqueKeys(vendor);
-      const identityUnchanged = sameKeySet(previousKeys, nextKeys);
+      const identityUnchanged = !identityFieldsChanged(current, data);
       const updates = {
         contactPerson: data.contactPerson ?? current.contactPerson ?? '',
         phone: vendor.phone ?? '',
