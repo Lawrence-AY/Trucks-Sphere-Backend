@@ -42,6 +42,12 @@ function duplicateVendorError() {
   });
 }
 
+function reservationBelongsToVendor(reservation, id, current = {}) {
+  const owner = String(reservation?.vendorId || reservation?.id || '').trim();
+  if (!owner) return false;
+  return new Set([id, current.id, current.vendorId].map((value) => String(value || '').trim()).filter(Boolean)).has(owner);
+}
+
 async function createVendorWithUniqueKeys(docRef, item, uniqueKeys) {
   await db.runTransaction(async (transaction) => {
     const [, existingVendors] = await Promise.all([
@@ -286,7 +292,7 @@ const vendorsService = {
         const latest = await transaction.get(docRef);
         if (!latest.exists) return;
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (reservations.some((reservation) => reservation.exists && reservation.data().vendorId !== id)) {
+        if (reservations.some((reservation) => reservation.exists && !reservationBelongsToVendor(reservation.data(), id, current))) {
           throw duplicateVendorError();
         }
 
