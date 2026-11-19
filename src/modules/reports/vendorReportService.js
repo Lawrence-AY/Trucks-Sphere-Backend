@@ -6,7 +6,7 @@ const { warehouseReportFields } = require('./warehouseReport');
  * Used by vendor account users to download their own reports.
  */
 const snapshotStore = require('../../utils/snapshotStore');
-const { formatEAT, formatJobStatus, getInsuranceDetails, getQuarryLocation, getReportOrigin, getReportMaterialSource, getReportBanker } = require('./service');
+const { formatEAT, formatJobStatus, getInsuranceDetails, getQuarryLocation, getReportOrigin, getReportMaterialSource, getReportBanker, fuelAuthorizationCode, fuelAttendantName } = require('./service');
 
 function withinTimeframe(dateStr, options) {
   if (!dateStr) return false;
@@ -150,7 +150,7 @@ function buildVendorMasterAudit(vendorId, options = {}) {
       siteNet: effectiveSiteNet,
       totalFuelLitres,
       fuelAttendant: jobFuel.length > 0
-        ? (jobFuel[0].attendantName || jobFuel[0].dispensedBy || '')
+        ? fuelAttendantName(jobFuel[0])
         : '',
       lotNumber: d.storageLot || d.lotNumber || '',
       grnNumber: d.receiptNoteId || d.grnNumber || '',
@@ -229,8 +229,8 @@ function buildVendorFuelReport(vendorId, options = {}) {
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
     litres: Number(r.litres || r.fuelAmount || 0),
-    attendantName: r.attendantName || r.dispensedBy || '',
-    otp: r.otp || r.otpCode || r.authorizationCode || '',
+    attendantName: fuelAttendantName(r),
+    otp: fuelAuthorizationCode(r),
     jobId: r.jobId || '',
   }));
 }
