@@ -42,9 +42,9 @@ function duplicateVendorError() {
   });
 }
 
-function reservationBelongsToVendor(reservation, id, current = {}) {
+function reservationBelongsToVendor(reservation, id, current = {}, key = '', previousKeys = []) {
   const owner = String(reservation?.vendorId || reservation?.id || '').trim();
-  if (!owner) return false;
+  if (!owner) return previousKeys.includes(key);
   return new Set([id, current.id, current.vendorId].map((value) => String(value || '').trim()).filter(Boolean)).has(owner);
 }
 
@@ -297,7 +297,7 @@ const vendorsService = {
         const latest = await transaction.get(docRef);
         if (!latest.exists) return;
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (!identityUnchanged && reservations.some((reservation) => reservation.exists && !reservationBelongsToVendor(reservation.data(), id, current))) {
+        if (!identityUnchanged && reservations.some((reservation, index) => reservation.exists && !reservationBelongsToVendor(reservation.data(), id, current, nextKeys[index], previousKeys))) {
           throw duplicateVendorError();
         }
 
