@@ -58,6 +58,12 @@ function duplicateVendorError() {
   });
 }
 
+function reservationBelongsToVendor(reservation, id, current = {}) {
+  const owner = String(reservation?.vendorId || reservation?.id || '').trim();
+  if (!owner) return false;
+  return new Set([id, current.id, current.vendorId].map((value) => String(value || '').trim()).filter(Boolean)).has(owner);
+}
+
 async function createVendorWithUniqueKeys(docRef, item, uniqueKeys) {
   await db.runTransaction(async (transaction) => {
     const [, existingVendors] = await Promise.all([
@@ -377,9 +383,7 @@ const vendorsService = {
           if (phoneKey) {
             const phoneReservation = await transaction.get(uniqueKeysRef.doc(`phone:${phoneKey}`));
             const reservationData = phoneReservation.exists ? phoneReservation.data() : {};
-            const owner = String(reservationData.vendorId || reservationData.id || '');
-            const currentOwner = String(current.vendorId || current.id || id);
-            if (phoneReservation.exists && owner !== String(id) && owner !== currentOwner) throw duplicateVendorError();
+            if (phoneReservation.exists && !reservationBelongsToVendor(reservationData, id, current)) throw duplicateVendorError();
             transaction.set(uniqueKeysRef.doc(`phone:${phoneKey}`), {
               vendorId: id,
               key: `phone:${phoneKey}`,
@@ -393,9 +397,7 @@ const vendorsService = {
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
         if (reservations.some((reservation) => {
           if (!reservation.exists) return false;
-          const owner = String(reservation.data().vendorId || reservation.data().id || '');
-          const currentOwner = String(current.vendorId || current.id || id);
-          return owner !== String(id) && owner !== currentOwner;
+          return !reservationBelongsToVendor(reservation.data(), id, current);
         })) {
           throw duplicateVendorError();
         }
