@@ -411,12 +411,12 @@ const vendorsService = {
           result = { id, ...latest.data(), ...updates };
           return;
         }
-        const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (!identityUnchanged && reservations.some((reservation, index) => {
-          if (!reservation.exists) return false;
-          const key = nextKeys[index];
-          return !reservationBelongsToVendor(reservation.data(), id, current, key, previousKeys);
-        })) {
+        const existingVendors = await transaction.get(collectionRef);
+        const hasRealDuplicate = existingVendors.docs
+          .filter((existing) => existing.id !== id)
+          .some((existing) => vendorUniqueKeys(existing.data(), { allowMissingCompany: true })
+            .some((key) => nextKeys.includes(key)));
+        if (hasRealDuplicate) {
           throw duplicateVendorError();
         }
 
