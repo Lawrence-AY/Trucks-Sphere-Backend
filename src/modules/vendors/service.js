@@ -58,9 +58,12 @@ function duplicateVendorError() {
   });
 }
 
-function reservationBelongsToVendor(reservation, id, current = {}) {
+function reservationBelongsToVendor(reservation, id, current = {}, key = '', previousKeys = []) {
   const owner = String(reservation?.vendorId || reservation?.id || '').trim();
-  if (!owner) return false;
+  // Legacy reservations may not contain an owner. If the key was already
+  // part of this vendor's stored identity, it is safe to repair the owner
+  // while editing that vendor.
+  if (!owner) return previousKeys.includes(key);
   return new Set([id, current.id, current.vendorId].map((value) => String(value || '').trim()).filter(Boolean)).has(owner);
 }
 
@@ -388,7 +391,7 @@ const vendorsService = {
           if (phoneKey) {
             const phoneReservation = await transaction.get(uniqueKeysRef.doc(`phone:${phoneKey}`));
             const reservationData = phoneReservation.exists ? phoneReservation.data() : {};
-            if (phoneReservation.exists && !identityUnchanged && !reservationBelongsToVendor(reservationData, id, current)) throw duplicateVendorError();
+            if (phoneReservation.exists && !identityUnchanged && !reservationBelongsToVendor(reservationData, id, current, `phone:${phoneKey}`, previousKeys)) throw duplicateVendorError();
             transaction.set(uniqueKeysRef.doc(`phone:${phoneKey}`), {
               vendorId: id,
               key: `phone:${phoneKey}`,
@@ -400,9 +403,10 @@ const vendorsService = {
           return;
         }
         const reservations = await Promise.all(nextKeys.map((key) => transaction.get(uniqueKeysRef.doc(key))));
-        if (!identityUnchanged && reservations.some((reservation) => {
+        if (!identityUnchanged && reservations.some((reservation, index) => {
           if (!reservation.exists) return false;
-          return !reservationBelongsToVendor(reservation.data(), id, current);
+          const key = nextKeys[index];
+          return !reservationBelongsToVendor(reservation.data(), id, current, key, previousKeys);
         })) {
           throw duplicateVendorError();
         }
