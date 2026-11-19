@@ -257,7 +257,7 @@ function buildVendorFuelReport(vendorId, options = {}) {
     transactionDate: formatEAT(r.dispensedAt || r.createdAt || r.timestamp),
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
-    litres: Number(r.litres || r.fuelAmount || 0),
+    litres: Number(r.litres || r.fuelAmount || 0).toFixed(3),
     attendantName: fuelAttendantName(r),
     otp: fuelAuthorizationCode(r),
     jobId: r.jobId || '',

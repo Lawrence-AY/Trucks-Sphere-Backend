@@ -71,6 +71,10 @@ function addSheet(wb, name, headers, rows) {
       if ((h === 'Net Weight (T)' || h === 'Total Delivered (T)') && Number(row[h]) > 0) {
         cell.fill = GREEN_FILL;
       }
+      if (h === 'Litres' || h === 'Fuel (L)') {
+        cell.numFmt = '0.000';
+        if (row[h] !== '' && Number.isFinite(Number(row[h]))) cell.value = Number(row[h]);
+      }
     });
   });
 
