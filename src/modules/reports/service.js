@@ -14,6 +14,17 @@ const snapshotStore = require('../../utils/snapshotStore');
 const { normalizeJobStatus, isTrackableJob } = require('../../utils/jobLifecycle');
 const { isWarehouseReceipt } = require('../warehouse-jobs/receipt');
 
+function fuelAuthorizationCode(record = {}) {
+  return String(record.authorizationCode || record.otp || record.otpCode || '').trim();
+}
+
+function fuelAttendantName(record = {}) {
+  const value = [record.attendantName, record.dispensedByName, record.dispensedBy, record.attendant]
+    .map((item) => String(item || '').trim())
+    .find((item) => item && item.toLowerCase() !== 'fuel operator');
+  return value || '';
+}
+
 /**
  * Format an ISO date string to East African Time (EAT = UTC+3).
  * Returns a human-readable Africa/Nairobi timestamp, or an empty string when invalid.
@@ -400,8 +411,8 @@ function buildMasterAudit(options = {}) {
       siteNet: siteNet,
       // Fuel
       totalFuelLitres,
-      fuelOTP: jobFuel.length > 0 ? (jobFuel[0].otp || jobFuel[0].otpCode || jobFuel[0].authorizationCode || '') : '',
-      fuelAttendant: jobFuel.length > 0 ? (jobFuel[0].attendantName || jobFuel[0].dispensedBy || jobFuel[0].dispensedByName || jobFuel[0].attendant || '') : '',
+      fuelOTP: jobFuel.length > 0 ? fuelAuthorizationCode(jobFuel[0]) : '',
+      fuelAttendant: jobFuel.length > 0 ? fuelAttendantName(jobFuel[0]) : '',
       // Lot & GRN
       lotNumber: d.storageLot || d.lotNumber || d.destinationLot || (d.materials || []).map(line => line.storageLot || line.lotNumber || line.destinationLot).filter(Boolean).join(', '),
       siteOperator: d.siteWeighOutByName || d.siteWeighInByName || d.receivedByName || (typeof d.receivedBy === 'string' ? d.receivedBy : d.receivedBy?.displayName) || d.warehouseAcceptedByName || '',
@@ -568,8 +579,8 @@ function buildFuelReport(options = {}) {
     driverName: r.driverName || '',
     plateNumber: r.plateNumber || '',
     litres: Number(r.litres || r.fuelAmount || 0),
-    attendantName: r.attendantName || r.dispensedBy || '',
-    otp: r.otp || r.otpCode || r.authorizationCode || '',
+    attendantName: fuelAttendantName(r),
+    otp: fuelAuthorizationCode(r),
     authorizingVendor: vendors[r.vendorId]?.companyName || r.vendorName || '',
     jobId: r.jobId || '',
   }));
@@ -744,4 +755,6 @@ module.exports = {
   getReportOrigin,
   getReportMaterialSource,
   getReportBanker,
+  fuelAuthorizationCode,
+  fuelAttendantName,
 };
