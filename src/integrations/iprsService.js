@@ -154,10 +154,13 @@ async function lookupDriverIdentity({ nationalId }) {
   if (response.status < 200 || response.status >= 300) throw iprsError('IPRS_VERIFICATION_FAILED', 503);
   for (const object of responseObjects(response.data)) {
     const firstName = pick(object, ['first_name', 'firstName', 'firstname', 'given_name', 'givenName']);
+    const middleName = pick(object, ['middle_name', 'middleName', 'middlename']);
     const surname = pick(object, ['surname', 'last_name', 'lastName', 'family_name', 'familyName']);
-    if (firstName && surname) return { verified: true, firstName: String(firstName).trim(), surname: String(surname).trim() };
+    if (firstName && surname) return { verified: true, firstName: String(firstName).trim(), middleName: middleName ? String(middleName).trim() : '', surname: String(surname).trim(), source: 'IPRS' };
   }
-  throw iprsError('IPRS_RESPONSE_UNRECOGNIZED', 503);
+  // A successful provider response without an identity record is a no-match,
+  // not an outage. The UI can offer manual entry while preserving the ID.
+  throw iprsError('IPRS_NO_MATCH', 404);
 }
 
 module.exports = { isIprsEnabled, verifyDriverIdentity, lookupDriverIdentity, __testables: { extractToken, identityMatches, identityComparisons, normalizeName, responseIndicatesRejected } };

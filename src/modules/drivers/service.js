@@ -70,6 +70,19 @@ const driversService = {
     return doc || null;
   },
 
+  async findByNationalId(nationalId) {
+    const normalized = normalizeNationalId(nationalId);
+    if (!normalized) return null;
+    const reservation = await nationalIdRef.doc(normalized).get();
+    if (reservation.exists) {
+      const driver = await collectionRef.doc(reservation.data().driverId).get();
+      if (driver.exists) return { id: driver.id, ...driver.data() };
+    }
+    const matches = await collectionRef.where('nationalId', '==', normalized).limit(1).get();
+    if (matches.empty) return null;
+    return { id: matches.docs[0].id, ...matches.docs[0].data() };
+  },
+
   async isNationalIdAvailable(nationalId, excludeId) {
     const normalized = normalizeNationalId(nationalId);
     if (!normalized) return false;
