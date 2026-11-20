@@ -358,6 +358,12 @@ function createProcessor({ repository, deliveries, config }) {
       if (candidates.length && !contextual.length && !hasSecondWeigh) throw blocked('SCHEDULE_CONTEXT_MISMATCH');
       job = unique(contextual, 'AMBIGUOUS_SCHEDULE');
     }
+    // Vendor is the authoritative commercial owner of a capture. A truck can
+    // work for several vendors, so never attach a RIOTRANS capture to a
+    // same-plate WELLSELECT schedule (or vice versa). Let the custom-capture
+    // path resolve the matching vendor PO and create the correctly scoped trip.
+    if (job && row.FIRMA_ADI && vendorResult?.match?.id && job.vendorId
+      && vendorResult.match.id !== job.vendorId) job = null;
     let newOrder;
     if (!job) {
       // Unmatched weighbridge captures are real trips. Record them as unscheduled
