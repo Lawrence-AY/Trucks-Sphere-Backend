@@ -288,7 +288,9 @@ function createProcessor({ repository, deliveries, config }) {
     if (capturedDriver && vendorResult?.match?.id) {
       const vendorId = vendorResult.match.id;
       const vendorIds = Array.from(new Set([...(capturedDriver.vendorIds || []), vendorId]));
-      await repository.update('drivers', capturedDriver.id, { vendorId, vendorIds, driverCode: capturedDriver.driverCode || capturedDriver.id, driverNumber: capturedDriver.driverNumber || capturedDriver.id });
+      if (typeof repository.update === 'function') {
+        await repository.update('drivers', capturedDriver.id, { vendorId, vendorIds, driverCode: capturedDriver.driverCode || capturedDriver.id, driverNumber: capturedDriver.driverNumber || capturedDriver.id });
+      }
       capturedDriver = { ...capturedDriver, vendorId, vendorIds, driverCode: capturedDriver.driverCode || capturedDriver.id, driverNumber: capturedDriver.driverNumber || capturedDriver.id };
     }
     const contextMatches = job => {
@@ -388,7 +390,40 @@ function createProcessor({ repository, deliveries, config }) {
     if ((plate(job.plateNumber) && !plateMatches(job.plateNumber, row.PLAKA))
       || (job.vehicleId && job.vehicleId !== vehicle.id)
       || (job.accessCapture?.plateNumber && !plateMatches(job.accessCapture.plateNumber, row.PLAKA))) throw blocked('CAPTURE_PLATE_MISMATCH');
-    if (capturedDriver && job.driverId && capturedDriver.id !== job.driverId) throw blocked('SCHEDULE_DRIVER_MISMATCH');
+    if (capturedDriver && job.driverId && capturedDriver.id !== job.driverId) {
+      // A scheduled job can contain an old driver assignment. On retry, allow
+      // the bridge capture to repair that assignment only when the incoming
+      // vendor matches the job and the driver is not currently working an
+      // active job for another vendor. This keeps one driver record/code while
+      // preventing cross-vendor double booking.
+      const incomingVendorId = vendorResult?.match?.id || job.vendorId;
+      const activeOtherVendor = jobs.find(candidate =>
+        candidate.id !== job.id
+        && candidate.driverId === capturedDriver.id
+        && isActiveJob(candidate.status)
+        && candidate.vendorId
+        && incomingVendorId
+        && candidate.vendorId !== incomingVendorId);
+      if (activeOtherVendor) throw blocked('DRIVER_ACTIVE_OTHER_VENDOR', {
+        driverId: capturedDriver.id,
+        activeJobId: activeOtherVendor.id,
+        activeVendorId: activeOtherVendor.vendorId,
+        requestedVendorId: incomingVendorId,
+      });
+      const vendorMatchesJob = Boolean(row.FIRMA_ADI) && (!job.vendorId
+        || (vendorResult?.match?.id && vendorResult.match.id === job.vendorId)
+        || normalize(row.FIRMA_ADI) === normalize(job.vendorName)
+        || normalize(row.FIRMA_ADI) === normalize(job.companyName));
+      if (vendorMatchesJob && typeof deliveries.updateFresh === 'function') {
+        job = await deliveries.updateFresh(job.id, {
+          driverId: capturedDriver.id,
+          driverName: capturedDriver.name || capturedDriver.fullName || '',
+          driverCode: capturedDriver.driverCode || capturedDriver.driverNumber || capturedDriver.id,
+        });
+      } else {
+        throw blocked('SCHEDULE_DRIVER_MISMATCH');
+      }
+    }
     // Registered identifiers (including national ID) confirm the same driver.
     if (!newOrder && !contextMatches(job)) throw blocked('SCHEDULE_CONTEXT_MISMATCH');
     const po = orderFor(job);

@@ -41,7 +41,8 @@ const driversService = {
 
     if (status) results = results.filter(item => item.status === status);
     if (vendorId) {
-      results = results.filter(item => item.vendorId === vendorId);
+      results = results.filter(item => item.vendorId === vendorId
+        || (Array.isArray(item.vendorIds) && item.vendorIds.includes(vendorId)));
     }
     if (search) {
       const s = search.toLowerCase();
